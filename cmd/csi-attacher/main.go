@@ -17,28 +17,37 @@ limitations under the License.
 package main
 
 import (
+	"context"
 	"flag"
 	"os"
 	"os/signal"
 	"time"
 
-	"github.com/kubernetes-csi/external-attacher-csi/pkg/controller"
+	"github.com/golang/glog"
 	"k8s.io/client-go/informers"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
+
+	"github.com/kubernetes-csi/external-attacher-csi/pkg/connection"
+	"github.com/kubernetes-csi/external-attacher-csi/pkg/controller"
 )
 
 const (
 	// Number of worker threads
 	threads = 10
+
+	// Default timeout of short CSI calls like GetPluginInfo
+	csiTimeout = time.Second
 )
 
+// Command line flags
 var (
-	// TODO: add a better description of attacher name - is it CSI plugin name? Kubernetes plugin name?
 	kubeconfig        = flag.String("kubeconfig", "", "Absolute path to the kubeconfig file. Required only when running out of cluster.")
 	resync            = flag.Duration("resync", 10*time.Second, "Resync interval of the controller.")
-	connectionTimeout = flag.Duration("connection-timeout", 60, "Timeout for waiting for CSI driver socket (in seconds).")
+	connectionTimeout = flag.Int("connection-timeout", 60, "Timeout for waiting for CSI driver socket (in seconds).")
+	csiAddress        = flag.String("csi-address", "/run/csi/socket", "Address of the CSI driver socket.")
+	dummy             = flag.Bool("dummy", false, "Run in dummy mode, i.e. not connecting to CSI driver and marking everything as attached. Expected CSI driver name is \"csi/dummy\".")
 )
 
 func main() {
@@ -48,21 +57,55 @@ func main() {
 	// Create the client config. Use kubeconfig if given, otherwise assume in-cluster.
 	config, err := buildConfig(*kubeconfig)
 	if err != nil {
-		panic(err)
+		glog.Error(err.Error())
+		os.Exit(1)
 	}
 
 	clientset, err := kubernetes.NewForConfig(config)
 	if err != nil {
-		panic(err)
+		glog.Error(err.Error())
+		os.Exit(1)
 	}
 	factory := informers.NewSharedInformerFactory(clientset, *resync)
 
-	// TODO: wait for CSI's socket and discover 'attacher' and whether the
-	// driver supports ControllerPulishVolume using ControllerGetCapabilities
-	attacher := "csi/example"
-	handler := controller.NewTrivialHandler(clientset)
+	var handler controller.Handler
 
-	// Start the provision controller which will dynamically provision NFS PVs
+	var attacher string
+	if *dummy {
+		// Do not connect to any CSI, mark everything as attached.
+		handler = controller.NewTrivialHandler(clientset)
+		attacher = "csi/dummy"
+	} else {
+		// Connect to CSI.
+		csiConn, err := connection.New(*csiAddress, *connectionTimeout)
+		if err != nil {
+			glog.Error(err.Error())
+			os.Exit(1)
+		}
+
+		// Find driver name.
+		ctx, cancel := context.WithTimeout(context.Background(), csiTimeout)
+		defer cancel()
+		attacher, err = csiConn.GetDriverName(ctx)
+		if err != nil {
+			glog.Error(err.Error())
+			os.Exit(1)
+		}
+
+		// Find out if the driver supports attach/detach.
+		supportsAttach, err := csiConn.SupportsControllerPublish(ctx)
+		if err != nil {
+			glog.Error(err.Error())
+			os.Exit(1)
+		}
+		if !supportsAttach {
+			handler = controller.NewTrivialHandler(clientset)
+		} else {
+			glog.Error("Real attach/detach handler is not implemented yet")
+			os.Exit(1)
+		}
+	}
+
 	ctrl := controller.NewCSIAttachController(
 		clientset,
 		attacher,
