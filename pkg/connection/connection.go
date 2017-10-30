@@ -24,6 +24,7 @@ import (
 	"github.com/container-storage-interface/spec/lib/go/csi"
 	"github.com/golang/glog"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/connectivity"
 )
 
 // CSIConnection is gRPC connection to a remote CSI driver and abstracts all
@@ -56,8 +57,8 @@ var (
 	}
 )
 
-func New(address string, timeoutSeconds int) (CSIConnection, error) {
-	conn, err := connect(address, timeoutSeconds)
+func New(address string, timeout time.Duration) (CSIConnection, error) {
+	conn, err := connect(address, timeout)
 	if err != nil {
 		return nil, err
 	}
@@ -66,18 +67,25 @@ func New(address string, timeoutSeconds int) (CSIConnection, error) {
 	}, nil
 }
 
-func connect(address string, timeoutSeconds int) (*grpc.ClientConn, error) {
-	var err error
-	for i := 0; i < timeoutSeconds; i++ {
-		var conn *grpc.ClientConn
-		conn, err = grpc.Dial(address, grpc.WithInsecure())
-		if err == nil {
+func connect(address string, timeout time.Duration) (*grpc.ClientConn, error) {
+	glog.V(2).Infof("Connecting to %s", address)
+	conn, err := grpc.Dial(address, grpc.WithInsecure(), grpc.WithBackoffMaxDelay(time.Second))
+	if err != nil {
+		return nil, err
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+	for {
+		if !conn.WaitForStateChange(ctx, conn.GetState()) {
+			glog.V(4).Infof("Connection timed out")
+			return conn, nil // return nil, subsequent GetPluginInfo will show the real connection error
+		}
+		if conn.GetState() == connectivity.Ready {
+			glog.V(3).Infof("Connected")
 			return conn, nil
 		}
-		glog.Warningf("Error connecting to %s: %s", address, err)
-		time.Sleep(time.Second)
+		glog.V(4).Infof("Still trying, connection is %s", conn.GetState())
 	}
-	return nil, err
 }
 
 func (c *csiConnection) GetDriverName(ctx context.Context) (string, error) {

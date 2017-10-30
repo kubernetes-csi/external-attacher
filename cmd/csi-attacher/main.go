@@ -39,13 +39,16 @@ const (
 
 	// Default timeout of short CSI calls like GetPluginInfo
 	csiTimeout = time.Second
+
+	// Name of CSI plugin for dummy operation
+	dummyAttacherName = "csi/dummy"
 )
 
 // Command line flags
 var (
 	kubeconfig        = flag.String("kubeconfig", "", "Absolute path to the kubeconfig file. Required only when running out of cluster.")
 	resync            = flag.Duration("resync", 10*time.Second, "Resync interval of the controller.")
-	connectionTimeout = flag.Int("connection-timeout", 60, "Timeout for waiting for CSI driver socket (in seconds).")
+	connectionTimeout = flag.Duration("connection-timeout", 1*time.Minute, "Timeout for waiting for CSI driver socket.")
 	csiAddress        = flag.String("csi-address", "/run/csi/socket", "Address of the CSI driver socket.")
 	dummy             = flag.Bool("dummy", false, "Run in dummy mode, i.e. not connecting to CSI driver and marking everything as attached. Expected CSI driver name is \"csi/dummy\".")
 )
@@ -74,7 +77,7 @@ func main() {
 	if *dummy {
 		// Do not connect to any CSI, mark everything as attached.
 		handler = controller.NewTrivialHandler(clientset)
-		attacher = "csi/dummy"
+		attacher = dummyAttacherName
 	} else {
 		// Connect to CSI.
 		csiConn, err := connection.New(*csiAddress, *connectionTimeout)
