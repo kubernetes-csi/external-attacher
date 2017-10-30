@@ -1,0 +1,67 @@
+hash: da66d2470299478281bcfc7dc7a92894b909cc6969c9fcc187e5f6f8f98cc1a6
+updated: 2017-10-23T15:41:39.748284252-04:00
+imports:
+- name: github.com/container-storage-interface/spec
+  version: d68da7a7c330a88253e26c06b7c157ec8119d5d6
+  subpackages:
+  - lib/go/csi
+- name: github.com/golang/protobuf
+  version: 1643683e1b54a9e88ad26d98f81400c8c9d9f4f9
+  subpackages:
+  - proto
+  - protoc-gen-go/descriptor
+  - ptypes
+  - ptypes/any
+  - ptypes/duration
+  - ptypes/timestamp
+- name: golang.org/x/net
+  version: 5561cd9b4330353950f399814f427425c0a26fd2
+  subpackages:
+  - context
+  - http2
+  - http2/hpack
+  - idna
+  - internal/timeseries
+  - lex/httplex
+  - trace
+- name: golang.org/x/text
+  version: c01e4764d870b77f8abe5096ee19ad20d80e8075
+  subpackages:
+  - secure/bidirule
+  - transform
+  - unicode/bidi
+  - unicode/norm
+- name: google.golang.org/genproto
+  version: f676e0f3ac6395ff1a529ae59a6670878a8371a6
+  subpackages:
+  - googleapis/rpc/status
+- name: google.golang.org/grpc
+  version: 1687ce5770e998bcac6a136af6b52f079b9d902b
+  subpackages:
+  - balancer
+  - balancer/roundrobin
+  - codes
+  - connectivity
+  - credentials
+  - grpclb/grpc_lb_v1/messages
+  - grpclog
+  - internal
+  - keepalive
+  - metadata
+  - naming
+  - peer
+  - reflection
+  - reflection/grpc_reflection_v1alpha
+  - resolver
+  - resolver/dns
+  - resolver/passthrough
+  - stats
+  - status
+  - tap
+  - transport
+testImports:
+- name: github.com/golang/mock
+  version: 61503c535dc549c7ffc1ff07902345658a0f20a2
+  subpackages:
+  - gomock
+  - mockgen
