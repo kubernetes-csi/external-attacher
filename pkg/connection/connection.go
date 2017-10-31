@@ -50,6 +50,9 @@ type CSIConnection interface {
 	// Attach given volume to given node. Returns PublishVolumeInfo
 	Attach(ctx context.Context, pv *v1.PersistentVolume, node *v1.Node) (map[string]string, error)
 
+	// Detach given volume from given node.
+	Detach(ctx context.Context, pv *v1.PersistentVolume, node *v1.Node) error
+
 	// Close the connection
 	Close() error
 }
@@ -210,6 +213,46 @@ func (c *csiConnection) Attach(ctx context.Context, pv *v1.PersistentVolume, nod
 	}
 
 	return result.PublishVolumeInfo, nil
+}
+
+func (c *csiConnection) Detach(ctx context.Context, pv *v1.PersistentVolume, node *v1.Node) error {
+	client := csi.NewControllerClient(c.conn)
+
+	if pv.Spec.CSI == nil {
+		return fmt.Errorf("only CSI volumes are supported")
+	}
+
+	nodeID, err := getNodeID(pv.Spec.CSI.Driver, node)
+	if err != nil {
+		return err
+	}
+
+	req := csi.ControllerUnpublishVolumeRequest{
+		Version: &csiVersion,
+		VolumeHandle: &csi.VolumeHandle{
+			Id: pv.Spec.CSI.VolumeHandle,
+			// TODO: add metadata???
+		},
+		NodeId:          nodeID,
+		UserCredentials: nil,
+	}
+
+	rsp, err := client.ControllerUnpublishVolume(ctx, &req)
+	if err != nil {
+		return err
+	}
+	e := rsp.GetError()
+	if e != nil {
+		// TODO: report the right error
+		return fmt.Errorf("error calling ControllerUnpublishVolume: %+v", e)
+	}
+
+	result := rsp.GetResult()
+	if result == nil {
+		return fmt.Errorf("result is empty")
+	}
+
+	return nil
 }
 
 func sanitizeDriverName(driver string) string {
