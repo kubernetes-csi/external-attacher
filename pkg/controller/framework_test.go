@@ -17,16 +17,23 @@ limitations under the License.
 package controller
 
 import (
+	"context"
+	"fmt"
 	"reflect"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/davecgh/go-spew/spew"
 	"github.com/golang/glog"
+	"github.com/kubernetes-csi/external-attacher-csi/pkg/connection"
 
+	"k8s.io/api/core/v1"
 	storagev1 "k8s.io/api/storage/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/informers"
+	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/kubernetes/fake"
 	core "k8s.io/client-go/testing"
 )
@@ -55,9 +62,29 @@ type testCase struct {
 	updatedVa *storagev1.VolumeAttachment
 	// List of expected kubeclient actions that should happen during the test.
 	expectedActions []core.Action
+	// List of expected CSI calls
+	expectedCSICalls []csiCall
+	// Function to perform additional checks after the test finishes
+	additionalCheck func(t *testing.T, test testCase)
 }
 
-func runTests(t *testing.T, tests []testCase) {
+type csiCall struct {
+	// Name that's supposed to be called. "attach" or "detach". Other CSI calls
+	// are not supported for testing.
+	functionName string
+	// Expected name of the PV
+	pvName string
+	// Expected name of the node
+	nodeName string
+	// error to return
+	err error
+	// metadata to return (used only in Attach calls)
+	metadata map[string]string
+}
+
+type handlerFactory func(client kubernetes.Interface, informerFactory informers.SharedInformerFactory, csi connection.CSIConnection) Handler
+
+func runTests(t *testing.T, handlerFactory handlerFactory, tests []testCase) {
 	for _, test := range tests {
 		glog.Infof("Test %q: started", test.name)
 		objs := test.initialObjects
@@ -67,26 +94,60 @@ func runTests(t *testing.T, tests []testCase) {
 		if test.updatedVa != nil {
 			objs = append(objs, test.updatedVa)
 		}
+
+		// Create client and informers
 		client := fake.NewSimpleClientset(objs...)
 		informers := informers.NewSharedInformerFactory(client, time.Hour /* disable resync*/)
 		vaInformer := informers.Storage().V1().VolumeAttachments()
-		handler := NewTrivialHandler(client)
-
+		pvInformer := informers.Core().V1().PersistentVolumes()
+		nodeInformer := informers.Core().V1().Nodes()
+		// Fill the informers with inital objects so controller can Get() them
+		for _, obj := range objs {
+			switch obj.(type) {
+			case *v1.PersistentVolume:
+				pvInformer.Informer().GetStore().Add(obj)
+			case *v1.Node:
+				nodeInformer.Informer().GetStore().Add(obj)
+			case *storagev1.VolumeAttachment:
+				vaInformer.Informer().GetStore().Add(obj)
+			default:
+				t.Fatalf("Unknown initalObject type: %+v", obj)
+			}
+		}
+		// This reactor makes sure that all updates that the controller does are
+		// reflected in its informers so Lister.Get() finds them. This does not
+		// enqueue events!
+		client.Fake.PrependReactor("update", "*", func(action core.Action) (bool, runtime.Object, error) {
+			if action.GetVerb() == "update" {
+				switch action.GetResource().Resource {
+				case "volumeattachments":
+					glog.V(5).Infof("Test reactor: updated VA")
+					vaInformer.Informer().GetStore().Update(action.(core.UpdateAction).GetObject())
+				default:
+					t.Errorf("Unknown update resource: %s", action.GetResource())
+				}
+			}
+			return false, nil, nil
+		})
+		// Run any reactors that the test needs *before* the above one.
 		for _, reactor := range test.reactors {
 			client.Fake.PrependReactor(reactor.verb, reactor.resource, reactor.reactor(t))
 		}
 
+		// Construct controller
+		csiConnection := &fakeCSIConnection{t: t, calls: test.expectedCSICalls}
+		handler := handlerFactory(client, informers, csiConnection)
 		ctrl := NewCSIAttachController(client, testAttacherName, handler, vaInformer)
+
+		// Start the test by enqueueing the right event
 		if test.addedVa != nil {
-			vaInformer.Informer().GetStore().Add(test.addedVa)
 			ctrl.vaAdded(test.addedVa)
 		}
 		if test.updatedVa != nil {
-			vaInformer.Informer().GetStore().Update(test.updatedVa)
 			ctrl.vaUpdated(test.updatedVa, test.updatedVa)
 		}
 
-		/* process the queue until we get expected results */
+		// Process the queue until we get expected results
 		timeout := time.Now().Add(10 * time.Second)
 		lastReportedActionCount := 0
 		for {
@@ -95,7 +156,7 @@ func runTests(t *testing.T, tests []testCase) {
 				break
 			}
 			if ctrl.queue.Len() > 0 {
-				glog.V(4).Infof("Test %q: %d events in the queue, processing one", test.name, ctrl.queue.Len())
+				glog.V(5).Infof("Test %q: %d events in the queue, processing one", test.name, ctrl.queue.Len())
 				ctrl.processNextWorkItem()
 			}
 			if ctrl.queue.Len() > 0 {
@@ -105,7 +166,7 @@ func runTests(t *testing.T, tests []testCase) {
 			currentActionCount := len(client.Actions())
 			if currentActionCount < len(test.expectedActions) {
 				if lastReportedActionCount < currentActionCount {
-					glog.V(4).Infof("Test %q: got %d actions out of %d, waiting for the rest", test.name, currentActionCount, len(test.expectedActions))
+					glog.V(5).Infof("Test %q: got %d actions out of %d, waiting for the rest", test.name, currentActionCount, len(test.expectedActions))
 					lastReportedActionCount = currentActionCount
 				}
 				// The test expected more to happen, wait for them
@@ -118,13 +179,25 @@ func runTests(t *testing.T, tests []testCase) {
 		actions := client.Actions()
 		for i, action := range actions {
 			if len(test.expectedActions) < i+1 {
-				t.Errorf("Test %q: %d unexpected actions: %+v", test.name, len(actions)-len(test.expectedActions), actions[i:])
+				t.Errorf("Test %q: %d unexpected actions: %+v", test.name, len(actions)-len(test.expectedActions), spew.Sdump(actions[i:]))
 				break
+			}
+
+			// Sanitize time in attach/detach errors
+			if action.GetVerb() == "update" && action.GetResource().Resource == "volumeattachments" {
+				obj := action.(core.UpdateAction).GetObject()
+				o := obj.(*storagev1.VolumeAttachment)
+				if o.Status.AttachError != nil {
+					o.Status.AttachError.Time = metav1.Time{}
+				}
+				if o.Status.DetachError != nil {
+					o.Status.DetachError.Time = metav1.Time{}
+				}
 			}
 
 			expectedAction := test.expectedActions[i]
 			if !reflect.DeepEqual(expectedAction, action) {
-				t.Errorf("Test %q:\nExpected:\n%s\ngot:\n%s", test.name, spew.Sdump(expectedAction), spew.Sdump(action))
+				t.Errorf("Test %q: action %d\nExpected:\n%s\ngot:\n%s", test.name, i, spew.Sdump(expectedAction), spew.Sdump(action))
 				continue
 			}
 		}
@@ -135,6 +208,157 @@ func runTests(t *testing.T, tests []testCase) {
 				t.Logf("    %+v", a)
 			}
 		}
+
+		if test.additionalCheck != nil {
+			test.additionalCheck(t, test)
+		}
 		glog.Infof("Test %q: finished \n\n", test.name)
 	}
+}
+
+// Helper function to create various objects
+const (
+	testAttacherName = "csi/test"
+	testPVName       = "pv1"
+	testNodeName     = "node1"
+	testVolumeHandle = "handle"
+)
+
+func createVolumeAttachment(attacher string, pvName string, nodeName string, attached bool, finalizers string) *storagev1.VolumeAttachment {
+	va := &storagev1.VolumeAttachment{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: pvName + "-" + nodeName,
+		},
+		Spec: storagev1.VolumeAttachmentSpec{
+			Attacher: attacher,
+			NodeName: nodeName,
+			AttachedVolumeSource: storagev1.AttachedVolumeSource{
+				PersistentVolumeName: &pvName,
+			},
+		},
+		Status: storagev1.VolumeAttachmentStatus{
+			Attached: attached,
+		},
+	}
+	if len(finalizers) > 0 {
+		va.Finalizers = strings.Split(finalizers, ",")
+	}
+	return va
+}
+
+func va(attached bool, finalizers string) *storagev1.VolumeAttachment {
+	return createVolumeAttachment(testAttacherName, testPVName, testNodeName, attached, finalizers)
+}
+
+func deleted(va *storagev1.VolumeAttachment) *storagev1.VolumeAttachment {
+	va.DeletionTimestamp = &metav1.Time{}
+	return va
+}
+
+func vaWithMetadata(va *storagev1.VolumeAttachment, metadata map[string]string) *storagev1.VolumeAttachment {
+	va.Status.AttachmentMetadata = metadata
+	return va
+}
+
+func vaWithNoPVReference(va *storagev1.VolumeAttachment) *storagev1.VolumeAttachment {
+	va.Spec.AttachedVolumeSource.PersistentVolumeName = nil
+	return va
+}
+
+func vaWithInvalidDriver(va *storagev1.VolumeAttachment) *storagev1.VolumeAttachment {
+	return createVolumeAttachment("unknownDriver", testPVName, testNodeName, false, "")
+}
+
+func vaWithAttachError(va *storagev1.VolumeAttachment, message string) *storagev1.VolumeAttachment {
+	va.Status.AttachError = &storagev1.VolumeError{
+		Message: message,
+		Time:    metav1.Time{},
+	}
+	return va
+}
+
+func vaWithDetachError(va *storagev1.VolumeAttachment, message string) *storagev1.VolumeAttachment {
+	va.Status.DetachError = &storagev1.VolumeError{
+		Message: message,
+		Time:    metav1.Time{},
+	}
+	return va
+}
+
+// Fake CSIConnection implementation that check that Attach/Detach is called
+// with the right parameters and it returns proper error code and metadata.
+type fakeCSIConnection struct {
+	calls []csiCall
+	index int
+	t     *testing.T
+}
+
+func (f *fakeCSIConnection) GetDriverName(ctx context.Context) (string, error) {
+	return "", fmt.Errorf("Not implemented")
+}
+
+func (f *fakeCSIConnection) SupportsControllerPublish(ctx context.Context) (bool, error) {
+	return false, fmt.Errorf("Not implemented")
+}
+
+func (f *fakeCSIConnection) Attach(ctx context.Context, pv *v1.PersistentVolume, node *v1.Node) (map[string]string, error) {
+	if f.index >= len(f.calls) {
+		f.t.Errorf("Unexpected CSI Attach call: pv=%s, node=%s, index: %d, calls: %+v", pv.Name, node.Name, f.index, f.calls)
+		return nil, fmt.Errorf("unexpected call")
+	}
+	call := f.calls[f.index]
+	f.index++
+
+	var err error
+	if call.functionName != "attach" {
+		f.t.Errorf("Unexpected CSI Attach call: pv=%s, node=%s, expected: %s", pv.Name, node.Name, call.functionName)
+		err = fmt.Errorf("unexpected attach call")
+	}
+
+	if call.pvName != pv.Name {
+		f.t.Errorf("Wrong CSI Attach call: pv=%s, node=%s, expected PV: %s", pv.Name, node.Name, call.pvName)
+		err = fmt.Errorf("unexpected attach call")
+	}
+
+	if call.nodeName != node.Name {
+		f.t.Errorf("Wrong CSI Attach call: pv=%s, node=%s, expected Node: %s", pv.Name, node.Name, call.nodeName)
+		err = fmt.Errorf("unexpected attach call")
+	}
+	if err != nil {
+		return nil, err
+	}
+	return call.metadata, call.err
+}
+
+func (f *fakeCSIConnection) Detach(ctx context.Context, pv *v1.PersistentVolume, node *v1.Node) error {
+	if f.index >= len(f.calls) {
+		f.t.Errorf("Unexpected CSI Detach call: pv=%s, node=%s, index: %d, calls: %+v", pv.Name, node.Name, f.index, f.calls)
+		return fmt.Errorf("unexpected call")
+	}
+	call := f.calls[f.index]
+	f.index++
+
+	var err error
+	if call.functionName != "detach" {
+		f.t.Errorf("Unexpected CSI Detach call: pv=%s, node=%s, expected: %s", pv.Name, node.Name, call.functionName)
+		err = fmt.Errorf("unexpected detach call")
+	}
+
+	if call.pvName != pv.Name {
+		f.t.Errorf("Wrong CSI Attach call: pv=%s, node=%s, expected PV: %s", pv.Name, node.Name, call.pvName)
+		err = fmt.Errorf("unexpected detach call")
+	}
+
+	if call.nodeName != node.Name {
+		f.t.Errorf("Wrong CSI Attach call: pv=%s, node=%s, expected Node: %s", pv.Name, node.Name, call.nodeName)
+		err = fmt.Errorf("unexpected detach call")
+	}
+	if err != nil {
+		return err
+	}
+	return call.err
+}
+
+func (f *fakeCSIConnection) Close() error {
+	return fmt.Errorf("Not implemented")
 }
