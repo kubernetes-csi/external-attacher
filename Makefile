@@ -14,6 +14,12 @@
 
 .PHONY: all csi-attacher clean test
 
+ifdef V
+TESTARGS = -v -args -alsologtostderr -v 5
+else
+TESTARGS = 
+endif
+
 all: csi-attacher
 
 csi-attacher:
@@ -23,4 +29,5 @@ clean:
 	-rm -rf csi-attacher
 
 test:
-	go test `go list ./... | grep -v 'vendor'`
+	go test `go list ./... | grep -v 'vendor'` $(TESTARGS)
+	go vet `go list ./... | grep -v vendor`
