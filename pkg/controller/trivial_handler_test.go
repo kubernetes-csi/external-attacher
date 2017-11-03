@@ -20,44 +20,20 @@ import (
 	"errors"
 	"testing"
 
+	"github.com/kubernetes-csi/external-attacher-csi/pkg/connection"
+
 	storagev1 "k8s.io/api/storage/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
+	"k8s.io/client-go/informers"
+	"k8s.io/client-go/kubernetes"
 	core "k8s.io/client-go/testing"
 )
 
-const (
-	testAttacherName = "csi/test"
-	testPVName       = "pv1"
-	testNodeName     = "node1"
-)
-
-func createVolumeAttachment(attacher string, pvName string, nodeName string, attached bool) *storagev1.VolumeAttachment {
-	return &storagev1.VolumeAttachment{
-		ObjectMeta: metav1.ObjectMeta{
-			Name: pvName + "-" + nodeName,
-		},
-		Spec: storagev1.VolumeAttachmentSpec{
-			Attacher: attacher,
-			NodeName: nodeName,
-			AttachedVolumeSource: storagev1.AttachedVolumeSource{
-				PersistentVolumeName: &pvName,
-			},
-		},
-		Status: storagev1.VolumeAttachmentStatus{
-			Attached: attached,
-		},
-	}
-}
-
-func va(attached bool) *storagev1.VolumeAttachment {
-	return createVolumeAttachment(testAttacherName, testPVName, testNodeName, attached)
-}
-
-func invalidDriverVA() *storagev1.VolumeAttachment {
-	return createVolumeAttachment("unknownDriver", testPVName, testNodeName, false)
+func trivialHandlerFactory(client kubernetes.Interface, informerFactory informers.SharedInformerFactory, csi connection.CSIConnection) Handler {
+	return NewTrivialHandler(client)
 }
 
 func TestTrivialHandler(t *testing.T) {
@@ -70,26 +46,26 @@ func TestTrivialHandler(t *testing.T) {
 	tests := []testCase{
 		{
 			name:    "add -> successful write",
-			addedVa: va(false),
+			addedVa: va(false, ""),
 			expectedActions: []core.Action{
-				core.NewUpdateAction(vaGroupResourceVersion, metav1.NamespaceNone, va(true)),
+				core.NewUpdateAction(vaGroupResourceVersion, metav1.NamespaceNone, va(true, "")),
 			},
 		},
 		{
 			name:      "update -> successful write",
-			updatedVa: va(false),
+			updatedVa: va(false, ""),
 			expectedActions: []core.Action{
-				core.NewUpdateAction(vaGroupResourceVersion, metav1.NamespaceNone, va(true)),
+				core.NewUpdateAction(vaGroupResourceVersion, metav1.NamespaceNone, va(true, "")),
 			},
 		},
 		{
 			name:            "unknown driver -> controller ignores",
-			addedVa:         invalidDriverVA(),
+			addedVa:         vaWithInvalidDriver(va(false, "")),
 			expectedActions: []core.Action{},
 		},
 		{
 			name:    "failed write -> controller retries",
-			addedVa: va(false),
+			addedVa: va(false, ""),
 			reactors: []reaction{
 				{
 					verb:     "update",
@@ -109,12 +85,12 @@ func TestTrivialHandler(t *testing.T) {
 				},
 			},
 			expectedActions: []core.Action{
-				core.NewUpdateAction(vaGroupResourceVersion, metav1.NamespaceNone, va(true)),
-				core.NewUpdateAction(vaGroupResourceVersion, metav1.NamespaceNone, va(true)),
-				core.NewUpdateAction(vaGroupResourceVersion, metav1.NamespaceNone, va(true)),
+				core.NewUpdateAction(vaGroupResourceVersion, metav1.NamespaceNone, va(true, "")),
+				core.NewUpdateAction(vaGroupResourceVersion, metav1.NamespaceNone, va(true, "")),
+				core.NewUpdateAction(vaGroupResourceVersion, metav1.NamespaceNone, va(true, "")),
 			},
 		},
 	}
 
-	runTests(t, tests)
+	runTests(t, trivialHandlerFactory, tests)
 }

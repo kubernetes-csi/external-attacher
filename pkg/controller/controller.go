@@ -51,9 +51,8 @@ type CSIAttachController struct {
 // Handler is responsible for handling VolumeAttachment events from informer.
 type Handler interface {
 	// SyncNewOrUpdatedVolumeAttachment processes one Add/Updated event from
-	// VolumeAttachment informers. It runs in a workqueue and should be
-	// reasonably fast (i.e. talking to API server is OK, talking to CSI is
-	// not).
+	// VolumeAttachment informers. It runs in a workqueue, guaranting that only
+	// one SyncNewOrUpdatedVolumeAttachment runs for given VA.
 	// SyncNewOrUpdatedVolumeAttachment is responsible for marking the
 	// VolumeAttachment either as forgotten (resets exponential backoff) or
 	// re-queue it into the provided queue to process it after exponential
@@ -130,21 +129,19 @@ func (ctrl *CSIAttachController) processNextWorkItem() bool {
 	defer ctrl.queue.Done(key)
 
 	vaName := key.(string)
-	glog.V(4).Infof("work for VolumeAttachment %s started", vaName)
+	glog.V(4).Infof("Started processing %q", vaName)
 
 	// get VolumeAttachment to process
 	va, err := ctrl.vaLister.Get(vaName)
 	if err != nil {
 		if apierrs.IsNotFound(err) {
 			// VolumeAttachment was deleted in the meantime, ignore.
-			// This will remove the VolumeAttachment from queue.
-			glog.V(4).Infof("%s deleted, ignoring", vaName)
+			glog.V(3).Infof("%q deleted, ignoring", vaName)
 			return true
 		}
-		if err != nil {
-			glog.Errorf("Error getting VolumeAttachment %s: %v", vaName, err)
-			ctrl.queue.AddRateLimited(vaName)
-		}
+		glog.Errorf("Error getting VolumeAttachment %q: %v", vaName, err)
+		ctrl.queue.AddRateLimited(vaName)
+		return true
 	}
 	if va.Spec.Attacher != ctrl.attacherName {
 		glog.V(4).Infof("Skipping VolumeAttachment %s for attacher %s", va.Name, va.Spec.Attacher)

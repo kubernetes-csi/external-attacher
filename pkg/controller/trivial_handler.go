@@ -40,7 +40,7 @@ func (h *trivialHandler) SyncNewOrUpdatedVolumeAttachment(va *storagev1.VolumeAt
 	glog.V(4).Infof("Trivial sync[%s] started", va.Name)
 	if !va.Status.Attached {
 		// mark as attached
-		if err := h.markAsAttached(va); err != nil {
+		if _, err := markAsAttached(h.client, va, nil); err != nil {
 			glog.Warningf("Error saving VolumeAttachment %s as attached: %s", va.Name, err)
 			queue.AddRateLimited(va.Name)
 			return
@@ -48,11 +48,4 @@ func (h *trivialHandler) SyncNewOrUpdatedVolumeAttachment(va *storagev1.VolumeAt
 		glog.V(2).Infof("Marked VolumeAttachment %s as attached", va.Name)
 	}
 	queue.Forget(va.Name)
-}
-
-func (h *trivialHandler) markAsAttached(va *storagev1.VolumeAttachment) error {
-	clone := va.DeepCopy()
-	clone.Status.Attached = true
-	_, err := h.client.StorageV1().VolumeAttachments().Update(clone)
-	return err
 }
