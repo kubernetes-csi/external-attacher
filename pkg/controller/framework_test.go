@@ -56,10 +56,15 @@ type testCase struct {
 	reactors []reaction
 	// Optional VolumeAttachment that's used to simulate "VA added" event.
 	// This VA is also automatically added to initialObjects.
-	addedVa *storagev1.VolumeAttachment
+	addedVA *storagev1.VolumeAttachment
 	// Optional VolumeAttachment that's used to simulate "VA updated" event.
 	// This VA is also automatically added to initialObjects.
-	updatedVa *storagev1.VolumeAttachment
+	updatedVA *storagev1.VolumeAttachment
+	// Optional VolumeAttachment that's used to simulate "VA deleted" event.
+	deletedVA *storagev1.VolumeAttachment
+	// Optional {V} that's used to simulate "PV updated" event.
+	// This PV is also automatically added to initialObjects.
+	updatedPV *v1.PersistentVolume
 	// List of expected kubeclient actions that should happen during the test.
 	expectedActions []core.Action
 	// List of expected CSI calls
@@ -88,11 +93,14 @@ func runTests(t *testing.T, handlerFactory handlerFactory, tests []testCase) {
 	for _, test := range tests {
 		glog.Infof("Test %q: started", test.name)
 		objs := test.initialObjects
-		if test.addedVa != nil {
-			objs = append(objs, test.addedVa)
+		if test.addedVA != nil {
+			objs = append(objs, test.addedVA)
 		}
-		if test.updatedVa != nil {
-			objs = append(objs, test.updatedVa)
+		if test.updatedVA != nil {
+			objs = append(objs, test.updatedVA)
+		}
+		if test.updatedPV != nil {
+			objs = append(objs, test.updatedPV)
 		}
 
 		// Create client and informers
@@ -123,6 +131,9 @@ func runTests(t *testing.T, handlerFactory handlerFactory, tests []testCase) {
 				case "volumeattachments":
 					glog.V(5).Infof("Test reactor: updated VA")
 					vaInformer.Informer().GetStore().Update(action.(core.UpdateAction).GetObject())
+				case "persistentvolumes":
+					glog.V(5).Infof("Test reactor: updated PV")
+					pvInformer.Informer().GetStore().Update(action.(core.UpdateAction).GetObject())
 				default:
 					t.Errorf("Unknown update resource: %s", action.GetResource())
 				}
@@ -137,14 +148,20 @@ func runTests(t *testing.T, handlerFactory handlerFactory, tests []testCase) {
 		// Construct controller
 		csiConnection := &fakeCSIConnection{t: t, calls: test.expectedCSICalls}
 		handler := handlerFactory(client, informers, csiConnection)
-		ctrl := NewCSIAttachController(client, testAttacherName, handler, vaInformer)
+		ctrl := NewCSIAttachController(client, testAttacherName, handler, vaInformer, pvInformer)
 
 		// Start the test by enqueueing the right event
-		if test.addedVa != nil {
-			ctrl.vaAdded(test.addedVa)
+		if test.addedVA != nil {
+			ctrl.vaAdded(test.addedVA)
 		}
-		if test.updatedVa != nil {
-			ctrl.vaUpdated(test.updatedVa, test.updatedVa)
+		if test.updatedVA != nil {
+			ctrl.vaUpdated(test.updatedVA, test.updatedVA)
+		}
+		if test.deletedVA != nil {
+			ctrl.vaDeleted(test.deletedVA)
+		}
+		if test.updatedPV != nil {
+			ctrl.pvUpdated(test.updatedPV, test.updatedPV)
 		}
 
 		// Process the queue until we get expected results
@@ -155,11 +172,15 @@ func runTests(t *testing.T, handlerFactory handlerFactory, tests []testCase) {
 				t.Errorf("Test %q: timed out", test.name)
 				break
 			}
-			if ctrl.queue.Len() > 0 {
-				glog.V(5).Infof("Test %q: %d events in the queue, processing one", test.name, ctrl.queue.Len())
-				ctrl.processNextWorkItem()
+			if ctrl.vaQueue.Len() > 0 {
+				glog.V(5).Infof("Test %q: %d events in VA queue, processing one", test.name, ctrl.vaQueue.Len())
+				ctrl.syncVA()
 			}
-			if ctrl.queue.Len() > 0 {
+			if ctrl.pvQueue.Len() > 0 {
+				glog.V(5).Infof("Test %q: %d events in PV queue, processing one", test.name, ctrl.vaQueue.Len())
+				ctrl.syncPV()
+			}
+			if ctrl.vaQueue.Len() > 0 || ctrl.pvQueue.Len() > 0 {
 				// There is still some work in the queue, process it now
 				continue
 			}

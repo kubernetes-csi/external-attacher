@@ -18,6 +18,7 @@ package controller
 
 import (
 	"github.com/golang/glog"
+	"k8s.io/api/core/v1"
 	storagev1 "k8s.io/api/storage/v1"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/util/workqueue"
@@ -28,24 +29,35 @@ import (
 // It uses no finalizer, deletion of VolumeAttachment is instant (as there is
 // nothing to detach).
 type trivialHandler struct {
-	client kubernetes.Interface
+	client           kubernetes.Interface
+	vaQueue, pvQueue workqueue.RateLimitingInterface
 }
 
 var _ Handler = &trivialHandler{}
 
 func NewTrivialHandler(client kubernetes.Interface) Handler {
-	return &trivialHandler{client}
+	return &trivialHandler{client: client}
 }
-func (h *trivialHandler) SyncNewOrUpdatedVolumeAttachment(va *storagev1.VolumeAttachment, queue workqueue.RateLimitingInterface) {
+
+func (h *trivialHandler) Init(vaQueue workqueue.RateLimitingInterface, pvQueue workqueue.RateLimitingInterface) {
+	h.vaQueue = vaQueue
+	h.pvQueue = pvQueue
+}
+
+func (h *trivialHandler) SyncNewOrUpdatedVolumeAttachment(va *storagev1.VolumeAttachment) {
 	glog.V(4).Infof("Trivial sync[%s] started", va.Name)
 	if !va.Status.Attached {
 		// mark as attached
 		if _, err := markAsAttached(h.client, va, nil); err != nil {
 			glog.Warningf("Error saving VolumeAttachment %s as attached: %s", va.Name, err)
-			queue.AddRateLimited(va.Name)
+			h.vaQueue.AddRateLimited(va.Name)
 			return
 		}
 		glog.V(2).Infof("Marked VolumeAttachment %s as attached", va.Name)
 	}
-	queue.Forget(va.Name)
+	h.vaQueue.Forget(va.Name)
+}
+
+func (h *trivialHandler) SyncNewOrUpdatedPersistentVolume(pv *v1.PersistentVolume) {
+	return
 }

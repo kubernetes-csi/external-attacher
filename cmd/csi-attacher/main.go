@@ -114,6 +114,7 @@ func main() {
 		attacher,
 		handler,
 		factory.Storage().V1().VolumeAttachments(),
+		factory.Core().V1().PersistentVolumes(),
 	)
 
 	// run...
