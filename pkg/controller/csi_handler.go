@@ -22,10 +22,13 @@ import (
 
 	"github.com/golang/glog"
 
+	"k8s.io/api/core/v1"
 	storagev1 "k8s.io/api/storage/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/client-go/kubernetes"
 	corelister "k8s.io/client-go/listers/core/v1"
+	storagelister "k8s.io/client-go/listers/storage/v1"
 	"k8s.io/client-go/util/workqueue"
 
 	"github.com/kubernetes-csi/external-attacher-csi/pkg/connection"
@@ -35,11 +38,13 @@ import (
 // It adds finalizer to VolumeAttachment instance to make sure they're detached
 // before deletion.
 type csiHandler struct {
-	client        kubernetes.Interface
-	attacherName  string
-	csiConnection connection.CSIConnection
-	pvLister      corelister.PersistentVolumeLister
-	nodeLister    corelister.NodeLister
+	client           kubernetes.Interface
+	attacherName     string
+	csiConnection    connection.CSIConnection
+	pvLister         corelister.PersistentVolumeLister
+	nodeLister       corelister.NodeLister
+	vaLister         storagelister.VolumeAttachmentLister
+	vaQueue, pvQueue workqueue.RateLimitingInterface
 }
 
 var _ Handler = &csiHandler{}
@@ -49,19 +54,26 @@ func NewCSIHandler(
 	attacherName string,
 	csiConnection connection.CSIConnection,
 	pvLister corelister.PersistentVolumeLister,
-	nodeLister corelister.NodeLister) Handler {
+	nodeLister corelister.NodeLister,
+	vaLister storagelister.VolumeAttachmentLister) Handler {
 
 	return &csiHandler{
-		client,
-		attacherName,
-		csiConnection,
-		pvLister,
-		nodeLister,
+		client:        client,
+		attacherName:  attacherName,
+		csiConnection: csiConnection,
+		pvLister:      pvLister,
+		nodeLister:    nodeLister,
+		vaLister:      vaLister,
 	}
 }
 
-func (h *csiHandler) SyncNewOrUpdatedVolumeAttachment(va *storagev1.VolumeAttachment, queue workqueue.RateLimitingInterface) {
-	glog.V(4).Infof("CSIHandler: processing %q", va.Name)
+func (h *csiHandler) Init(vaQueue workqueue.RateLimitingInterface, pvQueue workqueue.RateLimitingInterface) {
+	h.vaQueue = vaQueue
+	h.pvQueue = pvQueue
+}
+
+func (h *csiHandler) SyncNewOrUpdatedVolumeAttachment(va *storagev1.VolumeAttachment) {
+	glog.V(4).Infof("CSIHandler: processing VA %q", va.Name)
 
 	var err error
 	if va.DeletionTimestamp == nil {
@@ -72,30 +84,24 @@ func (h *csiHandler) SyncNewOrUpdatedVolumeAttachment(va *storagev1.VolumeAttach
 	if err != nil {
 		// Re-queue with exponential backoff
 		glog.V(2).Infof("Error processing %q: %s", va.Name, err)
-		queue.AddRateLimited(va.Name)
+		h.vaQueue.AddRateLimited(va.Name)
 		return
 	}
 	// The operation has finished successfully, reset exponential backoff
-	queue.Forget(va.Name)
+	h.vaQueue.Forget(va.Name)
 	glog.V(4).Infof("CSIHandler: finished processing %q", va.Name)
 }
 
 func (h *csiHandler) syncAttach(va *storagev1.VolumeAttachment) error {
-	glog.V(4).Infof("Starting attach operation for %q", va.Name)
-	va, err := h.addVAFinalizer(va)
-	if err != nil {
-		return fmt.Errorf("could not add finalizer: %s", err)
-	}
-
 	if va.Status.Attached {
 		// Volume is attached, there is nothing to be done.
 		glog.V(4).Infof("%q is already attached", va.Name)
 		return nil
 	}
 
-	// Attach
+	// Attach and report any error
 	glog.V(2).Infof("Attaching %q", va.Name)
-	metadata, err := h.csiAttach(va)
+	va, metadata, err := h.csiAttach(va)
 	if err != nil {
 		var saveErr error
 		va, saveErr = h.saveAttachError(va, err)
@@ -124,8 +130,10 @@ func (h *csiHandler) syncDetach(va *storagev1.VolumeAttachment) error {
 		return nil
 	}
 
+	// Detach and report any error
 	glog.V(2).Infof("Detaching %q", va.Name)
-	if err := h.csiDetach(va); err != nil {
+	va, err := h.csiDetach(va)
+	if err != nil {
 		var saveErr error
 		va, saveErr = h.saveDetachError(va, err)
 		if saveErr != nil {
@@ -136,27 +144,22 @@ func (h *csiHandler) syncDetach(va *storagev1.VolumeAttachment) error {
 		err := fmt.Errorf("failed to detach: %s", err)
 		return err
 	}
-	glog.V(2).Infof("Detached %q", va.Name)
-
-	if _, err := markAsDetached(h.client, va); err != nil {
-		return fmt.Errorf("could not mark as detached: %s", err)
-	}
 	glog.V(4).Infof("Fully detached %q", va.Name)
 	return nil
 }
 
 func (h *csiHandler) addVAFinalizer(va *storagev1.VolumeAttachment) (*storagev1.VolumeAttachment, error) {
-	finalizerName := getFinalizerName(h.attacherName)
+	finalizerName := connection.GetFinalizerName(h.attacherName)
 	for _, f := range va.Finalizers {
 		if f == finalizerName {
 			// Finalizer is already present
-			glog.V(4).Infof("Finalizer is already set on %q", va.Name)
+			glog.V(4).Infof("VA finalizer is already set on %q", va.Name)
 			return va, nil
 		}
 	}
 
 	// Finalizer is not present, add it
-	glog.V(4).Infof("Adding finalizer to %q", va.Name)
+	glog.V(4).Infof("Adding finalizer to VA %q", va.Name)
 	clone := va.DeepCopy()
 	clone.Finalizers = append(clone.Finalizers, finalizerName)
 	// TODO: use patch to save us from VersionError
@@ -164,12 +167,35 @@ func (h *csiHandler) addVAFinalizer(va *storagev1.VolumeAttachment) (*storagev1.
 	if err != nil {
 		return va, err
 	}
-	glog.V(4).Infof("Finalizer added to %q", va.Name)
+	glog.V(4).Infof("VA finalizer added to %q", va.Name)
 	return newVA, nil
 }
 
+func (h *csiHandler) addPVFinalizer(pv *v1.PersistentVolume) (*v1.PersistentVolume, error) {
+	finalizerName := connection.GetFinalizerName(h.attacherName)
+	for _, f := range pv.Finalizers {
+		if f == finalizerName {
+			// Finalizer is already present
+			glog.V(4).Infof("PV finalizer is already set on %q", pv.Name)
+			return pv, nil
+		}
+	}
+
+	// Finalizer is not present, add it
+	glog.V(4).Infof("Adding finalizer to PV %q", pv.Name)
+	clone := pv.DeepCopy()
+	clone.Finalizers = append(clone.Finalizers, finalizerName)
+	// TODO: use patch to save us from VersionError
+	newPV, err := h.client.CoreV1().PersistentVolumes().Update(clone)
+	if err != nil {
+		return pv, err
+	}
+	glog.V(4).Infof("PV finalizer added to %q", pv.Name)
+	return newPV, nil
+}
+
 func (h *csiHandler) hasVAFinalizer(va *storagev1.VolumeAttachment) bool {
-	finalizerName := getFinalizerName(h.attacherName)
+	finalizerName := connection.GetFinalizerName(h.attacherName)
 	for _, f := range va.Finalizers {
 		if f == finalizerName {
 			return true
@@ -178,49 +204,94 @@ func (h *csiHandler) hasVAFinalizer(va *storagev1.VolumeAttachment) bool {
 	return false
 }
 
-func (h *csiHandler) csiAttach(va *storagev1.VolumeAttachment) (map[string]string, error) {
+func (h *csiHandler) csiAttach(va *storagev1.VolumeAttachment) (*storagev1.VolumeAttachment, map[string]string, error) {
+	glog.V(4).Infof("Starting attach operation for %q", va.Name)
+	// Check as much as possible before adding VA finalizer - it would block
+	// deletion of VA on error.
+
 	if va.Spec.PersistentVolumeName == nil {
-		return nil, fmt.Errorf("VolumeAttachment.spec.persistentVolumeName is empty")
+		return va, nil, fmt.Errorf("VolumeAttachment.spec.persistentVolumeName is empty")
 	}
 
 	pv, err := h.pvLister.Get(*va.Spec.PersistentVolumeName)
 	if err != nil {
-		return nil, err
+		return va, nil, err
 	}
+	// Refuse to attach volumes that are marked for deletion.
+	if pv.DeletionTimestamp != nil {
+		return va, nil, fmt.Errorf("PersistentVolume %q is marked for deletion", pv.Name)
+	}
+	pv, err = h.addPVFinalizer(pv)
+	if err != nil {
+		return va, nil, fmt.Errorf("could not add PersistentVolume finalizer: %s", err)
+	}
+
+	volumeHandle, readOnly, err := connection.GetVolumeHandle(pv)
+	if err != nil {
+		return va, nil, err
+	}
+	volumeCapabilities, err := connection.GetVolumeCapabilities(pv)
+	if err != nil {
+		return va, nil, err
+	}
+
 	node, err := h.nodeLister.Get(va.Spec.NodeName)
 	if err != nil {
-		return nil, err
+		return va, nil, err
+	}
+	nodeID, err := connection.GetNodeID(h.attacherName, node)
+	if err != nil {
+		return va, nil, err
+	}
+
+	va, err = h.addVAFinalizer(va)
+	if err != nil {
+		return va, nil, fmt.Errorf("could not add VolumeAttachment finalizer: %s", err)
 	}
 
 	ctx := context.TODO()
-	publishInfo, err := h.csiConnection.Attach(ctx, pv, node)
+	publishInfo, err := h.csiConnection.Attach(ctx, volumeHandle, readOnly, nodeID, volumeCapabilities)
 	if err != nil {
-		return nil, err
+		return va, nil, err
 	}
 
-	return publishInfo, nil
+	return va, publishInfo, nil
 }
 
-func (h *csiHandler) csiDetach(va *storagev1.VolumeAttachment) error {
+func (h *csiHandler) csiDetach(va *storagev1.VolumeAttachment) (*storagev1.VolumeAttachment, error) {
 	if va.Spec.PersistentVolumeName == nil {
-		return fmt.Errorf("VolumeAttachment.spec.persistentVolumeName is empty")
+		return va, fmt.Errorf("VolumeAttachment.spec.persistentVolumeName is empty")
 	}
 
 	pv, err := h.pvLister.Get(*va.Spec.PersistentVolumeName)
 	if err != nil {
-		return err
+		return va, err
 	}
+	volumeHandle, _, err := connection.GetVolumeHandle(pv)
+	if err != nil {
+		return va, err
+	}
+
 	node, err := h.nodeLister.Get(va.Spec.NodeName)
 	if err != nil {
-		return err
+		return va, err
+	}
+	nodeID, err := connection.GetNodeID(h.attacherName, node)
+	if err != nil {
+		return va, err
 	}
 
 	ctx := context.TODO()
-	if err := h.csiConnection.Detach(ctx, pv, node); err != nil {
-		return err
+	if err := h.csiConnection.Detach(ctx, volumeHandle, nodeID); err != nil {
+		return va, err
+	}
+	glog.V(2).Infof("Detached %q", va.Name)
+
+	if va, err := markAsDetached(h.client, va); err != nil {
+		return va, fmt.Errorf("could not mark as detached: %s", err)
 	}
 
-	return nil
+	return va, nil
 }
 
 func (h *csiHandler) saveAttachError(va *storagev1.VolumeAttachment, err error) (*storagev1.VolumeAttachment, error) {
@@ -251,4 +322,74 @@ func (h *csiHandler) saveDetachError(va *storagev1.VolumeAttachment, err error) 
 	}
 	glog.V(4).Infof("Saved detach error to %q", va.Name)
 	return newVa, nil
+}
+
+func (h *csiHandler) SyncNewOrUpdatedPersistentVolume(pv *v1.PersistentVolume) {
+	glog.V(4).Infof("CSIHandler: processing PV %q", pv.Name)
+	// Sync and remove finalizer on given PV
+	if pv.DeletionTimestamp == nil {
+		// Don't process anything that has no deletion timestamp.
+		glog.V(4).Infof("CSIHandler: processing PV %q: no deletion timestamp, ignoring", pv.Name)
+		h.pvQueue.Forget(pv.Name)
+		return
+	}
+
+	// Check if the PV has finalizer
+	finalizer := connection.GetFinalizerName(h.attacherName)
+	found := false
+	for _, f := range pv.Finalizers {
+		if f == finalizer {
+			found = true
+			break
+		}
+	}
+	if !found {
+		// No finalizer -> no action required
+		glog.V(4).Infof("CSIHandler: processing PV %q: no finalizer, ignoring", pv.Name)
+		h.pvQueue.Forget(pv.Name)
+		return
+	}
+
+	// Check that there is no VA that requires the PV
+	vas, err := h.vaLister.List(labels.Everything())
+	if err != nil {
+		// Failed listing VAs? Try again with exp. backoff
+		glog.Errorf("Failed to list VolumeAttachments for PV %q: %s", pv.Name, err.Error())
+		h.pvQueue.AddRateLimited(pv.Name)
+		return
+	}
+	for _, va := range vas {
+		if va.Spec.AttachedVolumeSource.PersistentVolumeName != nil && *va.Spec.AttachedVolumeSource.PersistentVolumeName == pv.Name {
+			// This PV is needed by this VA, don't remove finalizer
+			glog.V(4).Infof("CSIHandler: processing PV %q: VA %q found", pv.Name, va.Name)
+			h.pvQueue.Forget(pv.Name)
+			return
+		}
+	}
+	// No VA found -> remove finalizer
+	glog.V(4).Infof("CSIHandler: processing PV %q: no VA found, removing finalizer", pv.Name)
+	clone := pv.DeepCopy()
+	newFinalizers := []string{}
+	for _, f := range pv.Finalizers {
+		if f == finalizer {
+			continue
+		}
+		newFinalizers = append(newFinalizers, f)
+	}
+	if len(newFinalizers) == 0 {
+		// Canonize empty finalizers for unit test (so we don't need to
+		// distinguish nil and [] there)
+		newFinalizers = nil
+	}
+	clone.Finalizers = newFinalizers
+	_, err = h.client.CoreV1().PersistentVolumes().Update(clone)
+	if err != nil {
+		glog.Errorf("Failed to remove finalizer from PV %q: %s", pv.Name, err.Error())
+		h.pvQueue.AddRateLimited(pv.Name)
+		return
+	}
+	glog.V(2).Infof("Removed finalizer from PV %q", pv.Name)
+	h.pvQueue.Forget(pv.Name)
+
+	return
 }

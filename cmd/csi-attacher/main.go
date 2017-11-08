@@ -94,6 +94,7 @@ func main() {
 			glog.Error(err.Error())
 			os.Exit(1)
 		}
+		glog.V(2).Infof("CSI driver name: %q", attacher)
 
 		// Find out if the driver supports attach/detach.
 		supportsAttach, err := csiConn.SupportsControllerPublish(ctx)
@@ -103,9 +104,13 @@ func main() {
 		}
 		if !supportsAttach {
 			handler = controller.NewTrivialHandler(clientset)
+			glog.V(2).Infof("CSI driver does not support ControllerPublishUnpublish, using trivial handler")
 		} else {
-			glog.Error("Real attach/detach handler is not implemented yet")
-			os.Exit(1)
+			pvLister := factory.Core().V1().PersistentVolumes().Lister()
+			nodeLister := factory.Core().V1().Nodes().Lister()
+			vaLister := factory.Storage().V1().VolumeAttachments().Lister()
+			handler = controller.NewCSIHandler(clientset, attacher, csiConn, pvLister, nodeLister, vaLister)
+			glog.V(2).Infof("CSI driver supports ControllerPublishUnpublish, using real CSI handler")
 		}
 	}
 
@@ -114,6 +119,7 @@ func main() {
 		attacher,
 		handler,
 		factory.Storage().V1().VolumeAttachments(),
+		factory.Core().V1().PersistentVolumes(),
 	)
 
 	// run...

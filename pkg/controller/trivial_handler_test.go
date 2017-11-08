@@ -46,26 +46,26 @@ func TestTrivialHandler(t *testing.T) {
 	tests := []testCase{
 		{
 			name:    "add -> successful write",
-			addedVa: va(false, ""),
+			addedVA: va(false, ""),
 			expectedActions: []core.Action{
 				core.NewUpdateAction(vaGroupResourceVersion, metav1.NamespaceNone, va(true, "")),
 			},
 		},
 		{
 			name:      "update -> successful write",
-			updatedVa: va(false, ""),
+			updatedVA: va(false, ""),
 			expectedActions: []core.Action{
 				core.NewUpdateAction(vaGroupResourceVersion, metav1.NamespaceNone, va(true, "")),
 			},
 		},
 		{
 			name:            "unknown driver -> controller ignores",
-			addedVa:         vaWithInvalidDriver(va(false, "")),
+			addedVA:         vaWithInvalidDriver(va(false, "")),
 			expectedActions: []core.Action{},
 		},
 		{
 			name:    "failed write -> controller retries",
-			addedVa: va(false, ""),
+			addedVA: va(false, ""),
 			reactors: []reaction{
 				{
 					verb:     "update",
