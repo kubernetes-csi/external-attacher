@@ -10,9 +10,6 @@ import (
 
 const (
 	nodeIDAnnotation = "nodeid.csi.volume.kubernetes.io/"
-
-	// Key for node name in NodeID
-	nodeNameKey = "Name"
 )
 
 func SanitizeDriverName(driver string) string {
@@ -30,18 +27,13 @@ func GetFinalizerName(driver string) string {
 	return "external-attacher/" + SanitizeDriverName(driver)
 }
 
-func GetNodeID(driver string, node *v1.Node) (*csi.NodeID, error) {
+func GetNodeID(driver string, node *v1.Node) (string, error) {
 	annotationName := nodeIDAnnotation + SanitizeDriverName(driver)
 	nodeID, ok := node.Annotations[annotationName]
 	if !ok {
-		return nil, fmt.Errorf("node %q has no NodeID for driver %q", node.Name, driver)
+		return "", fmt.Errorf("node %q has no NodeID for driver %q", node.Name, driver)
 	}
-	return &csi.NodeID{
-		Values: map[string]string{
-			// TODO: find out what key is expected.
-			nodeNameKey: nodeID,
-		},
-	}, nil
+	return nodeID, nil
 }
 
 func GetVolumeCapabilities(pv *v1.PersistentVolume) (*csi.VolumeCapability, error) {
@@ -84,11 +76,9 @@ func GetVolumeCapabilities(pv *v1.PersistentVolume) (*csi.VolumeCapability, erro
 	return cap, nil
 }
 
-func GetVolumeHandle(pv *v1.PersistentVolume) (*csi.VolumeHandle, bool, error) {
+func GetVolumeHandle(pv *v1.PersistentVolume) (string, bool, error) {
 	if pv.Spec.PersistentVolumeSource.CSI == nil {
-		return nil, false, fmt.Errorf("persistent volume does not contain CSI volume source")
+		return "", false, fmt.Errorf("persistent volume does not contain CSI volume source")
 	}
-	return &csi.VolumeHandle{
-		Id: pv.Spec.PersistentVolumeSource.CSI.VolumeHandle,
-	}, pv.Spec.PersistentVolumeSource.CSI.ReadOnly, nil
+	return pv.Spec.PersistentVolumeSource.CSI.VolumeHandle, pv.Spec.PersistentVolumeSource.CSI.ReadOnly, nil
 }
