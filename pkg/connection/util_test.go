@@ -155,3 +155,113 @@ func TestGetVolumeCapabilities(t *testing.T) {
 		}
 	}
 }
+
+func TestSanitizeDriverName(t *testing.T) {
+	tests := []struct {
+		input  string
+		output string
+	}{
+		{
+			"no-Change",
+			"no-Change",
+		},
+		{
+			"not!allowed/characters",
+			"not-allowed-characters",
+		},
+		{
+			"trailing\\",
+			"trailing-X",
+		},
+	}
+
+	for _, test := range tests {
+		output := SanitizeDriverName(test.input)
+		if output != test.output {
+			t.Errorf("expected %q, got %q", test.output, output)
+		}
+	}
+}
+
+func TestGetFinalizerName(t *testing.T) {
+	tests := []struct {
+		input  string
+		output string
+	}{
+		{
+			"no-Change",
+			"external-attacher/no-Change",
+		},
+		{
+			"s!a@n#i$t(i%z^e&d*",
+			"external-attacher/s-a-n-i-t-i-z-e-d-X",
+		},
+	}
+
+	for _, test := range tests {
+		output := GetFinalizerName(test.input)
+		if output != test.output {
+			t.Errorf("expected %q, got %q", test.output, output)
+		}
+	}
+}
+
+func TestGetVolumeHandle(t *testing.T) {
+	pv := &v1.PersistentVolume{
+		Spec: v1.PersistentVolumeSpec{
+			PersistentVolumeSource: v1.PersistentVolumeSource{
+				CSI: &v1.CSIPersistentVolumeSource{
+					Driver:       "myDriver",
+					VolumeHandle: "name",
+					ReadOnly:     false,
+				},
+			},
+		},
+	}
+
+	validPV := pv.DeepCopy()
+
+	readOnlyPV := pv.DeepCopy()
+	readOnlyPV.Spec.PersistentVolumeSource.CSI.ReadOnly = true
+
+	invalidPV := pv.DeepCopy()
+	invalidPV.Spec.PersistentVolumeSource.CSI = nil
+
+	tests := []struct {
+		pv          *v1.PersistentVolume
+		output      string
+		readOnly    bool
+		expectError bool
+	}{
+		{
+			pv:     validPV,
+			output: "name",
+		},
+		{
+			pv:       readOnlyPV,
+			output:   "name",
+			readOnly: true,
+		},
+		{
+			pv:          invalidPV,
+			output:      "",
+			expectError: true,
+		},
+	}
+
+	for i, test := range tests {
+		output, readOnly, err := GetVolumeHandle(test.pv)
+		if output != test.output {
+			t.Errorf("test %d: expected volume ID %q, got %q", i, test.output, output)
+		}
+		if readOnly != test.readOnly {
+			t.Errorf("test %d: expected readonly %v, got %v", i, test.readOnly, readOnly)
+		}
+		if err == nil && test.expectError {
+			t.Errorf("test %d: expected error, got none", i)
+		}
+		if err != nil && !test.expectError {
+			t.Errorf("test %d: got error %s", i, err)
+		}
+	}
+}
