@@ -19,6 +19,7 @@ package connection
 import (
 	"context"
 	"fmt"
+	"net"
 	"strings"
 	"time"
 
@@ -26,14 +27,6 @@ import (
 	"github.com/golang/glog"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/connectivity"
-	"k8s.io/api/core/v1"
-)
-
-const (
-	nodeIDAnnotation = "nodeid.csi.volume.kubernetes.io/"
-
-	// Key for node name in NodeID
-	nodeNameKey = "Name"
 )
 
 // CSIConnection is gRPC connection to a remote CSI driver and abstracts all
@@ -48,10 +41,10 @@ type CSIConnection interface {
 	SupportsControllerPublish(ctx context.Context) (bool, error)
 
 	// Attach given volume to given node. Returns PublishVolumeInfo
-	Attach(ctx context.Context, pv *v1.PersistentVolume, node *v1.Node) (map[string]string, error)
+	Attach(ctx context.Context, handle *csi.VolumeHandle, readOnly bool, nodeID *csi.NodeID, caps *csi.VolumeCapability) (map[string]string, error)
 
 	// Detach given volume from given node.
-	Detach(ctx context.Context, pv *v1.PersistentVolume, node *v1.Node) error
+	Detach(ctx context.Context, handle *csi.VolumeHandle, nodeID *csi.NodeID) error
 
 	// Close the connection
 	Close() error
@@ -84,7 +77,17 @@ func New(address string, timeout time.Duration) (CSIConnection, error) {
 
 func connect(address string, timeout time.Duration) (*grpc.ClientConn, error) {
 	glog.V(2).Infof("Connecting to %s", address)
-	conn, err := grpc.Dial(address, grpc.WithInsecure(), grpc.WithBackoffMaxDelay(time.Second))
+	dialOptions := []grpc.DialOption{
+		grpc.WithInsecure(),
+		grpc.WithBackoffMaxDelay(time.Second),
+	}
+	if strings.HasPrefix(address, "/") {
+		dialOptions = append(dialOptions, grpc.WithDialer(func(addr string, timeout time.Duration) (net.Conn, error) {
+			return net.DialTimeout("unix", addr, timeout)
+		}))
+	}
+	conn, err := grpc.Dial(address, dialOptions...)
+
 	if err != nil {
 		return nil, err
 	}
@@ -168,32 +171,15 @@ func (c *csiConnection) SupportsControllerPublish(ctx context.Context) (bool, er
 	return false, nil
 }
 
-func (c *csiConnection) Attach(ctx context.Context, pv *v1.PersistentVolume, node *v1.Node) (map[string]string, error) {
+func (c *csiConnection) Attach(ctx context.Context, handle *csi.VolumeHandle, readOnly bool, nodeID *csi.NodeID, caps *csi.VolumeCapability) (map[string]string, error) {
 	client := csi.NewControllerClient(c.conn)
 
-	if pv.Spec.CSI == nil {
-		return nil, fmt.Errorf("only CSI volumes are supported")
-	}
-
-	nodeID, err := getNodeID(pv.Spec.CSI.Driver, node)
-	if err != nil {
-		return nil, err
-	}
-
-	caps, err := getVolumeCapabilities(pv)
-	if err != nil {
-		return nil, err
-	}
-
 	req := csi.ControllerPublishVolumeRequest{
-		Version: &csiVersion,
-		VolumeHandle: &csi.VolumeHandle{
-			Id: pv.Spec.CSI.VolumeHandle,
-			// TODO: add metadata???
-		},
+		Version:          &csiVersion,
+		VolumeHandle:     handle,
 		NodeId:           nodeID,
 		VolumeCapability: caps,
-		Readonly:         pv.Spec.CSI.ReadOnly,
+		Readonly:         readOnly,
 		UserCredentials:  nil,
 	}
 
@@ -215,24 +201,12 @@ func (c *csiConnection) Attach(ctx context.Context, pv *v1.PersistentVolume, nod
 	return result.PublishVolumeInfo, nil
 }
 
-func (c *csiConnection) Detach(ctx context.Context, pv *v1.PersistentVolume, node *v1.Node) error {
+func (c *csiConnection) Detach(ctx context.Context, handle *csi.VolumeHandle, nodeID *csi.NodeID) error {
 	client := csi.NewControllerClient(c.conn)
 
-	if pv.Spec.CSI == nil {
-		return fmt.Errorf("only CSI volumes are supported")
-	}
-
-	nodeID, err := getNodeID(pv.Spec.CSI.Driver, node)
-	if err != nil {
-		return err
-	}
-
 	req := csi.ControllerUnpublishVolumeRequest{
-		Version: &csiVersion,
-		VolumeHandle: &csi.VolumeHandle{
-			Id: pv.Spec.CSI.VolumeHandle,
-			// TODO: add metadata???
-		},
+		Version:         &csiVersion,
+		VolumeHandle:    handle,
 		NodeId:          nodeID,
 		UserCredentials: nil,
 	}
@@ -253,65 +227,6 @@ func (c *csiConnection) Detach(ctx context.Context, pv *v1.PersistentVolume, nod
 	}
 
 	return nil
-}
-
-func sanitizeDriverName(driver string) string {
-	// replace '/' with '_'
-	return strings.Replace(driver, "/", "_", -1)
-}
-
-func getNodeID(driver string, node *v1.Node) (*csi.NodeID, error) {
-	annotationName := nodeIDAnnotation + sanitizeDriverName(driver)
-	nodeID, ok := node.Annotations[annotationName]
-	if !ok {
-		return nil, fmt.Errorf("node %q has no NodeID for driver %q", node.Name, driver)
-	}
-	return &csi.NodeID{
-		Values: map[string]string{
-			// TODO: find out what key is expected.
-			nodeNameKey: nodeID,
-		},
-	}, nil
-}
-
-func getVolumeCapabilities(pv *v1.PersistentVolume) (*csi.VolumeCapability, error) {
-	m := map[v1.PersistentVolumeAccessMode]bool{}
-	for _, mode := range pv.Spec.AccessModes {
-		m[mode] = true
-	}
-
-	cap := &csi.VolumeCapability{
-		AccessType: &csi.VolumeCapability_Mount{
-			Mount: &csi.VolumeCapability_MountVolume{
-				// TODO: get FsType from somewhere
-				MountFlags: pv.Spec.MountOptions,
-			},
-		},
-		AccessMode: &csi.VolumeCapability_AccessMode{},
-	}
-
-	// Translate array of modes into single VolumeCapability
-	switch {
-	case m[v1.ReadWriteMany]:
-		// ReadWriteMany trumps everything, regardless what other modes are set
-		cap.AccessMode.Mode = csi.VolumeCapability_AccessMode_MULTI_NODE_MULTI_WRITER
-
-	case m[v1.ReadOnlyMany] && m[v1.ReadWriteOnce]:
-		// This is no way how to translate this to CSI...
-		return nil, fmt.Errorf("CSI does not support ReadOnlyMany and ReadWriteOnce on the same PersistentVolume")
-
-	case m[v1.ReadOnlyMany]:
-		// There is only ReadOnlyMany set
-		cap.AccessMode.Mode = csi.VolumeCapability_AccessMode_MULTI_NODE_READER_ONLY
-
-	case m[v1.ReadWriteOnce]:
-		// There is only ReadWriteOnce set
-		cap.AccessMode.Mode = csi.VolumeCapability_AccessMode_SINGLE_NODE_WRITER
-
-	default:
-		return nil, fmt.Errorf("unsupported AccessMode combination: %+v", pv.Spec.AccessModes)
-	}
-	return cap, nil
 }
 
 func (c *csiConnection) Close() error {

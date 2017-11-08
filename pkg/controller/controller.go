@@ -86,7 +86,7 @@ func NewCSIAttachController(client kubernetes.Interface, attacherName string, ha
 	volumeAttachmentInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
 		AddFunc:    ctrl.vaAdded,
 		UpdateFunc: ctrl.vaUpdated,
-		// DeleteFunc: ctrl.vaDeleted, // TODO: do we need this?
+		DeleteFunc: ctrl.vaDeleted,
 	})
 	ctrl.vaLister = volumeAttachmentInformer.Lister()
 	ctrl.vaListerSynced = volumeAttachmentInformer.Informer().HasSynced
@@ -94,7 +94,7 @@ func NewCSIAttachController(client kubernetes.Interface, attacherName string, ha
 	pvInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
 		AddFunc:    ctrl.pvAdded,
 		UpdateFunc: ctrl.pvUpdated,
-		DeleteFunc: ctrl.vaDeleted,
+		//DeleteFunc: ctrl.pvDeleted, TODO: do we need this?
 	})
 	ctrl.pvLister = pvInformer.Lister()
 	ctrl.pvListerSynced = pvInformer.Informer().HasSynced

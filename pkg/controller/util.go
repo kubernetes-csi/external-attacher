@@ -18,6 +18,7 @@ package controller
 
 import (
 	"github.com/golang/glog"
+	"github.com/kubernetes-csi/external-attacher-csi/pkg/connection"
 	storagev1 "k8s.io/api/storage/v1"
 	"k8s.io/client-go/kubernetes"
 )
@@ -37,12 +38,8 @@ func markAsAttached(client kubernetes.Interface, va *storagev1.VolumeAttachment,
 	return newVA, nil
 }
 
-func getFinalizerName(attacher string) string {
-	return "attacher-" + attacher
-}
-
 func markAsDetached(client kubernetes.Interface, va *storagev1.VolumeAttachment) (*storagev1.VolumeAttachment, error) {
-	finalizerName := getFinalizerName(va.Spec.Attacher)
+	finalizerName := connection.GetFinalizerName(va.Spec.Attacher)
 
 	// Prepare new array of finalizers
 	newFinalizers := make([]string, 0, len(va.Finalizers))

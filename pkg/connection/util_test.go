@@ -1,0 +1,157 @@
+package connection
+
+import (
+	"reflect"
+	"testing"
+
+	"github.com/container-storage-interface/spec/lib/go/csi"
+	"k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+)
+
+func TestGetNodeID(t *testing.T) {
+	tests := []struct {
+		name        string
+		annotations map[string]string
+		expectedID  *csi.NodeID
+		expectError bool
+	}{
+		{
+			name:        "single key",
+			annotations: map[string]string{"nodeid.csi.volume.kubernetes.io/foo-bar": "MyNodeID"},
+			expectedID:  &csi.NodeID{Values: map[string]string{"Name": "MyNodeID"}},
+			expectError: false,
+		},
+		{
+			name: "multiple keys",
+			annotations: map[string]string{
+				"nodeid.csi.volume.kubernetes.io/foo-bar":   "MyNodeID",
+				"nodeid.csi.volume.kubernetes.io/foo-bar-":  "MyNodeID1",
+				"nodeid.csi.volume.kubernetes.io/-foo-bar-": "MyNodeID2",
+			},
+			expectedID:  &csi.NodeID{Values: map[string]string{"Name": "MyNodeID"}},
+			expectError: false,
+		},
+		{
+			name:        "no annotations",
+			annotations: nil,
+			expectedID:  nil,
+			expectError: true,
+		},
+		{
+			name: "annotations for another driver",
+			annotations: map[string]string{
+				"nodeid.csi.volume.kubernetes.io/foo-bar-":  "MyNodeID1",
+				"nodeid.csi.volume.kubernetes.io/-foo-bar-": "MyNodeID2",
+			},
+			expectedID:  nil,
+			expectError: true,
+		},
+	}
+
+	for _, test := range tests {
+		node := &v1.Node{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:        "abc",
+				Annotations: test.annotations,
+			},
+		}
+		nodeID, err := GetNodeID(driverName, node)
+
+		if err == nil && test.expectError {
+			t.Errorf("test %s: expected error, got none", test.name)
+		}
+		if err != nil && !test.expectError {
+			t.Errorf("test %s: got error: %s", test.name, err)
+		}
+		if !test.expectError && !reflect.DeepEqual(nodeID, test.expectedID) {
+			t.Errorf("test %s: unexpected NodeID: %+v", test.name, nodeID)
+		}
+	}
+}
+
+func createMountCapability(mode csi.VolumeCapability_AccessMode_Mode, mountOptions []string) *csi.VolumeCapability {
+	return &csi.VolumeCapability{
+		AccessType: &csi.VolumeCapability_Mount{
+			Mount: &csi.VolumeCapability_MountVolume{
+				MountFlags: mountOptions,
+			},
+		},
+		AccessMode: &csi.VolumeCapability_AccessMode{
+			Mode: mode,
+		},
+	}
+}
+func TestGetVolumeCapabilities(t *testing.T) {
+	tests := []struct {
+		name               string
+		modes              []v1.PersistentVolumeAccessMode
+		mountOptions       []string
+		expectedCapability *csi.VolumeCapability
+		expectError        bool
+	}{
+		{
+			name:               "RWX",
+			modes:              []v1.PersistentVolumeAccessMode{v1.ReadWriteMany},
+			expectedCapability: createMountCapability(csi.VolumeCapability_AccessMode_MULTI_NODE_MULTI_WRITER, nil),
+			expectError:        false,
+		},
+		{
+			name:               "RWO",
+			modes:              []v1.PersistentVolumeAccessMode{v1.ReadWriteOnce},
+			expectedCapability: createMountCapability(csi.VolumeCapability_AccessMode_SINGLE_NODE_WRITER, nil),
+			expectError:        false,
+		},
+		{
+			name:               "ROX",
+			modes:              []v1.PersistentVolumeAccessMode{v1.ReadOnlyMany},
+			expectedCapability: createMountCapability(csi.VolumeCapability_AccessMode_MULTI_NODE_READER_ONLY, nil),
+			expectError:        false,
+		},
+		{
+			name:               "RWX + anytyhing",
+			modes:              []v1.PersistentVolumeAccessMode{v1.ReadWriteMany, v1.ReadOnlyMany, v1.ReadWriteOnce},
+			expectedCapability: createMountCapability(csi.VolumeCapability_AccessMode_MULTI_NODE_MULTI_WRITER, nil),
+			expectError:        false,
+		},
+		{
+			name:               "mount options",
+			modes:              []v1.PersistentVolumeAccessMode{v1.ReadWriteMany},
+			expectedCapability: createMountCapability(csi.VolumeCapability_AccessMode_MULTI_NODE_MULTI_WRITER, []string{"first", "second"}),
+			mountOptions:       []string{"first", "second"},
+			expectError:        false,
+		},
+		{
+			name:               "ROX+RWO",
+			modes:              []v1.PersistentVolumeAccessMode{v1.ReadWriteOnce, v1.ReadOnlyMany},
+			expectedCapability: nil,
+			expectError:        true, // not possible in CSI
+		},
+		{
+			name:               "nothing",
+			modes:              []v1.PersistentVolumeAccessMode{},
+			expectedCapability: nil,
+			expectError:        true,
+		},
+	}
+
+	for _, test := range tests {
+		pv := &v1.PersistentVolume{
+			Spec: v1.PersistentVolumeSpec{
+				AccessModes:  test.modes,
+				MountOptions: test.mountOptions,
+			},
+		}
+		cap, err := GetVolumeCapabilities(pv)
+
+		if err == nil && test.expectError {
+			t.Errorf("test %s: expected error, got none", test.name)
+		}
+		if err != nil && !test.expectError {
+			t.Errorf("test %s: got error: %s", test.name, err)
+		}
+		if !test.expectError && !reflect.DeepEqual(cap, test.expectedCapability) {
+			t.Errorf("test %s: unexpected VolumeCapability: %+v", test.name, cap)
+		}
+	}
+}
