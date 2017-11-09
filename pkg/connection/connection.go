@@ -80,6 +80,7 @@ func connect(address string, timeout time.Duration) (*grpc.ClientConn, error) {
 	dialOptions := []grpc.DialOption{
 		grpc.WithInsecure(),
 		grpc.WithBackoffMaxDelay(time.Second),
+		grpc.WithUnaryInterceptor(logGRPC),
 	}
 	if strings.HasPrefix(address, "/") {
 		dialOptions = append(dialOptions, grpc.WithDialer(func(addr string, timeout time.Duration) (net.Conn, error) {
@@ -231,4 +232,13 @@ func (c *csiConnection) Detach(ctx context.Context, volumeID string, nodeID stri
 
 func (c *csiConnection) Close() error {
 	return c.conn.Close()
+}
+
+func logGRPC(ctx context.Context, method string, req, reply interface{}, cc *grpc.ClientConn, invoker grpc.UnaryInvoker, opts ...grpc.CallOption) error {
+	glog.V(5).Infof("GRPC call: %s", method)
+	glog.V(5).Infof("GRPC request: %+v", req)
+	err := invoker(ctx, method, req, reply, cc, opts...)
+	glog.V(5).Infof("GRPC response: %+v", reply)
+	glog.V(5).Infof("GRPC error: %v", err)
+	return err
 }
