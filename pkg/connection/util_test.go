@@ -13,13 +13,13 @@ func TestGetNodeID(t *testing.T) {
 	tests := []struct {
 		name        string
 		annotations map[string]string
-		expectedID  *csi.NodeID
+		expectedID  string
 		expectError bool
 	}{
 		{
 			name:        "single key",
 			annotations: map[string]string{"nodeid.csi.volume.kubernetes.io/foo-bar": "MyNodeID"},
-			expectedID:  &csi.NodeID{Values: map[string]string{"Name": "MyNodeID"}},
+			expectedID:  "MyNodeID",
 			expectError: false,
 		},
 		{
@@ -29,13 +29,13 @@ func TestGetNodeID(t *testing.T) {
 				"nodeid.csi.volume.kubernetes.io/foo-bar-":  "MyNodeID1",
 				"nodeid.csi.volume.kubernetes.io/-foo-bar-": "MyNodeID2",
 			},
-			expectedID:  &csi.NodeID{Values: map[string]string{"Name": "MyNodeID"}},
+			expectedID:  "MyNodeID",
 			expectError: false,
 		},
 		{
 			name:        "no annotations",
 			annotations: nil,
-			expectedID:  nil,
+			expectedID:  "",
 			expectError: true,
 		},
 		{
@@ -44,7 +44,7 @@ func TestGetNodeID(t *testing.T) {
 				"nodeid.csi.volume.kubernetes.io/foo-bar-":  "MyNodeID1",
 				"nodeid.csi.volume.kubernetes.io/-foo-bar-": "MyNodeID2",
 			},
-			expectedID:  nil,
+			expectedID:  "",
 			expectError: true,
 		},
 	}
@@ -64,8 +64,8 @@ func TestGetNodeID(t *testing.T) {
 		if err != nil && !test.expectError {
 			t.Errorf("test %s: got error: %s", test.name, err)
 		}
-		if !test.expectError && !reflect.DeepEqual(nodeID, test.expectedID) {
-			t.Errorf("test %s: unexpected NodeID: %+v", test.name, nodeID)
+		if !test.expectError && nodeID != test.expectedID {
+			t.Errorf("test %s: unexpected NodeID: %s", test.name, nodeID)
 		}
 	}
 }

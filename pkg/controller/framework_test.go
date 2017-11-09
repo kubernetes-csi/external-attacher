@@ -324,11 +324,9 @@ func (f *fakeCSIConnection) SupportsControllerPublish(ctx context.Context) (bool
 	return false, fmt.Errorf("Not implemented")
 }
 
-func (f *fakeCSIConnection) Attach(ctx context.Context, handle *csi.VolumeHandle, readOnly bool, nodeID *csi.NodeID, caps *csi.VolumeCapability) (map[string]string, error) {
-	volumeID := handle.Id
-	nodeName := nodeID.Values["Name"]
+func (f *fakeCSIConnection) Attach(ctx context.Context, volumeID string, readOnly bool, nodeID string, caps *csi.VolumeCapability) (map[string]string, error) {
 	if f.index >= len(f.calls) {
-		f.t.Errorf("Unexpected CSI Attach call: volume=%s, node=%s, index: %d, calls: %+v", volumeID, nodeName, f.index, f.calls)
+		f.t.Errorf("Unexpected CSI Attach call: volume=%s, node=%s, index: %d, calls: %+v", volumeID, nodeID, f.index, f.calls)
 		return nil, fmt.Errorf("unexpected call")
 	}
 	call := f.calls[f.index]
@@ -336,17 +334,17 @@ func (f *fakeCSIConnection) Attach(ctx context.Context, handle *csi.VolumeHandle
 
 	var err error
 	if call.functionName != "attach" {
-		f.t.Errorf("Unexpected CSI Attach call: volume=%s, node=%s, expected: %s", volumeID, nodeName, call.functionName)
+		f.t.Errorf("Unexpected CSI Attach call: volume=%s, node=%s, expected: %s", volumeID, nodeID, call.functionName)
 		err = fmt.Errorf("unexpected attach call")
 	}
 
 	if call.volumeHandle != volumeID {
-		f.t.Errorf("Wrong CSI Attach call: volume=%s, node=%s, expected PV: %s", volumeID, nodeName, call.volumeHandle)
+		f.t.Errorf("Wrong CSI Attach call: volume=%s, node=%s, expected PV: %s", volumeID, nodeID, call.volumeHandle)
 		err = fmt.Errorf("unexpected attach call")
 	}
 
-	if call.nodeID != nodeName {
-		f.t.Errorf("Wrong CSI Attach call: volume=%s, node=%s, expected Node: %s", volumeID, nodeName, call.nodeID)
+	if call.nodeID != nodeID {
+		f.t.Errorf("Wrong CSI Attach call: volume=%s, node=%s, expected Node: %s", volumeID, nodeID, call.nodeID)
 		err = fmt.Errorf("unexpected attach call")
 	}
 	if err != nil {
@@ -355,11 +353,9 @@ func (f *fakeCSIConnection) Attach(ctx context.Context, handle *csi.VolumeHandle
 	return call.metadata, call.err
 }
 
-func (f *fakeCSIConnection) Detach(ctx context.Context, handle *csi.VolumeHandle, nodeID *csi.NodeID) error {
-	volumeID := handle.Id
-	nodeName := nodeID.Values["Name"]
+func (f *fakeCSIConnection) Detach(ctx context.Context, volumeID string, nodeID string) error {
 	if f.index >= len(f.calls) {
-		f.t.Errorf("Unexpected CSI Detach call: volume=%s, node=%s, index: %d, calls: %+v", volumeID, nodeName, f.index, f.calls)
+		f.t.Errorf("Unexpected CSI Detach call: volume=%s, node=%s, index: %d, calls: %+v", volumeID, nodeID, f.index, f.calls)
 		return fmt.Errorf("unexpected call")
 	}
 	call := f.calls[f.index]
@@ -367,17 +363,17 @@ func (f *fakeCSIConnection) Detach(ctx context.Context, handle *csi.VolumeHandle
 
 	var err error
 	if call.functionName != "detach" {
-		f.t.Errorf("Unexpected CSI Detach call: volume=%s, node=%s, expected: %s", volumeID, nodeName, call.functionName)
+		f.t.Errorf("Unexpected CSI Detach call: volume=%s, node=%s, expected: %s", volumeID, nodeID, call.functionName)
 		err = fmt.Errorf("unexpected detach call")
 	}
 
 	if call.volumeHandle != volumeID {
-		f.t.Errorf("Wrong CSI Attach call: volume=%s, node=%s, expected PV: %s", volumeID, nodeName, call.volumeHandle)
+		f.t.Errorf("Wrong CSI Attach call: volume=%s, node=%s, expected PV: %s", volumeID, nodeID, call.volumeHandle)
 		err = fmt.Errorf("unexpected detach call")
 	}
 
-	if call.nodeID != nodeName {
-		f.t.Errorf("Wrong CSI Attach call: volume=%s, node=%s, expected Node: %s", volumeID, nodeName, call.nodeID)
+	if call.nodeID != nodeID {
+		f.t.Errorf("Wrong CSI Attach call: volume=%s, node=%s, expected Node: %s", volumeID, nodeID, call.nodeID)
 		err = fmt.Errorf("unexpected detach call")
 	}
 	if err != nil {

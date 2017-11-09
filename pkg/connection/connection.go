@@ -41,10 +41,10 @@ type CSIConnection interface {
 	SupportsControllerPublish(ctx context.Context) (bool, error)
 
 	// Attach given volume to given node. Returns PublishVolumeInfo
-	Attach(ctx context.Context, handle *csi.VolumeHandle, readOnly bool, nodeID *csi.NodeID, caps *csi.VolumeCapability) (map[string]string, error)
+	Attach(ctx context.Context, volumeID string, readOnly bool, nodeID string, caps *csi.VolumeCapability) (map[string]string, error)
 
 	// Detach given volume from given node.
-	Detach(ctx context.Context, handle *csi.VolumeHandle, nodeID *csi.NodeID) error
+	Detach(ctx context.Context, volumeID string, nodeID string) error
 
 	// Close the connection
 	Close() error
@@ -80,6 +80,7 @@ func connect(address string, timeout time.Duration) (*grpc.ClientConn, error) {
 	dialOptions := []grpc.DialOption{
 		grpc.WithInsecure(),
 		grpc.WithBackoffMaxDelay(time.Second),
+		grpc.WithUnaryInterceptor(logGRPC),
 	}
 	if strings.HasPrefix(address, "/") {
 		dialOptions = append(dialOptions, grpc.WithDialer(func(addr string, timeout time.Duration) (net.Conn, error) {
@@ -171,12 +172,12 @@ func (c *csiConnection) SupportsControllerPublish(ctx context.Context) (bool, er
 	return false, nil
 }
 
-func (c *csiConnection) Attach(ctx context.Context, handle *csi.VolumeHandle, readOnly bool, nodeID *csi.NodeID, caps *csi.VolumeCapability) (map[string]string, error) {
+func (c *csiConnection) Attach(ctx context.Context, volumeID string, readOnly bool, nodeID string, caps *csi.VolumeCapability) (map[string]string, error) {
 	client := csi.NewControllerClient(c.conn)
 
 	req := csi.ControllerPublishVolumeRequest{
 		Version:          &csiVersion,
-		VolumeHandle:     handle,
+		VolumeId:         volumeID,
 		NodeId:           nodeID,
 		VolumeCapability: caps,
 		Readonly:         readOnly,
@@ -201,12 +202,12 @@ func (c *csiConnection) Attach(ctx context.Context, handle *csi.VolumeHandle, re
 	return result.PublishVolumeInfo, nil
 }
 
-func (c *csiConnection) Detach(ctx context.Context, handle *csi.VolumeHandle, nodeID *csi.NodeID) error {
+func (c *csiConnection) Detach(ctx context.Context, volumeID string, nodeID string) error {
 	client := csi.NewControllerClient(c.conn)
 
 	req := csi.ControllerUnpublishVolumeRequest{
 		Version:         &csiVersion,
-		VolumeHandle:    handle,
+		VolumeId:        volumeID,
 		NodeId:          nodeID,
 		UserCredentials: nil,
 	}
@@ -231,4 +232,13 @@ func (c *csiConnection) Detach(ctx context.Context, handle *csi.VolumeHandle, no
 
 func (c *csiConnection) Close() error {
 	return c.conn.Close()
+}
+
+func logGRPC(ctx context.Context, method string, req, reply interface{}, cc *grpc.ClientConn, invoker grpc.UnaryInvoker, opts ...grpc.CallOption) error {
+	glog.V(5).Infof("GRPC call: %s", method)
+	glog.V(5).Infof("GRPC request: %+v", req)
+	err := invoker(ctx, method, req, reply, cc, opts...)
+	glog.V(5).Infof("GRPC response: %+v", reply)
+	glog.V(5).Infof("GRPC error: %v", err)
+	return err
 }

@@ -305,11 +305,8 @@ func TestSupportsControllerPublish(t *testing.T) {
 }
 
 func TestAttach(t *testing.T) {
-	defaultVolumeName := "myname"
-	defaultHandle := &csi.VolumeHandle{
-		Id: defaultVolumeName,
-	}
-	defaultNodeID := &csi.NodeID{Values: map[string]string{"Name": "MyNodeID"}}
+	defaultVolumeID := "myname"
+	defaultNodeID := "MyNodeID"
 	defaultCaps := &csi.VolumeCapability{
 		AccessType: &csi.VolumeCapability_Mount{
 			Mount: &csi.VolumeCapability_MountVolume{},
@@ -324,19 +321,15 @@ func TestAttach(t *testing.T) {
 		"third":  "baz",
 	}
 	defaultRequest := &csi.ControllerPublishVolumeRequest{
-		Version: &csiVersion,
-		VolumeHandle: &csi.VolumeHandle{
-			Id: defaultVolumeName,
-		},
+		Version:          &csiVersion,
+		VolumeId:         defaultVolumeID,
 		NodeId:           defaultNodeID,
 		VolumeCapability: defaultCaps,
 		Readonly:         false,
 	}
 	readOnlyRequest := &csi.ControllerPublishVolumeRequest{
-		Version: &csiVersion,
-		VolumeHandle: &csi.VolumeHandle{
-			Id: defaultVolumeName,
-		},
+		Version:          &csiVersion,
+		VolumeId:         defaultVolumeID,
 		NodeId:           defaultNodeID,
 		VolumeCapability: defaultCaps,
 		Readonly:         true,
@@ -344,8 +337,8 @@ func TestAttach(t *testing.T) {
 
 	tests := []struct {
 		name         string
-		handle       *csi.VolumeHandle
-		nodeID       *csi.NodeID
+		volumeID     string
+		nodeID       string
 		caps         *csi.VolumeCapability
 		readonly     bool
 		input        *csi.ControllerPublishVolumeRequest
@@ -355,11 +348,11 @@ func TestAttach(t *testing.T) {
 		expectedInfo map[string]string
 	}{
 		{
-			name:   "success",
-			handle: defaultHandle,
-			nodeID: defaultNodeID,
-			caps:   defaultCaps,
-			input:  defaultRequest,
+			name:     "success",
+			volumeID: defaultVolumeID,
+			nodeID:   defaultNodeID,
+			caps:     defaultCaps,
+			input:    defaultRequest,
 			output: &csi.ControllerPublishVolumeResponse{
 				Reply: &csi.ControllerPublishVolumeResponse_Result_{
 					Result: &csi.ControllerPublishVolumeResponse_Result{
@@ -371,11 +364,11 @@ func TestAttach(t *testing.T) {
 			expectedInfo: publishVolumeInfo,
 		},
 		{
-			name:   "success no info",
-			handle: defaultHandle,
-			nodeID: defaultNodeID,
-			caps:   defaultCaps,
-			input:  defaultRequest,
+			name:     "success no info",
+			volumeID: defaultVolumeID,
+			nodeID:   defaultNodeID,
+			caps:     defaultCaps,
+			input:    defaultRequest,
 			output: &csi.ControllerPublishVolumeResponse{
 				Reply: &csi.ControllerPublishVolumeResponse_Result_{
 					Result: &csi.ControllerPublishVolumeResponse_Result{},
@@ -386,7 +379,7 @@ func TestAttach(t *testing.T) {
 		},
 		{
 			name:     "readonly success",
-			handle:   defaultHandle,
+			volumeID: defaultVolumeID,
 			nodeID:   defaultNodeID,
 			caps:     defaultCaps,
 			readonly: true,
@@ -403,7 +396,7 @@ func TestAttach(t *testing.T) {
 		},
 		{
 			name:        "gRPC error",
-			handle:      defaultHandle,
+			volumeID:    defaultVolumeID,
 			nodeID:      defaultNodeID,
 			caps:        defaultCaps,
 			input:       defaultRequest,
@@ -412,22 +405,22 @@ func TestAttach(t *testing.T) {
 			expectError: true,
 		},
 		{
-			name:   "empty reply",
-			handle: defaultHandle,
-			nodeID: defaultNodeID,
-			caps:   defaultCaps,
-			input:  defaultRequest,
+			name:     "empty reply",
+			volumeID: defaultVolumeID,
+			nodeID:   defaultNodeID,
+			caps:     defaultCaps,
+			input:    defaultRequest,
 			output: &csi.ControllerPublishVolumeResponse{
 				Reply: nil,
 			},
 			expectError: true,
 		},
 		{
-			name:   "general error",
-			handle: defaultHandle,
-			nodeID: defaultNodeID,
-			caps:   defaultCaps,
-			input:  defaultRequest,
+			name:     "general error",
+			volumeID: defaultVolumeID,
+			nodeID:   defaultNodeID,
+			caps:     defaultCaps,
+			input:    defaultRequest,
 			output: &csi.ControllerPublishVolumeResponse{
 				Reply: &csi.ControllerPublishVolumeResponse_Error{
 					Error: &csi.Error{
@@ -466,7 +459,7 @@ func TestAttach(t *testing.T) {
 			controllerServer.EXPECT().ControllerPublishVolume(gomock.Any(), in).Return(out, injectedErr).Times(1)
 		}
 
-		publishInfo, err := csiConn.Attach(context.Background(), test.handle, test.readonly, test.nodeID, test.caps)
+		publishInfo, err := csiConn.Attach(context.Background(), test.volumeID, test.readonly, test.nodeID, test.caps)
 		if test.expectError && err == nil {
 			t.Errorf("test %q: Expected error, got none", test.name)
 		}
@@ -480,35 +473,30 @@ func TestAttach(t *testing.T) {
 }
 
 func TestDetachAttach(t *testing.T) {
-	defaultVolumeName := "myname"
-	defaultHandle := &csi.VolumeHandle{
-		Id: defaultVolumeName,
-	}
+	defaultVolumeID := "myname"
 
-	defaultNodeID := &csi.NodeID{Values: map[string]string{"Name": "MyNodeID"}}
+	defaultNodeID := "MyNodeID"
 
 	defaultRequest := &csi.ControllerUnpublishVolumeRequest{
-		Version: &csiVersion,
-		VolumeHandle: &csi.VolumeHandle{
-			Id: defaultVolumeName,
-		},
-		NodeId: defaultNodeID,
+		Version:  &csiVersion,
+		VolumeId: defaultVolumeID,
+		NodeId:   defaultNodeID,
 	}
 
 	tests := []struct {
 		name        string
-		handle      *csi.VolumeHandle
-		nodeID      *csi.NodeID
+		volumeID    string
+		nodeID      string
 		input       *csi.ControllerUnpublishVolumeRequest
 		output      *csi.ControllerUnpublishVolumeResponse
 		injectError bool
 		expectError bool
 	}{
 		{
-			name:   "success",
-			handle: defaultHandle,
-			nodeID: defaultNodeID,
-			input:  defaultRequest,
+			name:     "success",
+			volumeID: defaultVolumeID,
+			nodeID:   defaultNodeID,
+			input:    defaultRequest,
 			output: &csi.ControllerUnpublishVolumeResponse{
 				Reply: &csi.ControllerUnpublishVolumeResponse_Result_{
 					Result: &csi.ControllerUnpublishVolumeResponse_Result{},
@@ -518,7 +506,7 @@ func TestDetachAttach(t *testing.T) {
 		},
 		{
 			name:        "gRPC error",
-			handle:      defaultHandle,
+			volumeID:    defaultVolumeID,
 			nodeID:      defaultNodeID,
 			input:       defaultRequest,
 			output:      nil,
@@ -526,20 +514,20 @@ func TestDetachAttach(t *testing.T) {
 			expectError: true,
 		},
 		{
-			name:   "empty reply",
-			handle: defaultHandle,
-			nodeID: defaultNodeID,
-			input:  defaultRequest,
+			name:     "empty reply",
+			volumeID: defaultVolumeID,
+			nodeID:   defaultNodeID,
+			input:    defaultRequest,
 			output: &csi.ControllerUnpublishVolumeResponse{
 				Reply: nil,
 			},
 			expectError: true,
 		},
 		{
-			name:   "general error",
-			handle: defaultHandle,
-			nodeID: defaultNodeID,
-			input:  defaultRequest,
+			name:     "general error",
+			volumeID: defaultVolumeID,
+			nodeID:   defaultNodeID,
+			input:    defaultRequest,
 			output: &csi.ControllerUnpublishVolumeResponse{
 				Reply: &csi.ControllerUnpublishVolumeResponse_Error{
 					Error: &csi.Error{
@@ -578,7 +566,7 @@ func TestDetachAttach(t *testing.T) {
 			controllerServer.EXPECT().ControllerUnpublishVolume(gomock.Any(), in).Return(out, injectedErr).Times(1)
 		}
 
-		err := csiConn.Detach(context.Background(), test.handle, test.nodeID)
+		err := csiConn.Detach(context.Background(), test.volumeID, test.nodeID)
 		if test.expectError && err == nil {
 			t.Errorf("test %q: Expected error, got none", test.name)
 		}
