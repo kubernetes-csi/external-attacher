@@ -31,7 +31,7 @@ import (
 	storagelister "k8s.io/client-go/listers/storage/v1"
 	"k8s.io/client-go/util/workqueue"
 
-	"github.com/kubernetes-csi/external-attacher-csi/pkg/connection"
+	"github.com/kubernetes-csi/external-attacher/pkg/connection"
 )
 
 // csiHandler is a handler that calls CSI to attach/detach volume.
