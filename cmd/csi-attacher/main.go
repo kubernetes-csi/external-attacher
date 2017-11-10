@@ -29,8 +29,8 @@ import (
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
 
-	"github.com/kubernetes-csi/external-attacher-csi/pkg/connection"
-	"github.com/kubernetes-csi/external-attacher-csi/pkg/controller"
+	"github.com/kubernetes-csi/external-attacher/pkg/connection"
+	"github.com/kubernetes-csi/external-attacher/pkg/controller"
 )
 
 const (

@@ -18,7 +18,7 @@ package controller
 
 import (
 	"github.com/golang/glog"
-	"github.com/kubernetes-csi/external-attacher-csi/pkg/connection"
+	"github.com/kubernetes-csi/external-attacher/pkg/connection"
 	storagev1 "k8s.io/api/storage/v1"
 	"k8s.io/client-go/kubernetes"
 )
