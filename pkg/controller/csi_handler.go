@@ -250,7 +250,9 @@ func (h *csiHandler) csiAttach(va *storagev1.VolumeAttachment) (*storagev1.Volum
 	}
 
 	ctx := context.TODO()
-	publishInfo, err := h.csiConnection.Attach(ctx, volumeHandle, readOnly, nodeID, volumeCapabilities)
+	// We're not interested in `detached` return value, the controller will
+	// issue Detach to be sure the volume is really detached.
+	publishInfo, _, err := h.csiConnection.Attach(ctx, volumeHandle, readOnly, nodeID, volumeCapabilities)
 	if err != nil {
 		return va, nil, err
 	}
@@ -282,10 +284,17 @@ func (h *csiHandler) csiDetach(va *storagev1.VolumeAttachment) (*storagev1.Volum
 	}
 
 	ctx := context.TODO()
-	if err := h.csiConnection.Detach(ctx, volumeHandle, nodeID); err != nil {
+	detached, err := h.csiConnection.Detach(ctx, volumeHandle, nodeID)
+	if err != nil && !detached {
+		// The volume may not be fully detached. Save the error and try again
+		// after backoff.
 		return va, err
 	}
-	glog.V(2).Infof("Detached %q", va.Name)
+	if err != nil {
+		glog.V(2).Infof("Detached %q with error %s", va.Name, err.Error())
+	} else {
+		glog.V(2).Infof("Detached %q", va.Name)
+	}
 
 	if va, err := markAsDetached(h.client, va); err != nil {
 		return va, fmt.Errorf("could not mark as detached: %s", err)

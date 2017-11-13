@@ -1,10 +1,14 @@
-hash: da66d2470299478281bcfc7dc7a92894b909cc6969c9fcc187e5f6f8f98cc1a6
-updated: 2017-10-23T15:41:39.748284252-04:00
+hash: f8f39aef239d83f930c5be2717e5bee5b2169902a3fd4a30a441a4e97ec60a07
+updated: 2017-11-13T10:06:46.111868775+01:00
 imports:
 - name: github.com/container-storage-interface/spec
-  version: d68da7a7c330a88253e26c06b7c157ec8119d5d6
+  version: 51e48d38ac8a5b4bdcf41826b77dc016ad83451e
   subpackages:
   - lib/go/csi
+- name: github.com/golang/mock
+  version: 61503c535dc549c7ffc1ff07902345658a0f20a2
+  subpackages:
+  - gomock
 - name: github.com/golang/protobuf
   version: 1643683e1b54a9e88ad26d98f81400c8c9d9f4f9
   subpackages:
@@ -59,9 +63,4 @@ imports:
   - status
   - tap
   - transport
-testImports:
-- name: github.com/golang/mock
-  version: 61503c535dc549c7ffc1ff07902345658a0f20a2
-  subpackages:
-  - gomock
-  - mockgen
+testImports: []

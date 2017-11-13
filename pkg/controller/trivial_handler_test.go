@@ -20,7 +20,7 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/kubernetes-csi/external-attacher-csi/pkg/connection"
+	"github.com/kubernetes-csi/external-attacher/pkg/connection"
 
 	storagev1 "k8s.io/api/storage/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
