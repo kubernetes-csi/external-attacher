@@ -1,6 +1,7 @@
 package connection
 
 import (
+	"encoding/json"
 	"fmt"
 	"regexp"
 
@@ -9,7 +10,7 @@ import (
 )
 
 const (
-	nodeIDAnnotation = "nodeid.csi.volume.kubernetes.io/"
+	nodeIDAnnotation = "csi.volume.kubernetes.io/nodeid"
 )
 
 func SanitizeDriverName(driver string) string {
@@ -28,11 +29,20 @@ func GetFinalizerName(driver string) string {
 }
 
 func GetNodeID(driver string, node *v1.Node) (string, error) {
-	annotationName := nodeIDAnnotation + SanitizeDriverName(driver)
-	nodeID, ok := node.Annotations[annotationName]
+	nodeIDJSON, ok := node.Annotations[nodeIDAnnotation]
 	if !ok {
-		return "", fmt.Errorf("node %q has no NodeID for driver %q", node.Name, driver)
+		return "", fmt.Errorf("node %q has no NodeID annotation", node.Name)
 	}
+
+	var nodeIDs map[string]string
+	if err := json.Unmarshal([]byte(nodeIDJSON), &nodeIDs); err != nil {
+		return "", fmt.Errorf("cannot parse NodeID annotation on node %q: %s", node.Name, err)
+	}
+	nodeID, ok := nodeIDs[driver]
+	if !ok {
+		return "", fmt.Errorf("cannot find NodeID for driver %q for node %q", driver, node.Name)
+	}
+
 	return nodeID, nil
 }
 
