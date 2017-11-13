@@ -43,14 +43,10 @@ func TestPluginInfoResponse(t *testing.T) {
 
 	// Setup mock outout
 	out := &csi.GetPluginInfoResponse{
-		Reply: &csi.GetPluginInfoResponse_Result_{
-			Result: &csi.GetPluginInfoResponse_Result{
-				Name:          "mock",
-				VendorVersion: "0.1.1",
-				Manifest: map[string]string{
-					"hello": "world",
-				},
-			},
+		Name:          "mock",
+		VendorVersion: "0.1.1",
+		Manifest: map[string]string{
+			"hello": "world",
 		},
 	}
 
@@ -59,7 +55,7 @@ func TestPluginInfoResponse(t *testing.T) {
 
 	// Actual call
 	r, err := driver.GetPluginInfo(nil, in)
-	name := r.GetResult().GetName()
+	name := r.GetName()
 	if err != nil {
 		t.Errorf("Error: %s", err.Error())
 	}
@@ -86,14 +82,10 @@ func TestGRPCGetPluginInfoReponse(t *testing.T) {
 
 	// Setup mock outout
 	out := &csi.GetPluginInfoResponse{
-		Reply: &csi.GetPluginInfoResponse_Result_{
-			Result: &csi.GetPluginInfoResponse_Result{
-				Name:          "mock",
-				VendorVersion: "0.1.1",
-				Manifest: map[string]string{
-					"hello": "world",
-				},
-			},
+		Name:          "mock",
+		VendorVersion: "0.1.1",
+		Manifest: map[string]string{
+			"hello": "world",
 		},
 	}
 
@@ -118,7 +110,7 @@ func TestGRPCGetPluginInfoReponse(t *testing.T) {
 		t.Errorf("Error: %s", err.Error())
 	}
 
-	name := r.GetResult().GetName()
+	name := r.GetName()
 	if name != "mock" {
 		t.Errorf("Unknown name: %s\n", name)
 	}

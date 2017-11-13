@@ -38,15 +38,11 @@ type simpleDriver struct {
 func (s *simpleDriver) GetSupportedVersions(
 	context.Context, *csi.GetSupportedVersionsRequest) (*csi.GetSupportedVersionsResponse, error) {
 	return &csi.GetSupportedVersionsResponse{
-		Reply: &csi.GetSupportedVersionsResponse_Result_{
-			Result: &csi.GetSupportedVersionsResponse_Result{
-				SupportedVersions: []*csi.Version{
-					&csi.Version{
-						Major: 0,
-						Minor: 1,
-						Patch: 0,
-					},
-				},
+		SupportedVersions: []*csi.Version{
+			&csi.Version{
+				Major: 0,
+				Minor: 1,
+				Patch: 0,
 			},
 		},
 	}, nil
@@ -55,14 +51,10 @@ func (s *simpleDriver) GetSupportedVersions(
 func (s *simpleDriver) GetPluginInfo(
 	context.Context, *csi.GetPluginInfoRequest) (*csi.GetPluginInfoResponse, error) {
 	return &csi.GetPluginInfoResponse{
-		Reply: &csi.GetPluginInfoResponse_Result_{
-			Result: &csi.GetPluginInfoResponse_Result{
-				Name:          "simpleDriver",
-				VendorVersion: "0.1.1",
-				Manifest: map[string]string{
-					"hello": "world",
-				},
-			},
+		Name:          "simpleDriver",
+		VendorVersion: "0.1.1",
+		Manifest: map[string]string{
+			"hello": "world",
 		},
 	}, nil
 }
@@ -131,7 +123,7 @@ func TestSimpleDriver(t *testing.T) {
 	}
 
 	// Verify
-	name := r.GetResult().GetName()
+	name := r.GetName()
 	if name != "simpleDriver" {
 		t.Errorf("Unknown name: %s\n", name)
 	}
