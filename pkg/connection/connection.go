@@ -26,7 +26,9 @@ import (
 	"github.com/container-storage-interface/spec/lib/go/csi"
 	"github.com/golang/glog"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/connectivity"
+	"google.golang.org/grpc/status"
 )
 
 // CSIConnection is gRPC connection to a remote CSI driver and abstracts all
@@ -40,11 +42,18 @@ type CSIConnection interface {
 	// PUBLISH_UNPUBLISH_VOLUME in ControllerGetCapabilities() gRPC call.
 	SupportsControllerPublish(ctx context.Context) (bool, error)
 
-	// Attach given volume to given node. Returns PublishVolumeInfo
-	Attach(ctx context.Context, volumeID string, readOnly bool, nodeID string, caps *csi.VolumeCapability) (map[string]string, error)
+	// Attach given volume to given node. Returns PublishVolumeInfo. Note that
+	// "detached" is returned on error and means that the volume is for sure
+	// detached from the node. "false" means that the volume may be either
+	// detached, attaching or attached and caller should retry to get the final
+	// status.
+	Attach(ctx context.Context, volumeID string, readOnly bool, nodeID string, caps *csi.VolumeCapability) (metadata map[string]string, detached bool, err error)
 
-	// Detach given volume from given node.
-	Detach(ctx context.Context, volumeID string, nodeID string) error
+	// Detach given volume from given node. Note that "detached" is returned on
+	// error and means that the volume is for sure detached from the node.
+	// "false" means that the volume may or may not be detached and caller
+	// should retry.
+	Detach(ctx context.Context, volumeID string, nodeID string) (detached bool, err error)
 
 	// Close the connection
 	Close() error
@@ -118,21 +127,11 @@ func (c *csiConnection) GetDriverName(ctx context.Context) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	e := rsp.GetError()
-	if e != nil {
-		// TODO: report the right error
-		return "", fmt.Errorf("Error calling GetPluginInfo: %+v", e)
-	}
-
-	result := rsp.GetResult()
-	if result == nil {
-		return "", fmt.Errorf("result is empty")
-	}
-	name := result.GetName()
+	name := rsp.GetName()
 	if name == "" {
 		return "", fmt.Errorf("name is empty")
 	}
-	return result.GetName(), nil
+	return name, nil
 }
 
 func (c *csiConnection) SupportsControllerPublish(ctx context.Context) (bool, error) {
@@ -145,18 +144,7 @@ func (c *csiConnection) SupportsControllerPublish(ctx context.Context) (bool, er
 	if err != nil {
 		return false, err
 	}
-	e := rsp.GetError()
-	if e != nil {
-		// TODO: report the right error
-		return false, fmt.Errorf("error calling ControllerGetCapabilities: %+v", e)
-	}
-
-	result := rsp.GetResult()
-	if result == nil {
-		return false, fmt.Errorf("result is empty")
-	}
-
-	caps := result.GetCapabilities()
+	caps := rsp.GetCapabilities()
 	for _, cap := range caps {
 		if cap == nil {
 			continue
@@ -172,7 +160,7 @@ func (c *csiConnection) SupportsControllerPublish(ctx context.Context) (bool, er
 	return false, nil
 }
 
-func (c *csiConnection) Attach(ctx context.Context, volumeID string, readOnly bool, nodeID string, caps *csi.VolumeCapability) (map[string]string, error) {
+func (c *csiConnection) Attach(ctx context.Context, volumeID string, readOnly bool, nodeID string, caps *csi.VolumeCapability) (metadata map[string]string, detached bool, err error) {
 	client := csi.NewControllerClient(c.conn)
 
 	req := csi.ControllerPublishVolumeRequest{
@@ -186,23 +174,12 @@ func (c *csiConnection) Attach(ctx context.Context, volumeID string, readOnly bo
 
 	rsp, err := client.ControllerPublishVolume(ctx, &req)
 	if err != nil {
-		return nil, err
+		return nil, isFinalError(err), err
 	}
-	e := rsp.GetError()
-	if e != nil {
-		// TODO: report the right error
-		return nil, fmt.Errorf("error calling ControllerPublishVolume: %+v", e)
-	}
-
-	result := rsp.GetResult()
-	if result == nil {
-		return nil, fmt.Errorf("result is empty")
-	}
-
-	return result.PublishVolumeInfo, nil
+	return rsp.PublishVolumeInfo, false, nil
 }
 
-func (c *csiConnection) Detach(ctx context.Context, volumeID string, nodeID string) error {
+func (c *csiConnection) Detach(ctx context.Context, volumeID string, nodeID string) (detached bool, err error) {
 	client := csi.NewControllerClient(c.conn)
 
 	req := csi.ControllerUnpublishVolumeRequest{
@@ -212,22 +189,11 @@ func (c *csiConnection) Detach(ctx context.Context, volumeID string, nodeID stri
 		UserCredentials: nil,
 	}
 
-	rsp, err := client.ControllerUnpublishVolume(ctx, &req)
+	_, err = client.ControllerUnpublishVolume(ctx, &req)
 	if err != nil {
-		return err
+		return isFinalError(err), err
 	}
-	e := rsp.GetError()
-	if e != nil {
-		// TODO: report the right error
-		return fmt.Errorf("error calling ControllerUnpublishVolume: %+v", e)
-	}
-
-	result := rsp.GetResult()
-	if result == nil {
-		return fmt.Errorf("result is empty")
-	}
-
-	return nil
+	return true, nil
 }
 
 func (c *csiConnection) Close() error {
@@ -241,4 +207,32 @@ func logGRPC(ctx context.Context, method string, req, reply interface{}, cc *grp
 	glog.V(5).Infof("GRPC response: %+v", reply)
 	glog.V(5).Infof("GRPC error: %v", err)
 	return err
+}
+
+// isFinished returns true if given error represents final error of an
+// operation. That means the operation has failed completelly and cannot be in
+// progress.  It returns false, if the error represents some transient error
+// like timeout and the operation itself or previous call to the same
+// operation can be actually in progress.
+func isFinalError(err error) bool {
+	// Sources:
+	// https://github.com/grpc/grpc/blob/master/doc/statuscodes.md
+	// https://github.com/container-storage-interface/spec/blob/master/spec.md
+	st, ok := status.FromError(err)
+	if !ok {
+		// This is not gRPC error. The operation must have failed before gRPC
+		// method was called, otherwise we would get gRPC error.
+		return true
+	}
+	switch st.Code() {
+	case codes.Canceled, // gRPC: Client Application cancelled the request
+		codes.DeadlineExceeded,   // gRPC: Timeout
+		codes.Unavailable,        // gRPC: Server shutting down, TCP connection broken - previous Attach() or Detach() may be still in progress.
+		codes.ResourceExhausted,  // gRPC: Server temporarily out of resources - previous Attach() or Detach() may be still in progress.
+		codes.FailedPrecondition: // CSI: Operation pending for volume
+		return false
+	}
+	// All other errors mean that the operation (attach/detach) either did not
+	// even start or failed. It is for sure not in progress.
+	return true
 }

@@ -25,6 +25,8 @@ import (
 	"github.com/container-storage-interface/spec/lib/go/csi"
 	"github.com/golang/mock/gomock"
 	"github.com/kubernetes-csi/csi-test/driver"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
 
 const (
@@ -62,14 +64,10 @@ func TestGetPluginInfo(t *testing.T) {
 		{
 			name: "success",
 			output: &csi.GetPluginInfoResponse{
-				Reply: &csi.GetPluginInfoResponse_Result_{
-					Result: &csi.GetPluginInfoResponse_Result{
-						Name:          "csi/example",
-						VendorVersion: "0.1.0",
-						Manifest: map[string]string{
-							"hello": "world",
-						},
-					},
+				Name:          "csi/example",
+				VendorVersion: "0.1.0",
+				Manifest: map[string]string{
+					"hello": "world",
 				},
 			},
 			expectError: false,
@@ -81,37 +79,9 @@ func TestGetPluginInfo(t *testing.T) {
 			expectError: true,
 		},
 		{
-			name: "empty reply",
-			output: &csi.GetPluginInfoResponse{
-				Reply: nil,
-			},
-			expectError: true,
-		},
-		{
 			name: "empty name",
 			output: &csi.GetPluginInfoResponse{
-				Reply: &csi.GetPluginInfoResponse_Result_{
-					Result: &csi.GetPluginInfoResponse_Result{
-						Name: "",
-					},
-				},
-			},
-			expectError: true,
-		},
-		{
-			name: "general error",
-			output: &csi.GetPluginInfoResponse{
-				Reply: &csi.GetPluginInfoResponse_Error{
-					Error: &csi.Error{
-						Value: &csi.Error_GeneralError_{
-							GeneralError: &csi.Error_GeneralError{
-								ErrorCode:          csi.Error_GeneralError_UNSUPPORTED_REQUEST_VERSION,
-								CallerMustNotRetry: true,
-								ErrorDescription:   "mock error 1",
-							},
-						},
-					},
-				},
+				Name: "",
 			},
 			expectError: true,
 		},
@@ -167,22 +137,18 @@ func TestSupportsControllerPublish(t *testing.T) {
 		{
 			name: "success",
 			output: &csi.ControllerGetCapabilitiesResponse{
-				Reply: &csi.ControllerGetCapabilitiesResponse_Result_{
-					Result: &csi.ControllerGetCapabilitiesResponse_Result{
-						Capabilities: []*csi.ControllerServiceCapability{
-							&csi.ControllerServiceCapability{
-								Type: &csi.ControllerServiceCapability_Rpc{
-									Rpc: &csi.ControllerServiceCapability_RPC{
-										Type: csi.ControllerServiceCapability_RPC_CREATE_DELETE_VOLUME,
-									},
-								},
+				Capabilities: []*csi.ControllerServiceCapability{
+					&csi.ControllerServiceCapability{
+						Type: &csi.ControllerServiceCapability_Rpc{
+							Rpc: &csi.ControllerServiceCapability_RPC{
+								Type: csi.ControllerServiceCapability_RPC_CREATE_DELETE_VOLUME,
 							},
-							&csi.ControllerServiceCapability{
-								Type: &csi.ControllerServiceCapability_Rpc{
-									Rpc: &csi.ControllerServiceCapability_RPC{
-										Type: csi.ControllerServiceCapability_RPC_PUBLISH_UNPUBLISH_VOLUME,
-									},
-								},
+						},
+					},
+					&csi.ControllerServiceCapability{
+						Type: &csi.ControllerServiceCapability_Rpc{
+							Rpc: &csi.ControllerServiceCapability_RPC{
+								Type: csi.ControllerServiceCapability_RPC_PUBLISH_UNPUBLISH_VOLUME,
 							},
 						},
 					},
@@ -197,41 +163,13 @@ func TestSupportsControllerPublish(t *testing.T) {
 			expectError: true,
 		},
 		{
-			name: "empty reply",
-			output: &csi.ControllerGetCapabilitiesResponse{
-				Reply: nil,
-			},
-			expectError: true,
-		},
-		{
-			name: "general error",
-			output: &csi.ControllerGetCapabilitiesResponse{
-				Reply: &csi.ControllerGetCapabilitiesResponse_Error{
-					Error: &csi.Error{
-						Value: &csi.Error_GeneralError_{
-							GeneralError: &csi.Error_GeneralError{
-								ErrorCode:          csi.Error_GeneralError_UNSUPPORTED_REQUEST_VERSION,
-								CallerMustNotRetry: true,
-								ErrorDescription:   "mock error 1",
-							},
-						},
-					},
-				},
-			},
-			expectError: true,
-		},
-		{
 			name: "no publish",
 			output: &csi.ControllerGetCapabilitiesResponse{
-				Reply: &csi.ControllerGetCapabilitiesResponse_Result_{
-					Result: &csi.ControllerGetCapabilitiesResponse_Result{
-						Capabilities: []*csi.ControllerServiceCapability{
-							&csi.ControllerServiceCapability{
-								Type: &csi.ControllerServiceCapability_Rpc{
-									Rpc: &csi.ControllerServiceCapability_RPC{
-										Type: csi.ControllerServiceCapability_RPC_CREATE_DELETE_VOLUME,
-									},
-								},
+				Capabilities: []*csi.ControllerServiceCapability{
+					&csi.ControllerServiceCapability{
+						Type: &csi.ControllerServiceCapability_Rpc{
+							Rpc: &csi.ControllerServiceCapability_RPC{
+								Type: csi.ControllerServiceCapability_RPC_CREATE_DELETE_VOLUME,
 							},
 						},
 					},
@@ -242,13 +180,9 @@ func TestSupportsControllerPublish(t *testing.T) {
 		{
 			name: "empty capability",
 			output: &csi.ControllerGetCapabilitiesResponse{
-				Reply: &csi.ControllerGetCapabilitiesResponse_Result_{
-					Result: &csi.ControllerGetCapabilitiesResponse_Result{
-						Capabilities: []*csi.ControllerServiceCapability{
-							&csi.ControllerServiceCapability{
-								Type: nil,
-							},
-						},
+				Capabilities: []*csi.ControllerServiceCapability{
+					&csi.ControllerServiceCapability{
+						Type: nil,
 					},
 				},
 			},
@@ -257,11 +191,7 @@ func TestSupportsControllerPublish(t *testing.T) {
 		{
 			name: "no capabilities",
 			output: &csi.ControllerGetCapabilitiesResponse{
-				Reply: &csi.ControllerGetCapabilitiesResponse_Result_{
-					Result: &csi.ControllerGetCapabilitiesResponse_Result{
-						Capabilities: []*csi.ControllerServiceCapability{},
-					},
-				},
+				Capabilities: []*csi.ControllerServiceCapability{},
 			},
 			expectError: false,
 		},
@@ -336,16 +266,17 @@ func TestAttach(t *testing.T) {
 	}
 
 	tests := []struct {
-		name         string
-		volumeID     string
-		nodeID       string
-		caps         *csi.VolumeCapability
-		readonly     bool
-		input        *csi.ControllerPublishVolumeRequest
-		output       *csi.ControllerPublishVolumeResponse
-		injectError  bool
-		expectError  bool
-		expectedInfo map[string]string
+		name           string
+		volumeID       string
+		nodeID         string
+		caps           *csi.VolumeCapability
+		readonly       bool
+		input          *csi.ControllerPublishVolumeRequest
+		output         *csi.ControllerPublishVolumeResponse
+		injectError    codes.Code
+		expectError    bool
+		expectDetached bool
+		expectedInfo   map[string]string
 	}{
 		{
 			name:     "success",
@@ -354,28 +285,22 @@ func TestAttach(t *testing.T) {
 			caps:     defaultCaps,
 			input:    defaultRequest,
 			output: &csi.ControllerPublishVolumeResponse{
-				Reply: &csi.ControllerPublishVolumeResponse_Result_{
-					Result: &csi.ControllerPublishVolumeResponse_Result{
-						PublishVolumeInfo: publishVolumeInfo,
-					},
-				},
+				PublishVolumeInfo: publishVolumeInfo,
 			},
-			expectError:  false,
-			expectedInfo: publishVolumeInfo,
+			expectError:    false,
+			expectedInfo:   publishVolumeInfo,
+			expectDetached: false,
 		},
 		{
-			name:     "success no info",
-			volumeID: defaultVolumeID,
-			nodeID:   defaultNodeID,
-			caps:     defaultCaps,
-			input:    defaultRequest,
-			output: &csi.ControllerPublishVolumeResponse{
-				Reply: &csi.ControllerPublishVolumeResponse_Result_{
-					Result: &csi.ControllerPublishVolumeResponse_Result{},
-				},
-			},
-			expectError:  false,
-			expectedInfo: nil,
+			name:           "success no info",
+			volumeID:       defaultVolumeID,
+			nodeID:         defaultNodeID,
+			caps:           defaultCaps,
+			input:          defaultRequest,
+			output:         &csi.ControllerPublishVolumeResponse{},
+			expectError:    false,
+			expectedInfo:   nil,
+			expectDetached: false,
 		},
 		{
 			name:     "readonly success",
@@ -385,56 +310,33 @@ func TestAttach(t *testing.T) {
 			readonly: true,
 			input:    readOnlyRequest,
 			output: &csi.ControllerPublishVolumeResponse{
-				Reply: &csi.ControllerPublishVolumeResponse_Result_{
-					Result: &csi.ControllerPublishVolumeResponse_Result{
-						PublishVolumeInfo: publishVolumeInfo,
-					},
-				},
+				PublishVolumeInfo: publishVolumeInfo,
 			},
-			expectError:  false,
-			expectedInfo: publishVolumeInfo,
+			expectError:    false,
+			expectedInfo:   publishVolumeInfo,
+			expectDetached: false,
 		},
 		{
-			name:        "gRPC error",
-			volumeID:    defaultVolumeID,
-			nodeID:      defaultNodeID,
-			caps:        defaultCaps,
-			input:       defaultRequest,
-			output:      nil,
-			injectError: true,
-			expectError: true,
+			name:           "gRPC final error",
+			volumeID:       defaultVolumeID,
+			nodeID:         defaultNodeID,
+			caps:           defaultCaps,
+			input:          defaultRequest,
+			output:         nil,
+			injectError:    codes.NotFound,
+			expectError:    true,
+			expectDetached: true,
 		},
 		{
-			name:     "empty reply",
-			volumeID: defaultVolumeID,
-			nodeID:   defaultNodeID,
-			caps:     defaultCaps,
-			input:    defaultRequest,
-			output: &csi.ControllerPublishVolumeResponse{
-				Reply: nil,
-			},
-			expectError: true,
-		},
-		{
-			name:     "general error",
-			volumeID: defaultVolumeID,
-			nodeID:   defaultNodeID,
-			caps:     defaultCaps,
-			input:    defaultRequest,
-			output: &csi.ControllerPublishVolumeResponse{
-				Reply: &csi.ControllerPublishVolumeResponse_Error{
-					Error: &csi.Error{
-						Value: &csi.Error_GeneralError_{
-							GeneralError: &csi.Error_GeneralError{
-								ErrorCode:          csi.Error_GeneralError_UNSUPPORTED_REQUEST_VERSION,
-								CallerMustNotRetry: true,
-								ErrorDescription:   "mock error 1",
-							},
-						},
-					},
-				},
-			},
-			expectError: true,
+			name:           "gRPC transient error",
+			volumeID:       defaultVolumeID,
+			nodeID:         defaultNodeID,
+			caps:           defaultCaps,
+			input:          defaultRequest,
+			output:         nil,
+			injectError:    codes.DeadlineExceeded,
+			expectError:    true,
+			expectDetached: false,
 		},
 	}
 
@@ -450,8 +352,8 @@ func TestAttach(t *testing.T) {
 		in := test.input
 		out := test.output
 		var injectedErr error = nil
-		if test.injectError {
-			injectedErr = fmt.Errorf("mock error")
+		if test.injectError != codes.OK {
+			injectedErr = status.Error(test.injectError, fmt.Sprintf("Injecting error %d", test.injectError))
 		}
 
 		// Setup expectation
@@ -459,7 +361,7 @@ func TestAttach(t *testing.T) {
 			controllerServer.EXPECT().ControllerPublishVolume(gomock.Any(), in).Return(out, injectedErr).Times(1)
 		}
 
-		publishInfo, err := csiConn.Attach(context.Background(), test.volumeID, test.readonly, test.nodeID, test.caps)
+		publishInfo, detached, err := csiConn.Attach(context.Background(), test.volumeID, test.readonly, test.nodeID, test.caps)
 		if test.expectError && err == nil {
 			t.Errorf("test %q: Expected error, got none", test.name)
 		}
@@ -468,6 +370,9 @@ func TestAttach(t *testing.T) {
 		}
 		if err == nil && !reflect.DeepEqual(publishInfo, test.expectedInfo) {
 			t.Errorf("got unexpected PublishInfo: %+v", publishInfo)
+		}
+		if detached != test.expectDetached {
+			t.Errorf("test %q: expected detached=%v, got %v", test.name, test.expectDetached, detached)
 		}
 	}
 }
@@ -484,64 +389,43 @@ func TestDetachAttach(t *testing.T) {
 	}
 
 	tests := []struct {
-		name        string
-		volumeID    string
-		nodeID      string
-		input       *csi.ControllerUnpublishVolumeRequest
-		output      *csi.ControllerUnpublishVolumeResponse
-		injectError bool
-		expectError bool
+		name           string
+		volumeID       string
+		nodeID         string
+		input          *csi.ControllerUnpublishVolumeRequest
+		output         *csi.ControllerUnpublishVolumeResponse
+		injectError    codes.Code
+		expectError    bool
+		expectDetached bool
 	}{
 		{
-			name:     "success",
-			volumeID: defaultVolumeID,
-			nodeID:   defaultNodeID,
-			input:    defaultRequest,
-			output: &csi.ControllerUnpublishVolumeResponse{
-				Reply: &csi.ControllerUnpublishVolumeResponse_Result_{
-					Result: &csi.ControllerUnpublishVolumeResponse_Result{},
-				},
-			},
-			expectError: false,
+			name:           "success",
+			volumeID:       defaultVolumeID,
+			nodeID:         defaultNodeID,
+			input:          defaultRequest,
+			output:         &csi.ControllerUnpublishVolumeResponse{},
+			expectError:    false,
+			expectDetached: true,
 		},
 		{
-			name:        "gRPC error",
-			volumeID:    defaultVolumeID,
-			nodeID:      defaultNodeID,
-			input:       defaultRequest,
-			output:      nil,
-			injectError: true,
-			expectError: true,
+			name:           "gRPC final error",
+			volumeID:       defaultVolumeID,
+			nodeID:         defaultNodeID,
+			input:          defaultRequest,
+			output:         nil,
+			injectError:    codes.NotFound,
+			expectError:    true,
+			expectDetached: true,
 		},
 		{
-			name:     "empty reply",
-			volumeID: defaultVolumeID,
-			nodeID:   defaultNodeID,
-			input:    defaultRequest,
-			output: &csi.ControllerUnpublishVolumeResponse{
-				Reply: nil,
-			},
-			expectError: true,
-		},
-		{
-			name:     "general error",
-			volumeID: defaultVolumeID,
-			nodeID:   defaultNodeID,
-			input:    defaultRequest,
-			output: &csi.ControllerUnpublishVolumeResponse{
-				Reply: &csi.ControllerUnpublishVolumeResponse_Error{
-					Error: &csi.Error{
-						Value: &csi.Error_GeneralError_{
-							GeneralError: &csi.Error_GeneralError{
-								ErrorCode:          csi.Error_GeneralError_UNSUPPORTED_REQUEST_VERSION,
-								CallerMustNotRetry: true,
-								ErrorDescription:   "mock error 1",
-							},
-						},
-					},
-				},
-			},
-			expectError: true,
+			name:           "gRPC transient error",
+			volumeID:       defaultVolumeID,
+			nodeID:         defaultNodeID,
+			input:          defaultRequest,
+			output:         nil,
+			injectError:    codes.DeadlineExceeded,
+			expectError:    true,
+			expectDetached: false,
 		},
 	}
 
@@ -557,8 +441,8 @@ func TestDetachAttach(t *testing.T) {
 		in := test.input
 		out := test.output
 		var injectedErr error = nil
-		if test.injectError {
-			injectedErr = fmt.Errorf("mock error")
+		if test.injectError != codes.OK {
+			injectedErr = status.Error(test.injectError, fmt.Sprintf("Injecting error %d", test.injectError))
 		}
 
 		// Setup expectation
@@ -566,12 +450,15 @@ func TestDetachAttach(t *testing.T) {
 			controllerServer.EXPECT().ControllerUnpublishVolume(gomock.Any(), in).Return(out, injectedErr).Times(1)
 		}
 
-		err := csiConn.Detach(context.Background(), test.volumeID, test.nodeID)
+		detached, err := csiConn.Detach(context.Background(), test.volumeID, test.nodeID)
 		if test.expectError && err == nil {
 			t.Errorf("test %q: Expected error, got none", test.name)
 		}
 		if !test.expectError && err != nil {
 			t.Errorf("test %q: got error: %v", test.name, err)
+		}
+		if detached != test.expectDetached {
+			t.Errorf("test %q: expected detached=%v, got %v", test.name, test.expectDetached, detached)
 		}
 	}
 }

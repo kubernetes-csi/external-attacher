@@ -84,6 +84,8 @@ type csiCall struct {
 	nodeID string
 	// error to return
 	err error
+	// "detached" bool to return. Used only when err != nil
+	detached bool
 	// metadata to return (used only in Attach calls)
 	metadata map[string]string
 }
@@ -324,10 +326,10 @@ func (f *fakeCSIConnection) SupportsControllerPublish(ctx context.Context) (bool
 	return false, fmt.Errorf("Not implemented")
 }
 
-func (f *fakeCSIConnection) Attach(ctx context.Context, volumeID string, readOnly bool, nodeID string, caps *csi.VolumeCapability) (map[string]string, error) {
+func (f *fakeCSIConnection) Attach(ctx context.Context, volumeID string, readOnly bool, nodeID string, caps *csi.VolumeCapability) (map[string]string, bool, error) {
 	if f.index >= len(f.calls) {
 		f.t.Errorf("Unexpected CSI Attach call: volume=%s, node=%s, index: %d, calls: %+v", volumeID, nodeID, f.index, f.calls)
-		return nil, fmt.Errorf("unexpected call")
+		return nil, true, fmt.Errorf("unexpected call")
 	}
 	call := f.calls[f.index]
 	f.index++
@@ -348,15 +350,15 @@ func (f *fakeCSIConnection) Attach(ctx context.Context, volumeID string, readOnl
 		err = fmt.Errorf("unexpected attach call")
 	}
 	if err != nil {
-		return nil, err
+		return nil, true, err
 	}
-	return call.metadata, call.err
+	return call.metadata, call.detached, call.err
 }
 
-func (f *fakeCSIConnection) Detach(ctx context.Context, volumeID string, nodeID string) error {
+func (f *fakeCSIConnection) Detach(ctx context.Context, volumeID string, nodeID string) (bool, error) {
 	if f.index >= len(f.calls) {
 		f.t.Errorf("Unexpected CSI Detach call: volume=%s, node=%s, index: %d, calls: %+v", volumeID, nodeID, f.index, f.calls)
-		return fmt.Errorf("unexpected call")
+		return true, fmt.Errorf("unexpected call")
 	}
 	call := f.calls[f.index]
 	f.index++
@@ -377,9 +379,9 @@ func (f *fakeCSIConnection) Detach(ctx context.Context, volumeID string, nodeID 
 		err = fmt.Errorf("unexpected detach call")
 	}
 	if err != nil {
-		return err
+		return true, err
 	}
-	return call.err
+	return call.detached, call.err
 }
 
 func (f *fakeCSIConnection) Close() error {
