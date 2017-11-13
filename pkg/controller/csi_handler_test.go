@@ -88,8 +88,10 @@ func pvDeleted(pv *v1.PersistentVolume) *v1.PersistentVolume {
 func node() *v1.Node {
 	return &v1.Node{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:        testNodeName,
-			Annotations: map[string]string{"nodeid.csi.volume.kubernetes.io/csi-test": testNodeID},
+			Name: testNodeName,
+			Annotations: map[string]string{
+				"csi.volume.kubernetes.io/nodeid": fmt.Sprintf("{ %q: %q }", testAttacherName, testNodeID),
+			},
 		},
 	}
 }

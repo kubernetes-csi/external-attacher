@@ -18,16 +18,14 @@ func TestGetNodeID(t *testing.T) {
 	}{
 		{
 			name:        "single key",
-			annotations: map[string]string{"nodeid.csi.volume.kubernetes.io/foo-bar": "MyNodeID"},
+			annotations: map[string]string{"csi.volume.kubernetes.io/nodeid": "{\"foo/bar\": \"MyNodeID\"}"},
 			expectedID:  "MyNodeID",
 			expectError: false,
 		},
 		{
 			name: "multiple keys",
 			annotations: map[string]string{
-				"nodeid.csi.volume.kubernetes.io/foo-bar":   "MyNodeID",
-				"nodeid.csi.volume.kubernetes.io/foo-bar-":  "MyNodeID1",
-				"nodeid.csi.volume.kubernetes.io/-foo-bar-": "MyNodeID2",
+				"csi.volume.kubernetes.io/nodeid": "{\"foo/bar\": \"MyNodeID\", \"-foo/bar\": \"MyNodeID2\", \"foo/bar-\": \"MyNodeID3\"}",
 			},
 			expectedID:  "MyNodeID",
 			expectError: false,
@@ -39,10 +37,15 @@ func TestGetNodeID(t *testing.T) {
 			expectError: true,
 		},
 		{
+			name:        "invalid JSON",
+			annotations: map[string]string{"csi.volume.kubernetes.io/nodeid": "\"foo/bar\": \"MyNodeID\""},
+			expectedID:  "",
+			expectError: true,
+		},
+		{
 			name: "annotations for another driver",
 			annotations: map[string]string{
-				"nodeid.csi.volume.kubernetes.io/foo-bar-":  "MyNodeID1",
-				"nodeid.csi.volume.kubernetes.io/-foo-bar-": "MyNodeID2",
+				"csi.volume.kubernetes.io/nodeid": "{\"-foo/bar\": \"MyNodeID2\", \"foo/bar-\": \"MyNodeID3\"}",
 			},
 			expectedID:  "",
 			expectError: true,
