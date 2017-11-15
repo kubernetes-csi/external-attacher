@@ -30,7 +30,7 @@ import (
 	"github.com/kubernetes-csi/external-attacher/pkg/connection"
 
 	"k8s.io/api/core/v1"
-	storagev1 "k8s.io/api/storage/v1"
+	storage "k8s.io/api/storage/v1alpha1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/informers"
@@ -57,12 +57,12 @@ type testCase struct {
 	reactors []reaction
 	// Optional VolumeAttachment that's used to simulate "VA added" event.
 	// This VA is also automatically added to initialObjects.
-	addedVA *storagev1.VolumeAttachment
+	addedVA *storage.VolumeAttachment
 	// Optional VolumeAttachment that's used to simulate "VA updated" event.
 	// This VA is also automatically added to initialObjects.
-	updatedVA *storagev1.VolumeAttachment
+	updatedVA *storage.VolumeAttachment
 	// Optional VolumeAttachment that's used to simulate "VA deleted" event.
-	deletedVA *storagev1.VolumeAttachment
+	deletedVA *storage.VolumeAttachment
 	// Optional {V} that's used to simulate "PV updated" event.
 	// This PV is also automatically added to initialObjects.
 	updatedPV *v1.PersistentVolume
@@ -109,7 +109,7 @@ func runTests(t *testing.T, handlerFactory handlerFactory, tests []testCase) {
 		// Create client and informers
 		client := fake.NewSimpleClientset(objs...)
 		informers := informers.NewSharedInformerFactory(client, time.Hour /* disable resync*/)
-		vaInformer := informers.Storage().V1().VolumeAttachments()
+		vaInformer := informers.Storage().V1alpha1().VolumeAttachments()
 		pvInformer := informers.Core().V1().PersistentVolumes()
 		nodeInformer := informers.Core().V1().Nodes()
 		// Fill the informers with inital objects so controller can Get() them
@@ -119,7 +119,7 @@ func runTests(t *testing.T, handlerFactory handlerFactory, tests []testCase) {
 				pvInformer.Informer().GetStore().Add(obj)
 			case *v1.Node:
 				nodeInformer.Informer().GetStore().Add(obj)
-			case *storagev1.VolumeAttachment:
+			case *storage.VolumeAttachment:
 				vaInformer.Informer().GetStore().Add(obj)
 			default:
 				t.Fatalf("Unknown initalObject type: %+v", obj)
@@ -210,7 +210,7 @@ func runTests(t *testing.T, handlerFactory handlerFactory, tests []testCase) {
 			// Sanitize time in attach/detach errors
 			if action.GetVerb() == "update" && action.GetResource().Resource == "volumeattachments" {
 				obj := action.(core.UpdateAction).GetObject()
-				o := obj.(*storagev1.VolumeAttachment)
+				o := obj.(*storage.VolumeAttachment)
 				if o.Status.AttachError != nil {
 					o.Status.AttachError.Time = metav1.Time{}
 				}
@@ -249,19 +249,19 @@ const (
 	testNodeID       = "nodeID1"
 )
 
-func createVolumeAttachment(attacher string, pvName string, nodeName string, attached bool, finalizers string) *storagev1.VolumeAttachment {
-	va := &storagev1.VolumeAttachment{
+func createVolumeAttachment(attacher string, pvName string, nodeName string, attached bool, finalizers string) *storage.VolumeAttachment {
+	va := &storage.VolumeAttachment{
 		ObjectMeta: metav1.ObjectMeta{
 			Name: pvName + "-" + nodeName,
 		},
-		Spec: storagev1.VolumeAttachmentSpec{
+		Spec: storage.VolumeAttachmentSpec{
 			Attacher: attacher,
 			NodeName: nodeName,
-			AttachedVolumeSource: storagev1.AttachedVolumeSource{
+			Source: storage.VolumeAttachmentSource{
 				PersistentVolumeName: &pvName,
 			},
 		},
-		Status: storagev1.VolumeAttachmentStatus{
+		Status: storage.VolumeAttachmentStatus{
 			Attached: attached,
 		},
 	}
@@ -271,39 +271,39 @@ func createVolumeAttachment(attacher string, pvName string, nodeName string, att
 	return va
 }
 
-func va(attached bool, finalizers string) *storagev1.VolumeAttachment {
+func va(attached bool, finalizers string) *storage.VolumeAttachment {
 	return createVolumeAttachment(testAttacherName, testPVName, testNodeName, attached, finalizers)
 }
 
-func deleted(va *storagev1.VolumeAttachment) *storagev1.VolumeAttachment {
+func deleted(va *storage.VolumeAttachment) *storage.VolumeAttachment {
 	va.DeletionTimestamp = &metav1.Time{}
 	return va
 }
 
-func vaWithMetadata(va *storagev1.VolumeAttachment, metadata map[string]string) *storagev1.VolumeAttachment {
+func vaWithMetadata(va *storage.VolumeAttachment, metadata map[string]string) *storage.VolumeAttachment {
 	va.Status.AttachmentMetadata = metadata
 	return va
 }
 
-func vaWithNoPVReference(va *storagev1.VolumeAttachment) *storagev1.VolumeAttachment {
-	va.Spec.AttachedVolumeSource.PersistentVolumeName = nil
+func vaWithNoPVReference(va *storage.VolumeAttachment) *storage.VolumeAttachment {
+	va.Spec.Source.PersistentVolumeName = nil
 	return va
 }
 
-func vaWithInvalidDriver(va *storagev1.VolumeAttachment) *storagev1.VolumeAttachment {
+func vaWithInvalidDriver(va *storage.VolumeAttachment) *storage.VolumeAttachment {
 	return createVolumeAttachment("unknownDriver", testPVName, testNodeName, false, "")
 }
 
-func vaWithAttachError(va *storagev1.VolumeAttachment, message string) *storagev1.VolumeAttachment {
-	va.Status.AttachError = &storagev1.VolumeError{
+func vaWithAttachError(va *storage.VolumeAttachment, message string) *storage.VolumeAttachment {
+	va.Status.AttachError = &storage.VolumeError{
 		Message: message,
 		Time:    metav1.Time{},
 	}
 	return va
 }
 
-func vaWithDetachError(va *storagev1.VolumeAttachment, message string) *storagev1.VolumeAttachment {
-	va.Status.DetachError = &storagev1.VolumeError{
+func vaWithDetachError(va *storage.VolumeAttachment, message string) *storage.VolumeAttachment {
+	va.Status.DetachError = &storage.VolumeError{
 		Message: message,
 		Time:    metav1.Time{},
 	}
