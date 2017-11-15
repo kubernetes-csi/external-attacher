@@ -24,7 +24,7 @@ import (
 	"github.com/kubernetes-csi/external-attacher/pkg/connection"
 
 	"k8s.io/api/core/v1"
-	storagev1 "k8s.io/api/storage/v1"
+	storage "k8s.io/api/storage/v1alpha1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -46,7 +46,7 @@ func csiHandlerFactory(client kubernetes.Interface, informerFactory informers.Sh
 		csi,
 		informerFactory.Core().V1().PersistentVolumes().Lister(),
 		informerFactory.Core().V1().Nodes().Lister(),
-		informerFactory.Storage().V1().VolumeAttachments().Lister())
+		informerFactory.Storage().V1alpha1().VolumeAttachments().Lister())
 }
 
 func pv() *v1.PersistentVolume {
@@ -98,8 +98,8 @@ func node() *v1.Node {
 
 func TestCSIHandler(t *testing.T) {
 	vaGroupResourceVersion := schema.GroupVersionResource{
-		Group:    storagev1.GroupName,
-		Version:  "v1",
+		Group:    storage.GroupName,
+		Version:  "v1alpha1",
 		Resource: "volumeattachments",
 	}
 	pvGroupResourceVersion := schema.GroupVersionResource{
@@ -253,7 +253,7 @@ func TestCSIHandler(t *testing.T) {
 							i++
 							if i < 3 {
 								// Update fails 2 times
-								return true, nil, apierrors.NewForbidden(storagev1.Resource("volumeattachments"), "pv1-node1", errors.New("Mock error"))
+								return true, nil, apierrors.NewForbidden(storage.Resource("volumeattachments"), "pv1-node1", errors.New("Mock error"))
 							}
 							// Update succeeds for the 3rd time
 							return false, nil, nil
@@ -297,7 +297,7 @@ func TestCSIHandler(t *testing.T) {
 							i++
 							if i < 3 {
 								// Update fails 2 times
-								return true, nil, apierrors.NewForbidden(storagev1.Resource("volumeattachments"), "pv1-node1", errors.New("Mock error"))
+								return true, nil, apierrors.NewForbidden(storage.Resource("volumeattachments"), "pv1-node1", errors.New("Mock error"))
 							}
 							// Update succeeds for the 3rd time
 							return false, nil, nil
@@ -333,7 +333,7 @@ func TestCSIHandler(t *testing.T) {
 							if i != 2 {
 								return false, nil, nil
 							}
-							return true, nil, apierrors.NewForbidden(storagev1.Resource("volumeattachments"), "pv1-node1", errors.New("mock error"))
+							return true, nil, apierrors.NewForbidden(storage.Resource("volumeattachments"), "pv1-node1", errors.New("mock error"))
 						}
 					},
 				},
@@ -432,7 +432,7 @@ func TestCSIHandler(t *testing.T) {
 							i++
 							if i < 3 {
 								// Update fails 2 times
-								return true, nil, apierrors.NewForbidden(storagev1.Resource("volumeattachments"), "pv1-node1", errors.New("Mock error"))
+								return true, nil, apierrors.NewForbidden(storage.Resource("volumeattachments"), "pv1-node1", errors.New("Mock error"))
 							}
 							// Update succeeds for the 3rd time
 							return false, nil, nil
@@ -475,7 +475,7 @@ func TestCSIHandler(t *testing.T) {
 						return func(core.Action) (bool, runtime.Object, error) {
 							i++
 							if i == 1 {
-								return true, nil, apierrors.NewForbidden(storagev1.Resource("volumeattachments"), "pv1-node1", errors.New("mock error"))
+								return true, nil, apierrors.NewForbidden(storage.Resource("volumeattachments"), "pv1-node1", errors.New("mock error"))
 							}
 							return false, nil, nil
 						}

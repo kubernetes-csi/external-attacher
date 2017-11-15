@@ -108,7 +108,7 @@ func main() {
 		} else {
 			pvLister := factory.Core().V1().PersistentVolumes().Lister()
 			nodeLister := factory.Core().V1().Nodes().Lister()
-			vaLister := factory.Storage().V1().VolumeAttachments().Lister()
+			vaLister := factory.Storage().V1alpha1().VolumeAttachments().Lister()
 			handler = controller.NewCSIHandler(clientset, attacher, csiConn, pvLister, nodeLister, vaLister)
 			glog.V(2).Infof("CSI driver supports ControllerPublishUnpublish, using real CSI handler")
 		}
@@ -118,7 +118,7 @@ func main() {
 		clientset,
 		attacher,
 		handler,
-		factory.Storage().V1().VolumeAttachments(),
+		factory.Storage().V1alpha1().VolumeAttachments(),
 		factory.Core().V1().PersistentVolumes(),
 	)
 

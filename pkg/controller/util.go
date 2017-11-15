@@ -19,18 +19,18 @@ package controller
 import (
 	"github.com/golang/glog"
 	"github.com/kubernetes-csi/external-attacher/pkg/connection"
-	storagev1 "k8s.io/api/storage/v1"
+	storage "k8s.io/api/storage/v1alpha1"
 	"k8s.io/client-go/kubernetes"
 )
 
-func markAsAttached(client kubernetes.Interface, va *storagev1.VolumeAttachment, metadata map[string]string) (*storagev1.VolumeAttachment, error) {
+func markAsAttached(client kubernetes.Interface, va *storage.VolumeAttachment, metadata map[string]string) (*storage.VolumeAttachment, error) {
 	glog.V(4).Infof("Marking as attached %q", va.Name)
 	clone := va.DeepCopy()
 	clone.Status.Attached = true
 	clone.Status.AttachmentMetadata = metadata
 	clone.Status.AttachError = nil
 	// TODO: use patch to save us from VersionError
-	newVA, err := client.StorageV1().VolumeAttachments().Update(clone)
+	newVA, err := client.StorageV1alpha1().VolumeAttachments().Update(clone)
 	if err != nil {
 		return va, err
 	}
@@ -38,7 +38,7 @@ func markAsAttached(client kubernetes.Interface, va *storagev1.VolumeAttachment,
 	return newVA, nil
 }
 
-func markAsDetached(client kubernetes.Interface, va *storagev1.VolumeAttachment) (*storagev1.VolumeAttachment, error) {
+func markAsDetached(client kubernetes.Interface, va *storage.VolumeAttachment) (*storage.VolumeAttachment, error) {
 	finalizerName := connection.GetFinalizerName(va.Spec.Attacher)
 
 	// Prepare new array of finalizers
@@ -69,7 +69,7 @@ func markAsDetached(client kubernetes.Interface, va *storagev1.VolumeAttachment)
 	clone.Status.DetachError = nil
 	clone.Status.AttachmentMetadata = nil
 	// TODO: use patch to save us from VersionError
-	newVA, err := client.StorageV1().VolumeAttachments().Update(clone)
+	newVA, err := client.StorageV1alpha1().VolumeAttachments().Update(clone)
 	if err != nil {
 		return va, err
 	}

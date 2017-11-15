@@ -19,7 +19,7 @@ package controller
 import (
 	"github.com/golang/glog"
 	"k8s.io/api/core/v1"
-	storagev1 "k8s.io/api/storage/v1"
+	storage "k8s.io/api/storage/v1alpha1"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/util/workqueue"
 )
@@ -44,7 +44,7 @@ func (h *trivialHandler) Init(vaQueue workqueue.RateLimitingInterface, pvQueue w
 	h.pvQueue = pvQueue
 }
 
-func (h *trivialHandler) SyncNewOrUpdatedVolumeAttachment(va *storagev1.VolumeAttachment) {
+func (h *trivialHandler) SyncNewOrUpdatedVolumeAttachment(va *storage.VolumeAttachment) {
 	glog.V(4).Infof("Trivial sync[%s] started", va.Name)
 	if !va.Status.Attached {
 		// mark as attached

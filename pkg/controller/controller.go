@@ -22,16 +22,16 @@ import (
 	"github.com/golang/glog"
 
 	"k8s.io/api/core/v1"
-	storagev1 "k8s.io/api/storage/v1"
+	storage "k8s.io/api/storage/v1alpha1"
 	apierrs "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/util/wait"
-	coreinformerv1 "k8s.io/client-go/informers/core/v1"
-	storageinformerv1 "k8s.io/client-go/informers/storage/v1"
+	coreinformers "k8s.io/client-go/informers/core/v1"
+	storageinformers "k8s.io/client-go/informers/storage/v1alpha1"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/kubernetes/scheme"
 	corev1 "k8s.io/client-go/kubernetes/typed/core/v1"
-	corelisterv1 "k8s.io/client-go/listers/core/v1"
-	storagelisterv1 "k8s.io/client-go/listers/storage/v1"
+	corelisters "k8s.io/client-go/listers/core/v1"
+	storagelisters "k8s.io/client-go/listers/storage/v1alpha1"
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/tools/record"
 	"k8s.io/client-go/util/workqueue"
@@ -45,9 +45,9 @@ type CSIAttachController struct {
 	vaQueue       workqueue.RateLimitingInterface
 	pvQueue       workqueue.RateLimitingInterface
 
-	vaLister       storagelisterv1.VolumeAttachmentLister
+	vaLister       storagelisters.VolumeAttachmentLister
 	vaListerSynced cache.InformerSynced
-	pvLister       corelisterv1.PersistentVolumeLister
+	pvLister       corelisters.PersistentVolumeLister
 	pvListerSynced cache.InformerSynced
 }
 
@@ -62,13 +62,13 @@ type Handler interface {
 	// VolumeAttachment either as forgotten (resets exponential backoff) or
 	// re-queue it into the vaQueue to process it after exponential
 	// backoff.
-	SyncNewOrUpdatedVolumeAttachment(va *storagev1.VolumeAttachment)
+	SyncNewOrUpdatedVolumeAttachment(va *storage.VolumeAttachment)
 
 	SyncNewOrUpdatedPersistentVolume(pv *v1.PersistentVolume)
 }
 
 // NewCSIAttachController returns a new *CSIAttachController
-func NewCSIAttachController(client kubernetes.Interface, attacherName string, handler Handler, volumeAttachmentInformer storageinformerv1.VolumeAttachmentInformer, pvInformer coreinformerv1.PersistentVolumeInformer) *CSIAttachController {
+func NewCSIAttachController(client kubernetes.Interface, attacherName string, handler Handler, volumeAttachmentInformer storageinformers.VolumeAttachmentInformer, pvInformer coreinformers.PersistentVolumeInformer) *CSIAttachController {
 	broadcaster := record.NewBroadcaster()
 	broadcaster.StartRecordingToSink(&corev1.EventSinkImpl{Interface: client.Core().Events(v1.NamespaceAll)})
 	var eventRecorder record.EventRecorder
@@ -124,22 +124,22 @@ func (ctrl *CSIAttachController) Run(workers int, stopCh <-chan struct{}) {
 
 // vaAdded reacts to a VolumeAttachment creation
 func (ctrl *CSIAttachController) vaAdded(obj interface{}) {
-	va := obj.(*storagev1.VolumeAttachment)
+	va := obj.(*storage.VolumeAttachment)
 	ctrl.vaQueue.Add(va.Name)
 }
 
 // vaUpdated reacts to a VolumeAttachment update
 func (ctrl *CSIAttachController) vaUpdated(old, new interface{}) {
-	va := new.(*storagev1.VolumeAttachment)
+	va := new.(*storage.VolumeAttachment)
 	ctrl.vaQueue.Add(va.Name)
 }
 
 // vaDeleted reacts to a VolumeAttachment deleted
 func (ctrl *CSIAttachController) vaDeleted(obj interface{}) {
-	va := obj.(*storagev1.VolumeAttachment)
-	if va != nil && va.Spec.AttachedVolumeSource.PersistentVolumeName != nil {
+	va := obj.(*storage.VolumeAttachment)
+	if va != nil && va.Spec.Source.PersistentVolumeName != nil {
 		// Enqueue PV sync event - it will evaluate and remove finalizer
-		ctrl.pvQueue.Add(*va.Spec.AttachedVolumeSource.PersistentVolumeName)
+		ctrl.pvQueue.Add(*va.Spec.Source.PersistentVolumeName)
 	}
 }
 

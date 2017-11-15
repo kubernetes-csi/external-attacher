@@ -178,6 +178,7 @@ message CSIPersistentVolumeSource {
 
   // VolumeHandle is the unique volume name returned by the CSI volume
   // plugin’s CreateVolume to refer to the volume on all subsequent calls.
+  // Required.
   optional string volumeHandle = 2;
 
   // Optional: The value to pass to ControllerPublishVolumeRequest.
@@ -781,6 +782,10 @@ message DeleteOptions {
   // Either this field or OrphanDependents may be set, but not both.
   // The default policy is decided by the existing finalizer set in the
   // metadata.finalizers and the resource-specific default policy.
+  // Acceptable values are: 'Orphan' - orphan the dependents; 'Background' -
+  // allow the garbage collector to delete the dependents in the background;
+  // 'Foreground' - a cascading policy that deletes all dependents in the
+  // foreground.
   // +optional
   optional string propagationPolicy = 4;
 }
@@ -2358,7 +2363,7 @@ message PersistentVolumeSource {
 
   // ScaleIO represents a ScaleIO persistent volume attached and mounted on Kubernetes nodes.
   // +optional
-  optional ScaleIOVolumeSource scaleIO = 19;
+  optional ScaleIOPersistentVolumeSource scaleIO = 19;
 
   // Local represents directly-attached storage with node affinity
   // +optional
@@ -2494,7 +2499,7 @@ message PodAffinity {
 // relative to the given namespace(s)) that this pod should be
 // co-located (affinity) or not co-located (anti-affinity) with,
 // where co-located is defined as running on a node whose value of
-// the label with key <topologyKey> tches that of any node on which
+// the label with key <topologyKey> matches that of any node on which
 // a pod of the set of pods is running
 message PodAffinityTerm {
   // A label query over a set of resources, in this case pods.
@@ -2509,10 +2514,7 @@ message PodAffinityTerm {
   // the labelSelector in the specified namespaces, where co-located is defined as running on a node
   // whose value of the label with key topologyKey matches that of any node on which any of the
   // selected pods is running.
-  // For PreferredDuringScheduling pod anti-affinity, empty topologyKey is interpreted as "all topologies"
-  // ("all topologies" here means all the topologyKeys indicated by scheduler command-line argument --failure-domains);
-  // for affinity and for RequiredDuringScheduling pod anti-affinity, empty topologyKey is not allowed.
-  // +optional
+  // Empty topologyKey is not allowed.
   optional string topologyKey = 3;
 }
 
@@ -3511,6 +3513,50 @@ message SELinuxOptions {
   optional string level = 4;
 }
 
+// ScaleIOPersistentVolumeSource represents a persistent ScaleIO volume
+message ScaleIOPersistentVolumeSource {
+  // The host address of the ScaleIO API Gateway.
+  optional string gateway = 1;
+
+  // The name of the storage system as configured in ScaleIO.
+  optional string system = 2;
+
+  // SecretRef references to the secret for ScaleIO user and other
+  // sensitive information. If this is not provided, Login operation will fail.
+  optional SecretReference secretRef = 3;
+
+  // Flag to enable/disable SSL communication with Gateway, default false
+  // +optional
+  optional bool sslEnabled = 4;
+
+  // The name of the ScaleIO Protection Domain for the configured storage.
+  // +optional
+  optional string protectionDomain = 5;
+
+  // The ScaleIO Storage Pool associated with the protection domain.
+  // +optional
+  optional string storagePool = 6;
+
+  // Indicates whether the storage for a volume should be ThickProvisioned or ThinProvisioned.
+  // +optional
+  optional string storageMode = 7;
+
+  // The name of a volume already created in the ScaleIO system
+  // that is associated with this volume source.
+  optional string volumeName = 8;
+
+  // Filesystem type to mount.
+  // Must be a filesystem type supported by the host operating system.
+  // Ex. "ext4", "xfs", "ntfs". Implicitly inferred to be "ext4" if unspecified.
+  // +optional
+  optional string fsType = 9;
+
+  // Defaults to false (read/write). ReadOnly here will force
+  // the ReadOnly setting in VolumeMounts.
+  // +optional
+  optional bool readOnly = 10;
+}
+
 // ScaleIOVolumeSource represents a persistent ScaleIO volume
 message ScaleIOVolumeSource {
   // The host address of the ScaleIO API Gateway.
@@ -3527,15 +3573,15 @@ message ScaleIOVolumeSource {
   // +optional
   optional bool sslEnabled = 4;
 
-  // The name of the Protection Domain for the configured storage (defaults to "default").
+  // The name of the ScaleIO Protection Domain for the configured storage.
   // +optional
   optional string protectionDomain = 5;
 
-  // The Storage Pool associated with the protection domain (defaults to "default").
+  // The ScaleIO Storage Pool associated with the protection domain.
   // +optional
   optional string storagePool = 6;
 
-  // Indicates whether the storage for a volume should be thick or thin (defaults to "thin").
+  // Indicates whether the storage for a volume should be ThickProvisioned or ThinProvisioned.
   // +optional
   optional string storageMode = 7;
 

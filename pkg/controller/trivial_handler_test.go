@@ -22,7 +22,7 @@ import (
 
 	"github.com/kubernetes-csi/external-attacher/pkg/connection"
 
-	storagev1 "k8s.io/api/storage/v1"
+	storage "k8s.io/api/storage/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -38,8 +38,8 @@ func trivialHandlerFactory(client kubernetes.Interface, informerFactory informer
 
 func TestTrivialHandler(t *testing.T) {
 	vaGroupResourceVersion := schema.GroupVersionResource{
-		Group:    storagev1.GroupName,
-		Version:  "v1",
+		Group:    storage.GroupName,
+		Version:  "v1alpha1",
 		Resource: "volumeattachments",
 	}
 
@@ -76,7 +76,7 @@ func TestTrivialHandler(t *testing.T) {
 							i++
 							if i < 3 {
 								// Update fails 2 times
-								return true, nil, apierrors.NewForbidden(storagev1.Resource("volumeattachments"), "pv1-node1", errors.New("Mock error"))
+								return true, nil, apierrors.NewForbidden(storage.Resource("volumeattachments"), "pv1-node1", errors.New("Mock error"))
 							}
 							// Update succeeds for the 3rd time
 							return false, nil, nil
