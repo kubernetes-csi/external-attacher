@@ -73,15 +73,22 @@ To run dummy attacher in `hack/local-up-cluster.sh` environment:
 $ csi-attacher -dummy -kubeconfig ~/.kube/config -v 5
 ```
 
-TBD: running as a pod
-
 ### Real attacher
+
+#### Running on command line
+With `hack/local-up-cluster.sh`:
 
 ```sh
 $ csi-attacher -kubeconfig ~/.kube/config -v 5 -csi-address /run/csi/socket
 ```
 
-TBD: running as a pod
+#### Running in a stateful set
+It is necessary to create a new service account and give it enough privileges to run the attacher. We provide one omnipotent yaml file that creates everything that's necessary, however it should be split into multiple files in production.
+
+```sh
+$ kubectl create deploy/kubernetes/statefulset.yaml
+```
+
 
 ## Vendoring
 
