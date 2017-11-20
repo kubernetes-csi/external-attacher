@@ -14,11 +14,15 @@
 
 .PHONY: all csi-attacher clean test
 
+IMAGE_NAME=docker.io/k8scsi/csi-attacher
+IMAGE_VERSION=latest
+
 ifdef V
 TESTARGS = -v -args -alsologtostderr -v 5
 else
 TESTARGS = 
 endif
+
 
 all: csi-attacher
 
@@ -26,7 +30,14 @@ csi-attacher:
 	go build -o csi-attacher cmd/csi-attacher/main.go
 
 clean:
-	-rm -rf csi-attacher
+	-rm -rf csi-attacher deploy/docker/csi-attacher
+
+container: csi-attacher
+	cp csi-attacher deploy/docker
+	docker build -t $(IMAGE_NAME):$(IMAGE_VERSION) deploy/docker
+
+push: container
+	docker push $(IMAGE_NAME):$(IMAGE_VERSION)
 
 test:
 	go test `go list ./... | grep -v 'vendor'` $(TESTARGS)
