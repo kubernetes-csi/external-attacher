@@ -85,7 +85,7 @@ spec:
               mountPath: /var/lib/csi/sockets/pluginproxy/
 
         - name: mock-driver
-          image: docker.io/k8scsi/gocsi-mock-plugin
+          image: docker.io/k8scsi/mock-plugin
           env:
             - name: CSI_ENDPOINT
               value: /var/lib/csi/sockets/pluginproxy/mock.socket
