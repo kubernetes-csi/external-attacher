@@ -47,7 +47,7 @@ type CSIConnection interface {
 	// detached from the node. "false" means that the volume may be either
 	// detached, attaching or attached and caller should retry to get the final
 	// status.
-	Attach(ctx context.Context, volumeID string, readOnly bool, nodeID string, caps *csi.VolumeCapability) (metadata map[string]string, detached bool, err error)
+	Attach(ctx context.Context, volumeID string, readOnly bool, nodeID string, caps *csi.VolumeCapability, attributes map[string]string) (metadata map[string]string, detached bool, err error)
 
 	// Detach given volume from given node. Note that "detached" is returned on
 	// error and means that the volume is for sure detached from the node.
@@ -160,7 +160,7 @@ func (c *csiConnection) SupportsControllerPublish(ctx context.Context) (bool, er
 	return false, nil
 }
 
-func (c *csiConnection) Attach(ctx context.Context, volumeID string, readOnly bool, nodeID string, caps *csi.VolumeCapability) (metadata map[string]string, detached bool, err error) {
+func (c *csiConnection) Attach(ctx context.Context, volumeID string, readOnly bool, nodeID string, caps *csi.VolumeCapability, attributes map[string]string) (metadata map[string]string, detached bool, err error) {
 	client := csi.NewControllerClient(c.conn)
 
 	req := csi.ControllerPublishVolumeRequest{
@@ -169,6 +169,7 @@ func (c *csiConnection) Attach(ctx context.Context, volumeID string, readOnly bo
 		NodeId:           nodeID,
 		VolumeCapability: caps,
 		Readonly:         readOnly,
+		VolumeAttributes: attributes,
 		UserCredentials:  nil,
 	}
 

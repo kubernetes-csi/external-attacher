@@ -10,7 +10,8 @@ import (
 )
 
 const (
-	nodeIDAnnotation = "csi.volume.kubernetes.io/nodeid"
+	nodeIDAnnotation           = "csi.volume.kubernetes.io/nodeid"
+	csiVolAttribsAnnotationKey = "csi.volume.kubernetes.io/volume-attributes"
 )
 
 func SanitizeDriverName(driver string) string {
@@ -91,4 +92,17 @@ func GetVolumeHandle(pv *v1.PersistentVolume) (string, bool, error) {
 		return "", false, fmt.Errorf("persistent volume does not contain CSI volume source")
 	}
 	return pv.Spec.PersistentVolumeSource.CSI.VolumeHandle, pv.Spec.PersistentVolumeSource.CSI.ReadOnly, nil
+}
+
+func GetVolumeAttributes(pv *v1.PersistentVolume) (map[string]string, error) {
+	ann, ok := pv.Annotations[csiVolAttribsAnnotationKey]
+	if !ok {
+		return nil, nil
+	}
+	attribs := map[string]string{}
+	if err := json.Unmarshal([]byte(ann), &attribs); err != nil {
+		return nil, fmt.Errorf("error parsing annotation %s on PV %q: %s", csiVolAttribsAnnotationKey, pv.Name, err)
+	}
+
+	return attribs, nil
 }
