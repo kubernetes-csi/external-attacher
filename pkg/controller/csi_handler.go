@@ -226,6 +226,11 @@ func (h *csiHandler) csiAttach(va *storage.VolumeAttachment) (*storage.VolumeAtt
 		return va, nil, fmt.Errorf("could not add PersistentVolume finalizer: %s", err)
 	}
 
+	attributes, err := connection.GetVolumeAttributes(pv)
+	if err != nil {
+		return va, nil, err
+	}
+
 	volumeHandle, readOnly, err := connection.GetVolumeHandle(pv)
 	if err != nil {
 		return va, nil, err
@@ -252,7 +257,7 @@ func (h *csiHandler) csiAttach(va *storage.VolumeAttachment) (*storage.VolumeAtt
 	ctx := context.TODO()
 	// We're not interested in `detached` return value, the controller will
 	// issue Detach to be sure the volume is really detached.
-	publishInfo, _, err := h.csiConnection.Attach(ctx, volumeHandle, readOnly, nodeID, volumeCapabilities)
+	publishInfo, _, err := h.csiConnection.Attach(ctx, volumeHandle, readOnly, nodeID, volumeCapabilities, attributes)
 	if err != nil {
 		return va, nil, err
 	}

@@ -82,6 +82,8 @@ type csiCall struct {
 	volumeHandle string
 	// Expected CSI's ID of the node
 	nodeID string
+	// Expected volume attributes
+	volumeAttributes map[string]string
 	// error to return
 	err error
 	// "detached" bool to return. Used only when err != nil
@@ -326,7 +328,7 @@ func (f *fakeCSIConnection) SupportsControllerPublish(ctx context.Context) (bool
 	return false, fmt.Errorf("Not implemented")
 }
 
-func (f *fakeCSIConnection) Attach(ctx context.Context, volumeID string, readOnly bool, nodeID string, caps *csi.VolumeCapability) (map[string]string, bool, error) {
+func (f *fakeCSIConnection) Attach(ctx context.Context, volumeID string, readOnly bool, nodeID string, caps *csi.VolumeCapability, attributes map[string]string) (map[string]string, bool, error) {
 	if f.index >= len(f.calls) {
 		f.t.Errorf("Unexpected CSI Attach call: volume=%s, node=%s, index: %d, calls: %+v", volumeID, nodeID, f.index, f.calls)
 		return nil, true, fmt.Errorf("unexpected call")
@@ -349,6 +351,11 @@ func (f *fakeCSIConnection) Attach(ctx context.Context, volumeID string, readOnl
 		f.t.Errorf("Wrong CSI Attach call: volume=%s, node=%s, expected Node: %s", volumeID, nodeID, call.nodeID)
 		err = fmt.Errorf("unexpected attach call")
 	}
+
+	if !reflect.DeepEqual(call.volumeAttributes, attributes) {
+		f.t.Errorf("Wrong CSI Attach call: volume=%s, node=%s, expected attributes %+v, got %+v", volumeID, nodeID, call.volumeAttributes, attributes)
+	}
+
 	if err != nil {
 		return nil, true, err
 	}
