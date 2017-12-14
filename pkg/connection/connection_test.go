@@ -485,3 +485,55 @@ func TestDetachAttach(t *testing.T) {
 		}
 	}
 }
+
+func TestControllerProbe(t *testing.T) {
+	tests := []struct {
+		name        string
+		injectError bool
+		expectError bool
+	}{
+		{
+			name:        "success",
+			expectError: false,
+		},
+		{
+			name:        "gRPC error",
+			injectError: true,
+			expectError: true,
+		},
+	}
+
+	mockController, driver, _, controllerServer, csiConn, err := createMockServer(t)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer mockController.Finish()
+	defer driver.Stop()
+	defer csiConn.Close()
+
+	for _, test := range tests {
+		in := &csi.ControllerProbeRequest{
+			Version: &csi.Version{
+				Major: 0,
+				Minor: 1,
+				Patch: 0,
+			},
+		}
+		out := &csi.ControllerProbeResponse{}
+		var injectedErr error = nil
+		if test.injectError {
+			injectedErr = fmt.Errorf("mock error")
+		}
+
+		// Setup expectation
+		controllerServer.EXPECT().ControllerProbe(gomock.Any(), in).Return(out, injectedErr).Times(1)
+
+		err := csiConn.ControllerProbe(context.Background())
+		if test.expectError && err == nil {
+			t.Errorf("test %q: Expected error, got none", test.name)
+		}
+		if !test.expectError && err != nil {
+			t.Errorf("test %q: got error: %v", test.name, err)
+		}
+	}
+}

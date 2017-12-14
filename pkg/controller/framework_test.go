@@ -394,3 +394,7 @@ func (f *fakeCSIConnection) Detach(ctx context.Context, volumeID string, nodeID 
 func (f *fakeCSIConnection) Close() error {
 	return fmt.Errorf("Not implemented")
 }
+
+func (f *fakeCSIConnection) ControllerProbe(ctx context.Context) error {
+	return fmt.Errorf("Not implemented")
+}

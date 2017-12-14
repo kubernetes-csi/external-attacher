@@ -55,6 +55,9 @@ type CSIConnection interface {
 	// should retry.
 	Detach(ctx context.Context, volumeID string, nodeID string) (detached bool, err error)
 
+	// Probe checks that the CSI driver is ready to process requests
+	ControllerProbe(ctx context.Context) error
+
 	// Close the connection
 	Close() error
 }
@@ -195,6 +198,17 @@ func (c *csiConnection) Detach(ctx context.Context, volumeID string, nodeID stri
 		return isFinalError(err), err
 	}
 	return true, nil
+}
+
+func (c *csiConnection) ControllerProbe(ctx context.Context) error {
+	client := csi.NewControllerClient(c.conn)
+
+	req := csi.ControllerProbeRequest{
+		Version: &csiVersion,
+	}
+
+	_, err := client.ControllerProbe(ctx, &req)
+	return err
 }
 
 func (c *csiConnection) Close() error {
