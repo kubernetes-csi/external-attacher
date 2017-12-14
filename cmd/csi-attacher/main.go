@@ -19,6 +19,7 @@ package main
 import (
 	"context"
 	"flag"
+	"fmt"
 	"os"
 	"os/signal"
 	"time"
@@ -96,6 +97,12 @@ func main() {
 		}
 		glog.V(2).Infof("CSI driver name: %q", attacher)
 
+		// Check it's ready
+		if err = waitForDriverReady(csiConn, *connectionTimeout); err != nil {
+			glog.Error(err.Error())
+			os.Exit(1)
+		}
+
 		// Find out if the driver supports attach/detach.
 		supportsAttach, err := csiConn.SupportsControllerPublish(ctx)
 		if err != nil {
@@ -139,4 +146,27 @@ func buildConfig(kubeconfig string) (*rest.Config, error) {
 		return clientcmd.BuildConfigFromFlags("", kubeconfig)
 	}
 	return rest.InClusterConfig()
+}
+
+func waitForDriverReady(csiConn connection.CSIConnection, timeout time.Duration) error {
+	now := time.Now()
+	finish := now.Add(timeout)
+	var err error
+
+	for {
+		ctx, cancel := context.WithTimeout(context.Background(), csiTimeout)
+		defer cancel()
+		err = csiConn.ControllerProbe(ctx)
+		if err == nil {
+			glog.V(2).Infof("ControllerProbe succeeded")
+			return nil
+		}
+		glog.V(2).Infof("ControllerProbe failed with %s", err)
+
+		now := time.Now()
+		if now.After(finish) {
+			return fmt.Errorf("Failed to probe the controller: %s", err)
+		}
+		time.Sleep(time.Second)
+	}
 }
