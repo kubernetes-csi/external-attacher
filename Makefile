@@ -20,20 +20,22 @@ IMAGE_VERSION=latest
 ifdef V
 TESTARGS = -v -args -alsologtostderr -v 5
 else
-TESTARGS = 
+TESTARGS =
 endif
 
 
 all: csi-attacher
 
 csi-attacher:
-	go build -o csi-attacher cmd/csi-attacher/main.go
+	go install github.com/kubernetes-csi/external-attacher/cmd/csi-attacher
+	mkdir -p bin
+	cp ${GOPATH}/bin/csi-attacher bin/csi-attacher
 
 clean:
-	-rm -rf csi-attacher deploy/docker/csi-attacher
+	-rm -rf bin deploy/docker/csi-attacher
 
 container: csi-attacher
-	cp csi-attacher deploy/docker
+	cp bin/csi-attacher deploy/docker
 	docker build -t $(IMAGE_NAME):$(IMAGE_VERSION) deploy/docker
 
 push: container
