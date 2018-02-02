@@ -1,5 +1,7 @@
 language: go
 sudo: true
+services:
+  - docker
 matrix:
   include:
   - go: 1.x
