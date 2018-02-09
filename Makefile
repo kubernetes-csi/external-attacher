@@ -15,7 +15,7 @@
 .PHONY: all csi-attacher clean test
 
 IMAGE_NAME=quay.io/k8scsi/csi-attacher
-IMAGE_VERSION=latest
+IMAGE_VERSION=v0.2.0
 
 ifdef V
 TESTARGS = -v -args -alsologtostderr -v 5
@@ -36,7 +36,7 @@ clean:
 
 container: csi-attacher
 	cp bin/csi-attacher deploy/docker
-	docker build -t $(IMAGE_NAME):$(IMAGE_VERSION) deploy/docker
+	docker build -t $(IMAGE_NAME):$(IMAGE_VERSION) .
 
 push: container
 	docker push $(IMAGE_NAME):$(IMAGE_VERSION)

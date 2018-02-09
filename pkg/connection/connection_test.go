@@ -65,7 +65,7 @@ func TestGetPluginInfo(t *testing.T) {
 			name: "success",
 			output: &csi.GetPluginInfoResponse{
 				Name:          "csi/example",
-				VendorVersion: "0.1.0",
+				VendorVersion: "0.2.0",
 				Manifest: map[string]string{
 					"hello": "world",
 				},
@@ -100,7 +100,7 @@ func TestGetPluginInfo(t *testing.T) {
 		in := &csi.GetPluginInfoRequest{
 			Version: &csi.Version{
 				Major: 0,
-				Minor: 1,
+				Minor: 2,
 				Patch: 0,
 			},
 		}
@@ -210,7 +210,7 @@ func TestSupportsControllerPublish(t *testing.T) {
 		in := &csi.ControllerGetCapabilitiesRequest{
 			Version: &csi.Version{
 				Major: 0,
-				Minor: 1,
+				Minor: 2,
 				Patch: 0,
 			},
 		}
@@ -294,7 +294,7 @@ func TestAttach(t *testing.T) {
 			caps:     defaultCaps,
 			input:    defaultRequest,
 			output: &csi.ControllerPublishVolumeResponse{
-				PublishVolumeInfo: publishVolumeInfo,
+				PublishInfo: publishVolumeInfo,
 			},
 			expectError:    false,
 			expectedInfo:   publishVolumeInfo,
@@ -319,7 +319,7 @@ func TestAttach(t *testing.T) {
 			readonly: true,
 			input:    readOnlyRequest,
 			output: &csi.ControllerPublishVolumeResponse{
-				PublishVolumeInfo: publishVolumeInfo,
+				PublishInfo: publishVolumeInfo,
 			},
 			expectError:    false,
 			expectedInfo:   publishVolumeInfo,
@@ -355,7 +355,7 @@ func TestAttach(t *testing.T) {
 			attributes: map[string]string{"foo": "bar"},
 			input:      attributesRequest,
 			output: &csi.ControllerPublishVolumeResponse{
-				PublishVolumeInfo: publishVolumeInfo,
+				PublishInfo: publishVolumeInfo,
 			},
 			expectError:    false,
 			expectedInfo:   publishVolumeInfo,
@@ -515,7 +515,7 @@ func TestControllerProbe(t *testing.T) {
 		in := &csi.ControllerProbeRequest{
 			Version: &csi.Version{
 				Major: 0,
-				Minor: 1,
+				Minor: 2,
 				Patch: 0,
 			},
 		}
