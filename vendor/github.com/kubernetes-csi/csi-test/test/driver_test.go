@@ -16,12 +16,13 @@ limitations under the License.
 package test
 
 import (
+	"context"
 	"net"
 	"sync"
 	"testing"
 
 	"github.com/container-storage-interface/spec/lib/go/csi"
-	"golang.org/x/net/context"
+	"github.com/kubernetes-csi/csi-test/utils"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/reflection"
 )
@@ -39,9 +40,9 @@ func (s *simpleDriver) GetSupportedVersions(
 	context.Context, *csi.GetSupportedVersionsRequest) (*csi.GetSupportedVersionsResponse, error) {
 	return &csi.GetSupportedVersionsResponse{
 		SupportedVersions: []*csi.Version{
-			&csi.Version{
+			{
 				Major: 0,
-				Minor: 1,
+				Minor: 2,
 				Patch: 0,
 			},
 		},
@@ -109,7 +110,7 @@ func TestSimpleDriver(t *testing.T) {
 	defer s.Stop()
 
 	// Setup a connection to the driver
-	conn, err := grpc.Dial(s.Address(), grpc.WithInsecure())
+	conn, err := utils.Connect(s.Address())
 	if err != nil {
 		t.Errorf("Error: %s", err.Error())
 	}
