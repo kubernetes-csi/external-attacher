@@ -1,12 +1,9 @@
 language: go
-install:
-  - curl https://glide.sh/get | sh
-  - glide install -v
 matrix:
   include:
-  - go: 1.8.4
-  - go: 1.9.1
+  - go: 1.x
 script:
 - go fmt $(go list ./... | grep -v vendor) | wc -l | grep 0
 - go vet $(go list ./... | grep -v vendor)
-- go test $(go list ./... | grep -v vendor)
+- go test $(go list ./... | grep -v vendor | grep -v "cmd/csi-sanity")
+- ./hack/e2e.sh

@@ -72,7 +72,7 @@ var (
 	// Version of CSI this client implements
 	csiVersion = csi.Version{
 		Major: 0,
-		Minor: 1,
+		Minor: 2,
 		Patch: 0,
 	}
 )
@@ -167,30 +167,30 @@ func (c *csiConnection) Attach(ctx context.Context, volumeID string, readOnly bo
 	client := csi.NewControllerClient(c.conn)
 
 	req := csi.ControllerPublishVolumeRequest{
-		Version:          &csiVersion,
-		VolumeId:         volumeID,
-		NodeId:           nodeID,
-		VolumeCapability: caps,
-		Readonly:         readOnly,
-		VolumeAttributes: attributes,
-		UserCredentials:  nil,
+		Version:                      &csiVersion,
+		VolumeId:                     volumeID,
+		NodeId:                       nodeID,
+		VolumeCapability:             caps,
+		Readonly:                     readOnly,
+		VolumeAttributes:             attributes,
+		ControllerPublishCredentials: nil,
 	}
 
 	rsp, err := client.ControllerPublishVolume(ctx, &req)
 	if err != nil {
 		return nil, isFinalError(err), err
 	}
-	return rsp.PublishVolumeInfo, false, nil
+	return rsp.PublishInfo, false, nil
 }
 
 func (c *csiConnection) Detach(ctx context.Context, volumeID string, nodeID string) (detached bool, err error) {
 	client := csi.NewControllerClient(c.conn)
 
 	req := csi.ControllerUnpublishVolumeRequest{
-		Version:         &csiVersion,
-		VolumeId:        volumeID,
-		NodeId:          nodeID,
-		UserCredentials: nil,
+		Version:  &csiVersion,
+		VolumeId: volumeID,
+		NodeId:   nodeID,
+		ControllerUnpublishCredentials: nil,
 	}
 
 	_, err = client.ControllerUnpublishVolume(ctx, &req)

@@ -14,14 +14,16 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
+//go:generate mockgen -package=driver -destination=driver.mock.go github.com/container-storage-interface/spec/lib/go/csi IdentityServer,ControllerServer,NodeServer
+
 package driver
 
-//go:generate mockgen -source=$GOPATH/src/github.com/container-storage-interface/spec/lib/go/csi/csi.pb.go -imports .=github.com/container-storage-interface/spec/lib/go/csi -package=driver -destination=driver.mock.go
 import (
 	"net"
 	"sync"
 
 	"github.com/container-storage-interface/spec/lib/go/csi"
+	"github.com/kubernetes-csi/csi-test/utils"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/reflection"
 )
@@ -38,6 +40,8 @@ type MockCSIDriver struct {
 	conn     *grpc.ClientConn
 	servers  *MockCSIDriverServers
 	wg       sync.WaitGroup
+	running  bool
+	lock     sync.Mutex
 }
 
 func NewMockCSIDriver(servers *MockCSIDriverServers) *MockCSIDriver {
@@ -46,11 +50,15 @@ func NewMockCSIDriver(servers *MockCSIDriverServers) *MockCSIDriver {
 	}
 }
 
-func (m *MockCSIDriver) goServe() {
+func (m *MockCSIDriver) goServe(started chan<- bool) {
 	m.wg.Add(1)
 	go func() {
 		defer m.wg.Done()
-		m.server.Serve(m.listener)
+		started <- true
+		err := m.server.Serve(m.listener)
+		if err != nil {
+			panic(err.Error())
+		}
 	}()
 }
 
@@ -58,6 +66,8 @@ func (m *MockCSIDriver) Address() string {
 	return m.listener.Addr().String()
 }
 func (m *MockCSIDriver) Start() error {
+	m.lock.Lock()
+	defer m.lock.Unlock()
 
 	// Listen on a port assigned by the net package
 	l, err := net.Listen("tcp", "127.0.0.1:0")
@@ -82,7 +92,10 @@ func (m *MockCSIDriver) Start() error {
 	reflection.Register(m.server)
 
 	// Start listening for requests
-	m.goServe()
+	waitForServer := make(chan bool)
+	m.goServe(waitForServer)
+	<-waitForServer
+	m.running = true
 	return nil
 }
 
@@ -94,7 +107,7 @@ func (m *MockCSIDriver) Nexus() (*grpc.ClientConn, error) {
 	}
 
 	// Create a client connection
-	m.conn, err = grpc.Dial(m.Address(), grpc.WithInsecure())
+	m.conn, err = utils.Connect(m.Address())
 	if err != nil {
 		return nil, err
 	}
@@ -103,6 +116,13 @@ func (m *MockCSIDriver) Nexus() (*grpc.ClientConn, error) {
 }
 
 func (m *MockCSIDriver) Stop() {
+	m.lock.Lock()
+	defer m.lock.Unlock()
+
+	if !m.running {
+		return
+	}
+
 	m.server.Stop()
 	m.wg.Wait()
 }
@@ -110,4 +130,11 @@ func (m *MockCSIDriver) Stop() {
 func (m *MockCSIDriver) Close() {
 	m.conn.Close()
 	m.server.Stop()
+}
+
+func (m *MockCSIDriver) IsRunning() bool {
+	m.lock.Lock()
+	defer m.lock.Unlock()
+
+	return m.running
 }
