@@ -24,7 +24,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/container-storage-interface/spec/lib/go/csi"
+	"github.com/container-storage-interface/spec/lib/go/csi/v0"
 	"github.com/davecgh/go-spew/spew"
 	"github.com/golang/glog"
 	"github.com/kubernetes-csi/external-attacher/pkg/connection"
@@ -395,6 +395,6 @@ func (f *fakeCSIConnection) Close() error {
 	return fmt.Errorf("Not implemented")
 }
 
-func (f *fakeCSIConnection) ControllerProbe(ctx context.Context) error {
-	return fmt.Errorf("Not implemented")
+func (f *fakeCSIConnection) Probe(ctx context.Context) error {
+	return nil
 }

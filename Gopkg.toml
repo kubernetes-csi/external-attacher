@@ -8,9 +8,9 @@
   branch = "master"
   name = "github.com/golang/glog"
 
-[[constraint]]
-  name = "github.com/golang/mock"
-  version = "1.0.0"
+#[[constraint]]
+#  name = "github.com/golang/mock"
+#  version = "1.0.0"
 
 [[constraint]]
   branch = "master"

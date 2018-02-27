@@ -152,16 +152,15 @@ func waitForDriverReady(csiConn connection.CSIConnection, timeout time.Duration)
 	now := time.Now()
 	finish := now.Add(timeout)
 	var err error
-
 	for {
 		ctx, cancel := context.WithTimeout(context.Background(), csiTimeout)
 		defer cancel()
-		err = csiConn.ControllerProbe(ctx)
+		err = csiConn.Probe(ctx)
 		if err == nil {
-			glog.V(2).Infof("ControllerProbe succeeded")
+			glog.V(2).Infof("Probe succeeded")
 			return nil
 		}
-		glog.V(2).Infof("ControllerProbe failed with %s", err)
+		glog.V(2).Infof("Probe failed with %s", err)
 
 		now := time.Now()
 		if now.After(finish) {

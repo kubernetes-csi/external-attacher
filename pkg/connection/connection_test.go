@@ -22,7 +22,7 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/container-storage-interface/spec/lib/go/csi"
+	"github.com/container-storage-interface/spec/lib/go/csi/v0"
 	"github.com/golang/mock/gomock"
 	"github.com/kubernetes-csi/csi-test/driver"
 	"google.golang.org/grpc/codes"
@@ -97,13 +97,7 @@ func TestGetPluginInfo(t *testing.T) {
 
 	for _, test := range tests {
 
-		in := &csi.GetPluginInfoRequest{
-			Version: &csi.Version{
-				Major: 0,
-				Minor: 2,
-				Patch: 0,
-			},
-		}
+		in := &csi.GetPluginInfoRequest{}
 
 		out := test.output
 		var injectedErr error = nil
@@ -138,14 +132,14 @@ func TestSupportsControllerPublish(t *testing.T) {
 			name: "success",
 			output: &csi.ControllerGetCapabilitiesResponse{
 				Capabilities: []*csi.ControllerServiceCapability{
-					&csi.ControllerServiceCapability{
+					{
 						Type: &csi.ControllerServiceCapability_Rpc{
 							Rpc: &csi.ControllerServiceCapability_RPC{
 								Type: csi.ControllerServiceCapability_RPC_CREATE_DELETE_VOLUME,
 							},
 						},
 					},
-					&csi.ControllerServiceCapability{
+					{
 						Type: &csi.ControllerServiceCapability_Rpc{
 							Rpc: &csi.ControllerServiceCapability_RPC{
 								Type: csi.ControllerServiceCapability_RPC_PUBLISH_UNPUBLISH_VOLUME,
@@ -166,7 +160,7 @@ func TestSupportsControllerPublish(t *testing.T) {
 			name: "no publish",
 			output: &csi.ControllerGetCapabilitiesResponse{
 				Capabilities: []*csi.ControllerServiceCapability{
-					&csi.ControllerServiceCapability{
+					{
 						Type: &csi.ControllerServiceCapability_Rpc{
 							Rpc: &csi.ControllerServiceCapability_RPC{
 								Type: csi.ControllerServiceCapability_RPC_CREATE_DELETE_VOLUME,
@@ -181,7 +175,7 @@ func TestSupportsControllerPublish(t *testing.T) {
 			name: "empty capability",
 			output: &csi.ControllerGetCapabilitiesResponse{
 				Capabilities: []*csi.ControllerServiceCapability{
-					&csi.ControllerServiceCapability{
+					{
 						Type: nil,
 					},
 				},
@@ -207,13 +201,7 @@ func TestSupportsControllerPublish(t *testing.T) {
 
 	for _, test := range tests {
 
-		in := &csi.ControllerGetCapabilitiesRequest{
-			Version: &csi.Version{
-				Major: 0,
-				Minor: 2,
-				Patch: 0,
-			},
-		}
+		in := &csi.ControllerGetCapabilitiesRequest{}
 
 		out := test.output
 		var injectedErr error = nil
@@ -251,21 +239,18 @@ func TestAttach(t *testing.T) {
 		"third":  "baz",
 	}
 	defaultRequest := &csi.ControllerPublishVolumeRequest{
-		Version:          &csiVersion,
 		VolumeId:         defaultVolumeID,
 		NodeId:           defaultNodeID,
 		VolumeCapability: defaultCaps,
 		Readonly:         false,
 	}
 	readOnlyRequest := &csi.ControllerPublishVolumeRequest{
-		Version:          &csiVersion,
 		VolumeId:         defaultVolumeID,
 		NodeId:           defaultNodeID,
 		VolumeCapability: defaultCaps,
 		Readonly:         true,
 	}
 	attributesRequest := &csi.ControllerPublishVolumeRequest{
-		Version:          &csiVersion,
 		VolumeId:         defaultVolumeID,
 		NodeId:           defaultNodeID,
 		VolumeCapability: defaultCaps,
@@ -406,7 +391,6 @@ func TestDetachAttach(t *testing.T) {
 	defaultNodeID := "MyNodeID"
 
 	defaultRequest := &csi.ControllerUnpublishVolumeRequest{
-		Version:  &csiVersion,
 		VolumeId: defaultVolumeID,
 		NodeId:   defaultNodeID,
 	}
@@ -482,58 +466,6 @@ func TestDetachAttach(t *testing.T) {
 		}
 		if detached != test.expectDetached {
 			t.Errorf("test %q: expected detached=%v, got %v", test.name, test.expectDetached, detached)
-		}
-	}
-}
-
-func TestControllerProbe(t *testing.T) {
-	tests := []struct {
-		name        string
-		injectError bool
-		expectError bool
-	}{
-		{
-			name:        "success",
-			expectError: false,
-		},
-		{
-			name:        "gRPC error",
-			injectError: true,
-			expectError: true,
-		},
-	}
-
-	mockController, driver, _, controllerServer, csiConn, err := createMockServer(t)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer mockController.Finish()
-	defer driver.Stop()
-	defer csiConn.Close()
-
-	for _, test := range tests {
-		in := &csi.ControllerProbeRequest{
-			Version: &csi.Version{
-				Major: 0,
-				Minor: 2,
-				Patch: 0,
-			},
-		}
-		out := &csi.ControllerProbeResponse{}
-		var injectedErr error = nil
-		if test.injectError {
-			injectedErr = fmt.Errorf("mock error")
-		}
-
-		// Setup expectation
-		controllerServer.EXPECT().ControllerProbe(gomock.Any(), in).Return(out, injectedErr).Times(1)
-
-		err := csiConn.ControllerProbe(context.Background())
-		if test.expectError && err == nil {
-			t.Errorf("test %q: Expected error, got none", test.name)
-		}
-		if !test.expectError && err != nil {
-			t.Errorf("test %q: got error: %v", test.name, err)
 		}
 	}
 }

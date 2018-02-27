@@ -27,15 +27,13 @@ endif
 all: csi-attacher
 
 csi-attacher:
-	go install github.com/kubernetes-csi/external-attacher/cmd/csi-attacher
 	mkdir -p bin
-	cp ${GOPATH}/bin/csi-attacher bin/csi-attacher
+	CGO_ENABLED=0 GOOS=linux go build -a -ldflags '-extldflags "-static"' -o ./bin/csi-attacher ./cmd/csi-attacher
 
 clean:
-	-rm -rf bin deploy/docker/csi-attacher
+	-rm -rf bin
 
 container: csi-attacher
-	cp bin/csi-attacher deploy/docker
 	docker build -t $(IMAGE_NAME):$(IMAGE_VERSION) .
 
 push: container
