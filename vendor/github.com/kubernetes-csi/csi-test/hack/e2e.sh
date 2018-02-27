@@ -5,7 +5,7 @@ UDS="/tmp/e2e-csi-sanity.sock"
 CSI_ENDPOINTS="127.0.0.1:9998"
 CSI_ENDPOINTS="$CSI_ENDPOINTS unix://${UDS}"
 CSI_ENDPOINTS="$CSI_ENDPOINTS ${UDS}"
-CSI_MOCK_VERSION="support/csi-0.2.0"
+CSI_MOCK_VERSION="master"
 
 #
 # $1 - endpoint for mock.

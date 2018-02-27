@@ -18,7 +18,7 @@ package test
 import (
 	"testing"
 
-	"github.com/container-storage-interface/spec/lib/go/csi"
+	csi "github.com/container-storage-interface/spec/lib/go/csi/v0"
 	gomock "github.com/golang/mock/gomock"
 	mock_driver "github.com/kubernetes-csi/csi-test/driver"
 	mock_utils "github.com/kubernetes-csi/csi-test/utils"
@@ -33,13 +33,7 @@ func TestPluginInfoResponse(t *testing.T) {
 	driver := mock_driver.NewMockIdentityServer(m)
 
 	// Setup input
-	in := &csi.GetPluginInfoRequest{
-		Version: &csi.Version{
-			Major: 0,
-			Minor: 1,
-			Patch: 0,
-		},
-	}
+	in := &csi.GetPluginInfoRequest{}
 
 	// Setup mock outout
 	out := &csi.GetPluginInfoResponse{
@@ -72,13 +66,7 @@ func TestGRPCGetPluginInfoReponse(t *testing.T) {
 	driver := mock_driver.NewMockIdentityServer(m)
 
 	// Setup input
-	in := &csi.GetPluginInfoRequest{
-		Version: &csi.Version{
-			Major: 0,
-			Minor: 1,
-			Patch: 0,
-		},
-	}
+	in := &csi.GetPluginInfoRequest{}
 
 	// Setup mock outout
 	out := &csi.GetPluginInfoResponse{
