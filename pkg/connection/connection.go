@@ -23,7 +23,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/container-storage-interface/spec/lib/go/csi"
+	"github.com/container-storage-interface/spec/lib/go/csi/v0"
 	"github.com/golang/glog"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
@@ -56,7 +56,7 @@ type CSIConnection interface {
 	Detach(ctx context.Context, volumeID string, nodeID string) (detached bool, err error)
 
 	// Probe checks that the CSI driver is ready to process requests
-	ControllerProbe(ctx context.Context) error
+	Probe(ctx context.Context) error
 
 	// Close the connection
 	Close() error
@@ -68,13 +68,6 @@ type csiConnection struct {
 
 var (
 	_ CSIConnection = &csiConnection{}
-
-	// Version of CSI this client implements
-	csiVersion = csi.Version{
-		Major: 0,
-		Minor: 2,
-		Patch: 0,
-	}
 )
 
 func New(address string, timeout time.Duration) (CSIConnection, error) {
@@ -122,9 +115,7 @@ func connect(address string, timeout time.Duration) (*grpc.ClientConn, error) {
 func (c *csiConnection) GetDriverName(ctx context.Context) (string, error) {
 	client := csi.NewIdentityClient(c.conn)
 
-	req := csi.GetPluginInfoRequest{
-		Version: &csiVersion,
-	}
+	req := csi.GetPluginInfoRequest{}
 
 	rsp, err := client.GetPluginInfo(ctx, &req)
 	if err != nil {
@@ -137,11 +128,21 @@ func (c *csiConnection) GetDriverName(ctx context.Context) (string, error) {
 	return name, nil
 }
 
+func (c *csiConnection) Probe(ctx context.Context) error {
+	client := csi.NewIdentityClient(c.conn)
+
+	req := csi.ProbeRequest{}
+
+	_, err := client.Probe(ctx, &req)
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
 func (c *csiConnection) SupportsControllerPublish(ctx context.Context) (bool, error) {
 	client := csi.NewControllerClient(c.conn)
-	req := csi.ControllerGetCapabilitiesRequest{
-		Version: &csiVersion,
-	}
+	req := csi.ControllerGetCapabilitiesRequest{}
 
 	rsp, err := client.ControllerGetCapabilities(ctx, &req)
 	if err != nil {
@@ -167,13 +168,12 @@ func (c *csiConnection) Attach(ctx context.Context, volumeID string, readOnly bo
 	client := csi.NewControllerClient(c.conn)
 
 	req := csi.ControllerPublishVolumeRequest{
-		Version:                      &csiVersion,
-		VolumeId:                     volumeID,
-		NodeId:                       nodeID,
-		VolumeCapability:             caps,
-		Readonly:                     readOnly,
-		VolumeAttributes:             attributes,
-		ControllerPublishCredentials: nil,
+		VolumeId:                 volumeID,
+		NodeId:                   nodeID,
+		VolumeCapability:         caps,
+		Readonly:                 readOnly,
+		VolumeAttributes:         attributes,
+		ControllerPublishSecrets: nil,
 	}
 
 	rsp, err := client.ControllerPublishVolume(ctx, &req)
@@ -187,10 +187,9 @@ func (c *csiConnection) Detach(ctx context.Context, volumeID string, nodeID stri
 	client := csi.NewControllerClient(c.conn)
 
 	req := csi.ControllerUnpublishVolumeRequest{
-		Version:  &csiVersion,
 		VolumeId: volumeID,
 		NodeId:   nodeID,
-		ControllerUnpublishCredentials: nil,
+		ControllerUnpublishSecrets: nil,
 	}
 
 	_, err = client.ControllerUnpublishVolume(ctx, &req)
@@ -198,17 +197,6 @@ func (c *csiConnection) Detach(ctx context.Context, volumeID string, nodeID stri
 		return isFinalError(err), err
 	}
 	return true, nil
-}
-
-func (c *csiConnection) ControllerProbe(ctx context.Context) error {
-	client := csi.NewControllerClient(c.conn)
-
-	req := csi.ControllerProbeRequest{
-		Version: &csiVersion,
-	}
-
-	_, err := client.ControllerProbe(ctx, &req)
-	return err
 }
 
 func (c *csiConnection) Close() error {
