@@ -269,16 +269,12 @@ var _ = Describe("DeleteVolume [Controller Server]", func() {
 		}
 	})
 
-	It("should fail when no volume id is provided", func() {
+	It("should not fail when no volume id is provided", func() {
 
 		_, err := c.DeleteVolume(
 			context.Background(),
 			&csi.DeleteVolumeRequest{})
-		Expect(err).To(HaveOccurred())
-
-		serverError, ok := status.FromError(err)
-		Expect(ok).To(BeTrue())
-		Expect(serverError.Code()).To(Equal(codes.InvalidArgument))
+		Expect(err).NotTo(HaveOccurred())
 	})
 
 	It("should succeed when an invalid volume id is used", func() {
@@ -346,7 +342,7 @@ var _ = Describe("ValidateVolumeCapabilities [Controller Server]", func() {
 
 		serverError, ok := status.FromError(err)
 		Expect(ok).To(BeTrue())
-		Expect(serverError.Code()).To(Equal(codes.InvalidArgument))
+		Expect(serverError.Code()).To(Equal(codes.NotFound))
 	})
 
 	It("should fail when no volume capabilities are provided", func() {
@@ -360,7 +356,7 @@ var _ = Describe("ValidateVolumeCapabilities [Controller Server]", func() {
 
 		serverError, ok := status.FromError(err)
 		Expect(ok).To(BeTrue())
-		Expect(serverError.Code()).To(Equal(codes.InvalidArgument))
+		Expect(serverError.Code()).To(Equal(codes.NotFound))
 	})
 
 	It("should return appropriate values (no optional values added)", func() {
@@ -444,7 +440,7 @@ var _ = Describe("ControllerPublishVolume [Controller Server]", func() {
 
 		serverError, ok := status.FromError(err)
 		Expect(ok).To(BeTrue())
-		Expect(serverError.Code()).To(Equal(codes.InvalidArgument))
+		Expect(serverError.Code()).To(Equal(codes.NotFound))
 	})
 
 	It("should fail when no node id is provided", func() {
@@ -458,7 +454,7 @@ var _ = Describe("ControllerPublishVolume [Controller Server]", func() {
 
 		serverError, ok := status.FromError(err)
 		Expect(ok).To(BeTrue())
-		Expect(serverError.Code()).To(Equal(codes.InvalidArgument))
+		Expect(serverError.Code()).To(Equal(codes.NotFound))
 	})
 
 	It("should fail when no volume capability is provided", func() {
@@ -473,7 +469,7 @@ var _ = Describe("ControllerPublishVolume [Controller Server]", func() {
 
 		serverError, ok := status.FromError(err)
 		Expect(ok).To(BeTrue())
-		Expect(serverError.Code()).To(Equal(codes.InvalidArgument))
+		Expect(serverError.Code()).To(Equal(codes.NotFound))
 	})
 
 	It("should return appropriate values (no optional values added)", func() {
@@ -574,7 +570,7 @@ var _ = Describe("ControllerUnpublishVolume [Controller Server]", func() {
 
 		serverError, ok := status.FromError(err)
 		Expect(ok).To(BeTrue())
-		Expect(serverError.Code()).To(Equal(codes.InvalidArgument))
+		Expect(serverError.Code()).To(Equal(codes.NotFound))
 	})
 
 	It("should return appropriate values (no optional values added)", func() {

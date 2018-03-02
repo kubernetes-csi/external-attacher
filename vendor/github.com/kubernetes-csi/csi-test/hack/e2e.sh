@@ -24,16 +24,10 @@ runTest()
 	fi
 }
 
-#
-# TODO Once 0.2.0 change gets merged into gocsi repo, switch back to "go get"
-#
-git clone https://github.com/thecodeteam/gocsi $GOPATH/src/github.com/thecodeteam/gocsi
-pushd $GOPATH/src/github.com/thecodeteam/gocsi
-git checkout $CSI_MOCK_VERSION
-make build
-popd 
-#
-#go get -u github.com/thecodeteam/gocsi/mock
+cd mock
+  make clean mock || exit 1
+cd ..
+
 cd cmd/csi-sanity
   make clean install || exit 1
 cd ../..
