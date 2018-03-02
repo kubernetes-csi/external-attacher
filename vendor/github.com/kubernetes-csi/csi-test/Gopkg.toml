@@ -27,7 +27,7 @@
 
 [[constraint]]
   name = "github.com/container-storage-interface/spec"
-  branch = "master"
+  version = "~0.2.0"
 
 [[constraint]]
   name = "github.com/golang/mock"

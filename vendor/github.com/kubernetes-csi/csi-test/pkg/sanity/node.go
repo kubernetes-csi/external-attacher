@@ -269,7 +269,7 @@ var _ = Describe("NodeUnpublishVolume [Node Server]", func() {
 
 		serverError, ok := status.FromError(err)
 		Expect(ok).To(BeTrue())
-		Expect(serverError.Code()).To(Equal(codes.InvalidArgument))
+		Expect(serverError.Code()).To(Equal(codes.NotFound))
 	})
 
 	It("should fail when no target path is provided", func() {
@@ -283,7 +283,7 @@ var _ = Describe("NodeUnpublishVolume [Node Server]", func() {
 
 		serverError, ok := status.FromError(err)
 		Expect(ok).To(BeTrue())
-		Expect(serverError.Code()).To(Equal(codes.InvalidArgument))
+		Expect(serverError.Code()).To(Equal(codes.NotFound))
 	})
 
 	It("should return appropriate values (no optional values added)", func() {
