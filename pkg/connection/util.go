@@ -10,6 +10,7 @@ import (
 )
 
 const (
+	defaultFSType              = "ext4"
 	nodeIDAnnotation           = "csi.volume.kubernetes.io/nodeid"
 	csiVolAttribsAnnotationKey = "csi.volume.kubernetes.io/volume-attributes"
 )
@@ -53,10 +54,19 @@ func GetVolumeCapabilities(pv *v1.PersistentVolume) (*csi.VolumeCapability, erro
 		m[mode] = true
 	}
 
+	if pv.Spec.PersistentVolumeSource.CSI == nil {
+		return nil, fmt.Errorf("persistent volume does not contain CSI volume source")
+	}
+
+	fsType := pv.Spec.CSI.FSType
+	if len(fsType) == 0 {
+		fsType = defaultFSType
+	}
+
 	cap := &csi.VolumeCapability{
 		AccessType: &csi.VolumeCapability_Mount{
 			Mount: &csi.VolumeCapability_MountVolume{
-				// TODO: get FsType from somewhere
+				FsType:     fsType,
 				MountFlags: pv.Spec.MountOptions,
 			},
 		},
