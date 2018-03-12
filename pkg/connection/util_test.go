@@ -73,10 +73,11 @@ func TestGetNodeID(t *testing.T) {
 	}
 }
 
-func createMountCapability(mode csi.VolumeCapability_AccessMode_Mode, mountOptions []string) *csi.VolumeCapability {
+func createMountCapability(fsType string, mode csi.VolumeCapability_AccessMode_Mode, mountOptions []string) *csi.VolumeCapability {
 	return &csi.VolumeCapability{
 		AccessType: &csi.VolumeCapability_Mount{
 			Mount: &csi.VolumeCapability_MountVolume{
+				FsType:     fsType,
 				MountFlags: mountOptions,
 			},
 		},
@@ -85,9 +86,11 @@ func createMountCapability(mode csi.VolumeCapability_AccessMode_Mode, mountOptio
 		},
 	}
 }
+
 func TestGetVolumeCapabilities(t *testing.T) {
 	tests := []struct {
 		name               string
+		fsType             string
 		modes              []v1.PersistentVolumeAccessMode
 		mountOptions       []string
 		expectedCapability *csi.VolumeCapability
@@ -96,31 +99,38 @@ func TestGetVolumeCapabilities(t *testing.T) {
 		{
 			name:               "RWX",
 			modes:              []v1.PersistentVolumeAccessMode{v1.ReadWriteMany},
-			expectedCapability: createMountCapability(csi.VolumeCapability_AccessMode_MULTI_NODE_MULTI_WRITER, nil),
+			expectedCapability: createMountCapability(defaultFSType, csi.VolumeCapability_AccessMode_MULTI_NODE_MULTI_WRITER, nil),
+			expectError:        false,
+		},
+		{
+			name:               "RWX + specified fsType",
+			fsType:             "ext3",
+			modes:              []v1.PersistentVolumeAccessMode{v1.ReadWriteMany},
+			expectedCapability: createMountCapability("ext3", csi.VolumeCapability_AccessMode_MULTI_NODE_MULTI_WRITER, nil),
 			expectError:        false,
 		},
 		{
 			name:               "RWO",
 			modes:              []v1.PersistentVolumeAccessMode{v1.ReadWriteOnce},
-			expectedCapability: createMountCapability(csi.VolumeCapability_AccessMode_SINGLE_NODE_WRITER, nil),
+			expectedCapability: createMountCapability(defaultFSType, csi.VolumeCapability_AccessMode_SINGLE_NODE_WRITER, nil),
 			expectError:        false,
 		},
 		{
 			name:               "ROX",
 			modes:              []v1.PersistentVolumeAccessMode{v1.ReadOnlyMany},
-			expectedCapability: createMountCapability(csi.VolumeCapability_AccessMode_MULTI_NODE_READER_ONLY, nil),
+			expectedCapability: createMountCapability(defaultFSType, csi.VolumeCapability_AccessMode_MULTI_NODE_READER_ONLY, nil),
 			expectError:        false,
 		},
 		{
 			name:               "RWX + anytyhing",
 			modes:              []v1.PersistentVolumeAccessMode{v1.ReadWriteMany, v1.ReadOnlyMany, v1.ReadWriteOnce},
-			expectedCapability: createMountCapability(csi.VolumeCapability_AccessMode_MULTI_NODE_MULTI_WRITER, nil),
+			expectedCapability: createMountCapability(defaultFSType, csi.VolumeCapability_AccessMode_MULTI_NODE_MULTI_WRITER, nil),
 			expectError:        false,
 		},
 		{
 			name:               "mount options",
 			modes:              []v1.PersistentVolumeAccessMode{v1.ReadWriteMany},
-			expectedCapability: createMountCapability(csi.VolumeCapability_AccessMode_MULTI_NODE_MULTI_WRITER, []string{"first", "second"}),
+			expectedCapability: createMountCapability(defaultFSType, csi.VolumeCapability_AccessMode_MULTI_NODE_MULTI_WRITER, []string{"first", "second"}),
 			mountOptions:       []string{"first", "second"},
 			expectError:        false,
 		},
@@ -143,6 +153,11 @@ func TestGetVolumeCapabilities(t *testing.T) {
 			Spec: v1.PersistentVolumeSpec{
 				AccessModes:  test.modes,
 				MountOptions: test.mountOptions,
+				PersistentVolumeSource: v1.PersistentVolumeSource{
+					CSI: &v1.CSIPersistentVolumeSource{
+						FSType: test.fsType,
+					},
+				},
 			},
 		}
 		cap, err := GetVolumeCapabilities(pv)
