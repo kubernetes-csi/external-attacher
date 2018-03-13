@@ -222,6 +222,107 @@ func TestSupportsControllerPublish(t *testing.T) {
 	}
 }
 
+func TestSupportsPluginControllerService(t *testing.T) {
+	tests := []struct {
+		name        string
+		output      *csi.GetPluginCapabilitiesResponse
+		injectError bool
+		expectError bool
+	}{
+		{
+			name: "success",
+			output: &csi.GetPluginCapabilitiesResponse{
+				Capabilities: []*csi.PluginCapability{
+					{
+						Type: &csi.PluginCapability_Service_{
+							Service: &csi.PluginCapability_Service{
+								Type: csi.PluginCapability_Service_CONTROLLER_SERVICE,
+							},
+						},
+					},
+					{
+						Type: &csi.PluginCapability_Service_{
+							Service: &csi.PluginCapability_Service{
+								Type: csi.PluginCapability_Service_UNKNOWN,
+							},
+						},
+					},
+				},
+			},
+			expectError: false,
+		},
+		{
+			name:        "gRPC error",
+			output:      nil,
+			injectError: true,
+			expectError: true,
+		},
+		{
+			name: "no controller service",
+			output: &csi.GetPluginCapabilitiesResponse{
+				Capabilities: []*csi.PluginCapability{
+					{
+						Type: &csi.PluginCapability_Service_{
+							Service: &csi.PluginCapability_Service{
+								Type: csi.PluginCapability_Service_UNKNOWN,
+							},
+						},
+					},
+				},
+			},
+			expectError: false,
+		},
+		{
+			name: "empty capability",
+			output: &csi.GetPluginCapabilitiesResponse{
+				Capabilities: []*csi.PluginCapability{
+					{
+						Type: nil,
+					},
+				},
+			},
+			expectError: false,
+		},
+		{
+			name: "no capabilities",
+			output: &csi.GetPluginCapabilitiesResponse{
+				Capabilities: []*csi.PluginCapability{},
+			},
+			expectError: false,
+		},
+	}
+
+	mockController, driver, identityServer, _, csiConn, err := createMockServer(t)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer mockController.Finish()
+	defer driver.Stop()
+	defer csiConn.Close()
+
+	for _, test := range tests {
+
+		in := &csi.GetPluginCapabilitiesRequest{}
+
+		out := test.output
+		var injectedErr error = nil
+		if test.injectError {
+			injectedErr = fmt.Errorf("mock error")
+		}
+
+		// Setup expectation
+		identityServer.EXPECT().GetPluginCapabilities(gomock.Any(), in).Return(out, injectedErr).Times(1)
+
+		_, err = csiConn.SupportsPluginControllerService(context.Background())
+		if test.expectError && err == nil {
+			t.Errorf("test %q: Expected error, got none", test.name)
+		}
+		if !test.expectError && err != nil {
+			t.Errorf("test %q: got error: %v", test.name, err)
+		}
+	}
+}
+
 func TestAttach(t *testing.T) {
 	defaultVolumeID := "myname"
 	defaultNodeID := "MyNodeID"
