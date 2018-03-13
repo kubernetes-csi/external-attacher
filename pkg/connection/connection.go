@@ -42,6 +42,10 @@ type CSIConnection interface {
 	// PUBLISH_UNPUBLISH_VOLUME in ControllerGetCapabilities() gRPC call.
 	SupportsControllerPublish(ctx context.Context) (bool, error)
 
+	// SupportsPluginControllerService return true if the CSI driver reports
+	// CONTROLLER_SERVICE in GetPluginCapabilities() gRPC call.
+	SupportsPluginControllerService(ctx context.Context) (bool, error)
+
 	// Attach given volume to given node. Returns PublishVolumeInfo. Note that
 	// "detached" is returned on error and means that the volume is for sure
 	// detached from the node. "false" means that the volume may be either
@@ -158,6 +162,30 @@ func (c *csiConnection) SupportsControllerPublish(ctx context.Context) (bool, er
 			continue
 		}
 		if rpc.GetType() == csi.ControllerServiceCapability_RPC_PUBLISH_UNPUBLISH_VOLUME {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
+func (c *csiConnection) SupportsPluginControllerService(ctx context.Context) (bool, error) {
+	client := csi.NewIdentityClient(c.conn)
+	req := csi.GetPluginCapabilitiesRequest{}
+
+	rsp, err := client.GetPluginCapabilities(ctx, &req)
+	if err != nil {
+		return false, err
+	}
+	caps := rsp.GetCapabilities()
+	for _, cap := range caps {
+		if cap == nil {
+			continue
+		}
+		service := cap.GetService()
+		if service == nil {
+			continue
+		}
+		if service.GetType() == csi.PluginCapability_Service_CONTROLLER_SERVICE {
 			return true, nil
 		}
 	}

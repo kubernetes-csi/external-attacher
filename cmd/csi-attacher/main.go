@@ -103,21 +103,31 @@ func main() {
 			os.Exit(1)
 		}
 
-		// Find out if the driver supports attach/detach.
-		supportsAttach, err := csiConn.SupportsControllerPublish(ctx)
+		supportsService, err := csiConn.SupportsPluginControllerService(ctx)
 		if err != nil {
 			glog.Error(err.Error())
 			os.Exit(1)
 		}
-		if !supportsAttach {
+		if !supportsService {
 			handler = controller.NewTrivialHandler(clientset)
-			glog.V(2).Infof("CSI driver does not support ControllerPublishUnpublish, using trivial handler")
+			glog.V(2).Infof("CSI driver does not support Plugin Controller Service, using trivial handler")
 		} else {
-			pvLister := factory.Core().V1().PersistentVolumes().Lister()
-			nodeLister := factory.Core().V1().Nodes().Lister()
-			vaLister := factory.Storage().V1alpha1().VolumeAttachments().Lister()
-			handler = controller.NewCSIHandler(clientset, attacher, csiConn, pvLister, nodeLister, vaLister)
-			glog.V(2).Infof("CSI driver supports ControllerPublishUnpublish, using real CSI handler")
+			// Find out if the driver supports attach/detach.
+			supportsAttach, err := csiConn.SupportsControllerPublish(ctx)
+			if err != nil {
+				glog.Error(err.Error())
+				os.Exit(1)
+			}
+			if supportsAttach {
+				pvLister := factory.Core().V1().PersistentVolumes().Lister()
+				nodeLister := factory.Core().V1().Nodes().Lister()
+				vaLister := factory.Storage().V1alpha1().VolumeAttachments().Lister()
+				handler = controller.NewCSIHandler(clientset, attacher, csiConn, pvLister, nodeLister, vaLister)
+				glog.V(2).Infof("CSI driver supports ControllerPublishUnpublish, using real CSI handler")
+			} else {
+				handler = controller.NewTrivialHandler(clientset)
+				glog.V(2).Infof("CSI driver does not support ControllerPublishUnpublish, using trivial handler")
+			}
 		}
 	}
 

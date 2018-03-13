@@ -324,6 +324,10 @@ func (f *fakeCSIConnection) GetDriverName(ctx context.Context) (string, error) {
 	return "", fmt.Errorf("Not implemented")
 }
 
+func (f *fakeCSIConnection) SupportsPluginControllerService(ctx context.Context) (bool, error) {
+	return false, fmt.Errorf("Not implemented")
+}
+
 func (f *fakeCSIConnection) SupportsControllerPublish(ctx context.Context) (bool, error) {
 	return false, fmt.Errorf("Not implemented")
 }
