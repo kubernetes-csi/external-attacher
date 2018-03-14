@@ -85,11 +85,8 @@ func pvDeleted(pv *v1.PersistentVolume) *v1.PersistentVolume {
 	return pv
 }
 
-func pvWithAttributes(pv *v1.PersistentVolume, json string) *v1.PersistentVolume {
-	if pv.Annotations == nil {
-		pv.Annotations = map[string]string{}
-	}
-	pv.Annotations["csi.volume.kubernetes.io/volume-attributes"] = json
+func pvWithAttributes(pv *v1.PersistentVolume, attributes map[string]string) *v1.PersistentVolume {
+	pv.Spec.PersistentVolumeSource.CSI.VolumeAttributes = attributes
 	return pv
 }
 
@@ -154,7 +151,7 @@ func TestCSIHandler(t *testing.T) {
 		},
 		{
 			name:           "VolumeAttachment with attributes -> successful attachment",
-			initialObjects: []runtime.Object{pvWithAttributes(pvWithFinalizer(), "{\"foo\":\"bar\"}"), node()},
+			initialObjects: []runtime.Object{pvWithAttributes(pvWithFinalizer(), map[string]string{"foo": "bar"}), node()},
 			updatedVA:      va(false, ""),
 			expectedActions: []core.Action{
 				// Finalizer is saved first
@@ -163,15 +160,6 @@ func TestCSIHandler(t *testing.T) {
 			},
 			expectedCSICalls: []csiCall{
 				{"attach", testVolumeHandle, testNodeID, map[string]string{"foo": "bar"}, success, notDetached, noMetadata},
-			},
-		},
-		{
-			name:           "Error parsing attributes -> error",
-			initialObjects: []runtime.Object{pvWithAttributes(pvWithFinalizer(), "{\"foo\":\"bar\""), node()},
-			updatedVA:      va(false, ""),
-			expectedActions: []core.Action{
-				// Error is saved
-				core.NewUpdateAction(vaGroupResourceVersion, metav1.NamespaceNone, vaWithAttachError(va(false, ""), "error parsing annotation csi.volume.kubernetes.io/volume-attributes on PV \"pv1\": unexpected end of JSON input")),
 			},
 		},
 		{

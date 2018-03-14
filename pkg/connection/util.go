@@ -105,14 +105,8 @@ func GetVolumeHandle(pv *v1.PersistentVolume) (string, bool, error) {
 }
 
 func GetVolumeAttributes(pv *v1.PersistentVolume) (map[string]string, error) {
-	ann, ok := pv.Annotations[csiVolAttribsAnnotationKey]
-	if !ok {
-		return nil, nil
+	if pv.Spec.PersistentVolumeSource.CSI == nil {
+		return nil, fmt.Errorf("persistent volume does not contain CSI volume source")
 	}
-	attribs := map[string]string{}
-	if err := json.Unmarshal([]byte(ann), &attribs); err != nil {
-		return nil, fmt.Errorf("error parsing annotation %s on PV %q: %s", csiVolAttribsAnnotationKey, pv.Name, err)
-	}
-
-	return attribs, nil
+	return pv.Spec.PersistentVolumeSource.CSI.VolumeAttributes, nil
 }
