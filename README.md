@@ -1,3 +1,4 @@
+[![Build Status](https://travis-ci.org/kubernetes-csi/external-attacher.svg?branch=master)](https://travis-ci.org/kubernetes-csi/external-attacher)
 # CSI attacher
 
 The csi-attacher is part of Kubernetes implementation of [Container Storage Interface (CSI)](https://github.com/container-storage-interface/spec).
