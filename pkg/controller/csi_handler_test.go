@@ -24,7 +24,7 @@ import (
 	"github.com/kubernetes-csi/external-attacher/pkg/connection"
 
 	"k8s.io/api/core/v1"
-	storage "k8s.io/api/storage/v1alpha1"
+	storage "k8s.io/api/storage/v1beta1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -46,7 +46,7 @@ func csiHandlerFactory(client kubernetes.Interface, informerFactory informers.Sh
 		csi,
 		informerFactory.Core().V1().PersistentVolumes().Lister(),
 		informerFactory.Core().V1().Nodes().Lister(),
-		informerFactory.Storage().V1alpha1().VolumeAttachments().Lister())
+		informerFactory.Storage().V1beta1().VolumeAttachments().Lister())
 }
 
 func pv() *v1.PersistentVolume {
@@ -104,7 +104,7 @@ func node() *v1.Node {
 func TestCSIHandler(t *testing.T) {
 	vaGroupResourceVersion := schema.GroupVersionResource{
 		Group:    storage.GroupName,
-		Version:  "v1alpha1",
+		Version:  "v1beta1",
 		Resource: "volumeattachments",
 	}
 	pvGroupResourceVersion := schema.GroupVersionResource{

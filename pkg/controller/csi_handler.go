@@ -23,12 +23,12 @@ import (
 	"github.com/golang/glog"
 
 	"k8s.io/api/core/v1"
-	storage "k8s.io/api/storage/v1alpha1"
+	storage "k8s.io/api/storage/v1beta1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/client-go/kubernetes"
 	corelisters "k8s.io/client-go/listers/core/v1"
-	storagelisters "k8s.io/client-go/listers/storage/v1alpha1"
+	storagelisters "k8s.io/client-go/listers/storage/v1beta1"
 	"k8s.io/client-go/util/workqueue"
 
 	"github.com/kubernetes-csi/external-attacher/pkg/connection"
@@ -163,7 +163,7 @@ func (h *csiHandler) addVAFinalizer(va *storage.VolumeAttachment) (*storage.Volu
 	clone := va.DeepCopy()
 	clone.Finalizers = append(clone.Finalizers, finalizerName)
 	// TODO: use patch to save us from VersionError
-	newVA, err := h.client.StorageV1alpha1().VolumeAttachments().Update(clone)
+	newVA, err := h.client.StorageV1beta1().VolumeAttachments().Update(clone)
 	if err != nil {
 		return va, err
 	}
@@ -315,7 +315,7 @@ func (h *csiHandler) saveAttachError(va *storage.VolumeAttachment, err error) (*
 		Message: err.Error(),
 		Time:    metav1.Now(),
 	}
-	newVa, err := h.client.StorageV1alpha1().VolumeAttachments().Update(clone)
+	newVa, err := h.client.StorageV1beta1().VolumeAttachments().Update(clone)
 	if err != nil {
 		return va, err
 	}
@@ -330,7 +330,7 @@ func (h *csiHandler) saveDetachError(va *storage.VolumeAttachment, err error) (*
 		Message: err.Error(),
 		Time:    metav1.Now(),
 	}
-	newVa, err := h.client.StorageV1alpha1().VolumeAttachments().Update(clone)
+	newVa, err := h.client.StorageV1beta1().VolumeAttachments().Update(clone)
 	if err != nil {
 		return va, err
 	}
