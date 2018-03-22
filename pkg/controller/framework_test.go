@@ -30,7 +30,7 @@ import (
 	"github.com/kubernetes-csi/external-attacher/pkg/connection"
 
 	"k8s.io/api/core/v1"
-	storage "k8s.io/api/storage/v1alpha1"
+	storage "k8s.io/api/storage/v1beta1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/informers"
@@ -111,7 +111,7 @@ func runTests(t *testing.T, handlerFactory handlerFactory, tests []testCase) {
 		// Create client and informers
 		client := fake.NewSimpleClientset(objs...)
 		informers := informers.NewSharedInformerFactory(client, time.Hour /* disable resync*/)
-		vaInformer := informers.Storage().V1alpha1().VolumeAttachments()
+		vaInformer := informers.Storage().V1beta1().VolumeAttachments()
 		pvInformer := informers.Core().V1().PersistentVolumes()
 		nodeInformer := informers.Core().V1().Nodes()
 		// Fill the informers with inital objects so controller can Get() them

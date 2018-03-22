@@ -39,7 +39,7 @@ func trivialHandlerFactory(client kubernetes.Interface, informerFactory informer
 func TestTrivialHandler(t *testing.T) {
 	vaGroupResourceVersion := schema.GroupVersionResource{
 		Group:    storage.GroupName,
-		Version:  "v1alpha1",
+		Version:  "v1beta1",
 		Resource: "volumeattachments",
 	}
 
