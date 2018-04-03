@@ -84,6 +84,8 @@ type csiCall struct {
 	nodeID string
 	// Expected volume attributes
 	volumeAttributes map[string]string
+	// Expected secrets
+	secrets map[string]string
 	// error to return
 	err error
 	// "detached" bool to return. Used only when err != nil
@@ -123,6 +125,8 @@ func runTests(t *testing.T, handlerFactory handlerFactory, tests []testCase) {
 				nodeInformer.Informer().GetStore().Add(obj)
 			case *storage.VolumeAttachment:
 				vaInformer.Informer().GetStore().Add(obj)
+			case *v1.Secret:
+				// Secrets are not cached in any informer
 			default:
 				t.Fatalf("Unknown initalObject type: %+v", obj)
 			}
@@ -332,7 +336,7 @@ func (f *fakeCSIConnection) SupportsControllerPublish(ctx context.Context) (bool
 	return false, fmt.Errorf("Not implemented")
 }
 
-func (f *fakeCSIConnection) Attach(ctx context.Context, volumeID string, readOnly bool, nodeID string, caps *csi.VolumeCapability, attributes map[string]string) (map[string]string, bool, error) {
+func (f *fakeCSIConnection) Attach(ctx context.Context, volumeID string, readOnly bool, nodeID string, caps *csi.VolumeCapability, attributes, secrets map[string]string) (map[string]string, bool, error) {
 	if f.index >= len(f.calls) {
 		f.t.Errorf("Unexpected CSI Attach call: volume=%s, node=%s, index: %d, calls: %+v", volumeID, nodeID, f.index, f.calls)
 		return nil, true, fmt.Errorf("unexpected call")
@@ -360,13 +364,17 @@ func (f *fakeCSIConnection) Attach(ctx context.Context, volumeID string, readOnl
 		f.t.Errorf("Wrong CSI Attach call: volume=%s, node=%s, expected attributes %+v, got %+v", volumeID, nodeID, call.volumeAttributes, attributes)
 	}
 
+	if !reflect.DeepEqual(call.secrets, secrets) {
+		f.t.Errorf("Wrong CSI Attach call: volume=%s, node=%s, expected secrets %+v, got %+v", volumeID, nodeID, call.secrets, secrets)
+	}
+
 	if err != nil {
 		return nil, true, err
 	}
 	return call.metadata, call.detached, call.err
 }
 
-func (f *fakeCSIConnection) Detach(ctx context.Context, volumeID string, nodeID string) (bool, error) {
+func (f *fakeCSIConnection) Detach(ctx context.Context, volumeID string, nodeID string, secrets map[string]string) (bool, error) {
 	if f.index >= len(f.calls) {
 		f.t.Errorf("Unexpected CSI Detach call: volume=%s, node=%s, index: %d, calls: %+v", volumeID, nodeID, f.index, f.calls)
 		return true, fmt.Errorf("unexpected call")
@@ -381,14 +389,19 @@ func (f *fakeCSIConnection) Detach(ctx context.Context, volumeID string, nodeID 
 	}
 
 	if call.volumeHandle != volumeID {
-		f.t.Errorf("Wrong CSI Attach call: volume=%s, node=%s, expected PV: %s", volumeID, nodeID, call.volumeHandle)
+		f.t.Errorf("Wrong CSI Detach call: volume=%s, node=%s, expected PV: %s", volumeID, nodeID, call.volumeHandle)
 		err = fmt.Errorf("unexpected detach call")
 	}
 
 	if call.nodeID != nodeID {
-		f.t.Errorf("Wrong CSI Attach call: volume=%s, node=%s, expected Node: %s", volumeID, nodeID, call.nodeID)
+		f.t.Errorf("Wrong CSI Detach call: volume=%s, node=%s, expected Node: %s", volumeID, nodeID, call.nodeID)
 		err = fmt.Errorf("unexpected detach call")
 	}
+
+	if !reflect.DeepEqual(call.secrets, secrets) {
+		f.t.Errorf("Wrong CSI Detach call: volume=%s, node=%s, expected secrets %+v, got %+v", volumeID, nodeID, call.secrets, secrets)
+	}
+
 	if err != nil {
 		return true, err
 	}
