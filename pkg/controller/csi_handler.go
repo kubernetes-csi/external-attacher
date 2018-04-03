@@ -239,6 +239,10 @@ func (h *csiHandler) csiAttach(va *storage.VolumeAttachment) (*storage.VolumeAtt
 	if err != nil {
 		return va, nil, err
 	}
+	secrets, err := h.getCredentialsFromPV(pv)
+	if err != nil {
+		return va, nil, err
+	}
 
 	node, err := h.nodeLister.Get(va.Spec.NodeName)
 	if err != nil {
@@ -257,7 +261,7 @@ func (h *csiHandler) csiAttach(va *storage.VolumeAttachment) (*storage.VolumeAtt
 	ctx := context.TODO()
 	// We're not interested in `detached` return value, the controller will
 	// issue Detach to be sure the volume is really detached.
-	publishInfo, _, err := h.csiConnection.Attach(ctx, volumeHandle, readOnly, nodeID, volumeCapabilities, attributes)
+	publishInfo, _, err := h.csiConnection.Attach(ctx, volumeHandle, readOnly, nodeID, volumeCapabilities, attributes, secrets)
 	if err != nil {
 		return va, nil, err
 	}
@@ -278,6 +282,10 @@ func (h *csiHandler) csiDetach(va *storage.VolumeAttachment) (*storage.VolumeAtt
 	if err != nil {
 		return va, err
 	}
+	secrets, err := h.getCredentialsFromPV(pv)
+	if err != nil {
+		return va, err
+	}
 
 	node, err := h.nodeLister.Get(va.Spec.NodeName)
 	if err != nil {
@@ -289,7 +297,7 @@ func (h *csiHandler) csiDetach(va *storage.VolumeAttachment) (*storage.VolumeAtt
 	}
 
 	ctx := context.TODO()
-	detached, err := h.csiConnection.Detach(ctx, volumeHandle, nodeID)
+	detached, err := h.csiConnection.Detach(ctx, volumeHandle, nodeID, secrets)
 	if err != nil && !detached {
 		// The volume may not be fully detached. Save the error and try again
 		// after backoff.
@@ -406,4 +414,25 @@ func (h *csiHandler) SyncNewOrUpdatedPersistentVolume(pv *v1.PersistentVolume) {
 	h.pvQueue.Forget(pv.Name)
 
 	return
+}
+
+func (h *csiHandler) getCredentialsFromPV(pv *v1.PersistentVolume) (map[string]string, error) {
+	if pv.Spec.PersistentVolumeSource.CSI == nil {
+		return nil, fmt.Errorf("persistent volume does not contain CSI volume source")
+	}
+	secretRef := pv.Spec.PersistentVolumeSource.CSI.ControllerPublishSecretRef
+	if secretRef == nil {
+		return nil, nil
+	}
+
+	secret, err := h.client.CoreV1().Secrets(secretRef.Namespace).Get(secretRef.Name, metav1.GetOptions{})
+	if err != nil {
+		return nil, fmt.Errorf("failed to load secret \"%s/%s\": %s", secretRef.Namespace, secretRef.Name, err)
+	}
+	credentials := map[string]string{}
+	for key, value := range secret.Data {
+		credentials[key] = string(value)
+	}
+
+	return credentials, nil
 }
