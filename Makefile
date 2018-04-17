@@ -15,7 +15,7 @@
 .PHONY: all csi-attacher clean test
 
 IMAGE_NAME=quay.io/k8scsi/csi-attacher
-IMAGE_VERSION=v0.2.0
+IMAGE_VERSION=canary
 
 ifdef V
 TESTARGS = -v -args -alsologtostderr -v 5

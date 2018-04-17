@@ -19,7 +19,7 @@ package controller
 import (
 	"github.com/golang/glog"
 	"github.com/kubernetes-csi/external-attacher/pkg/connection"
-	storage "k8s.io/api/storage/v1alpha1"
+	storage "k8s.io/api/storage/v1beta1"
 	"k8s.io/client-go/kubernetes"
 )
 
@@ -30,7 +30,7 @@ func markAsAttached(client kubernetes.Interface, va *storage.VolumeAttachment, m
 	clone.Status.AttachmentMetadata = metadata
 	clone.Status.AttachError = nil
 	// TODO: use patch to save us from VersionError
-	newVA, err := client.StorageV1alpha1().VolumeAttachments().Update(clone)
+	newVA, err := client.StorageV1beta1().VolumeAttachments().Update(clone)
 	if err != nil {
 		return va, err
 	}
@@ -69,7 +69,7 @@ func markAsDetached(client kubernetes.Interface, va *storage.VolumeAttachment) (
 	clone.Status.DetachError = nil
 	clone.Status.AttachmentMetadata = nil
 	// TODO: use patch to save us from VersionError
-	newVA, err := client.StorageV1alpha1().VolumeAttachments().Update(clone)
+	newVA, err := client.StorageV1beta1().VolumeAttachments().Update(clone)
 	if err != nil {
 		return va, err
 	}

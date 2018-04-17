@@ -19,7 +19,7 @@ package controller
 import (
 	"github.com/golang/glog"
 	"k8s.io/api/core/v1"
-	storage "k8s.io/api/storage/v1alpha1"
+	storage "k8s.io/api/storage/v1beta1"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/util/workqueue"
 )

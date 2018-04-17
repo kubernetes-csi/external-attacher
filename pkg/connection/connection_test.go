@@ -358,6 +358,13 @@ func TestAttach(t *testing.T) {
 		VolumeAttributes: map[string]string{"foo": "bar"},
 		Readonly:         false,
 	}
+	secretsRequest := &csi.ControllerPublishVolumeRequest{
+		VolumeId:                 defaultVolumeID,
+		NodeId:                   defaultNodeID,
+		VolumeCapability:         defaultCaps,
+		ControllerPublishSecrets: map[string]string{"foo": "bar"},
+		Readonly:                 false,
+	}
 
 	tests := []struct {
 		name           string
@@ -366,6 +373,7 @@ func TestAttach(t *testing.T) {
 		caps           *csi.VolumeCapability
 		readonly       bool
 		attributes     map[string]string
+		secrets        map[string]string
 		input          *csi.ControllerPublishVolumeRequest
 		output         *csi.ControllerPublishVolumeResponse
 		injectError    codes.Code
@@ -447,6 +455,20 @@ func TestAttach(t *testing.T) {
 			expectedInfo:   publishVolumeInfo,
 			expectDetached: false,
 		},
+		{
+			name:     "secrets",
+			volumeID: defaultVolumeID,
+			nodeID:   defaultNodeID,
+			caps:     defaultCaps,
+			secrets:  map[string]string{"foo": "bar"},
+			input:    secretsRequest,
+			output: &csi.ControllerPublishVolumeResponse{
+				PublishInfo: publishVolumeInfo,
+			},
+			expectError:    false,
+			expectedInfo:   publishVolumeInfo,
+			expectDetached: false,
+		},
 	}
 
 	mockController, driver, _, controllerServer, csiConn, err := createMockServer(t)
@@ -470,7 +492,7 @@ func TestAttach(t *testing.T) {
 			controllerServer.EXPECT().ControllerPublishVolume(gomock.Any(), in).Return(out, injectedErr).Times(1)
 		}
 
-		publishInfo, detached, err := csiConn.Attach(context.Background(), test.volumeID, test.readonly, test.nodeID, test.caps, test.attributes)
+		publishInfo, detached, err := csiConn.Attach(context.Background(), test.volumeID, test.readonly, test.nodeID, test.caps, test.attributes, test.secrets)
 		if test.expectError && err == nil {
 			t.Errorf("test %q: Expected error, got none", test.name)
 		}
@@ -496,10 +518,17 @@ func TestDetachAttach(t *testing.T) {
 		NodeId:   defaultNodeID,
 	}
 
+	secretsRequest := &csi.ControllerUnpublishVolumeRequest{
+		VolumeId: defaultVolumeID,
+		NodeId:   defaultNodeID,
+		ControllerUnpublishSecrets: map[string]string{"foo": "bar"},
+	}
+
 	tests := []struct {
 		name           string
 		volumeID       string
 		nodeID         string
+		secrets        map[string]string
 		input          *csi.ControllerUnpublishVolumeRequest
 		output         *csi.ControllerUnpublishVolumeResponse
 		injectError    codes.Code
@@ -511,6 +540,16 @@ func TestDetachAttach(t *testing.T) {
 			volumeID:       defaultVolumeID,
 			nodeID:         defaultNodeID,
 			input:          defaultRequest,
+			output:         &csi.ControllerUnpublishVolumeResponse{},
+			expectError:    false,
+			expectDetached: true,
+		},
+		{
+			name:           "secrets",
+			volumeID:       defaultVolumeID,
+			nodeID:         defaultNodeID,
+			secrets:        map[string]string{"foo": "bar"},
+			input:          secretsRequest,
 			output:         &csi.ControllerUnpublishVolumeResponse{},
 			expectError:    false,
 			expectDetached: true,
@@ -558,7 +597,7 @@ func TestDetachAttach(t *testing.T) {
 			controllerServer.EXPECT().ControllerUnpublishVolume(gomock.Any(), in).Return(out, injectedErr).Times(1)
 		}
 
-		detached, err := csiConn.Detach(context.Background(), test.volumeID, test.nodeID)
+		detached, err := csiConn.Detach(context.Background(), test.volumeID, test.nodeID, test.secrets)
 		if test.expectError && err == nil {
 			t.Errorf("test %q: Expected error, got none", test.name)
 		}
