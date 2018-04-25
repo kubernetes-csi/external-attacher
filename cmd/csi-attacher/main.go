@@ -52,11 +52,22 @@ var (
 	connectionTimeout = flag.Duration("connection-timeout", 1*time.Minute, "Timeout for waiting for CSI driver socket.")
 	csiAddress        = flag.String("csi-address", "/run/csi/socket", "Address of the CSI driver socket.")
 	dummy             = flag.Bool("dummy", false, "Run in dummy mode, i.e. not connecting to CSI driver and marking everything as attached. Expected CSI driver name is \"csi/dummy\".")
+	showVersion       = flag.Bool("version", false, "Show version.")
+)
+
+var (
+	version = "unknown"
 )
 
 func main() {
 	flag.Set("logtostderr", "true")
 	flag.Parse()
+
+	if *showVersion {
+		fmt.Println(os.Args[0], version)
+		return
+	}
+	glog.Infof("Version: %s", version)
 
 	// Create the client config. Use kubeconfig if given, otherwise assume in-cluster.
 	config, err := buildConfig(*kubeconfig)

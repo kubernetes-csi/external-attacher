@@ -17,6 +17,8 @@
 IMAGE_NAME=quay.io/k8scsi/csi-attacher
 IMAGE_VERSION=canary
 
+REV=$(shell git describe --long --match='v*' --dirty)
+
 ifdef V
 TESTARGS = -v -args -alsologtostderr -v 5
 else
@@ -28,7 +30,7 @@ all: csi-attacher
 
 csi-attacher:
 	mkdir -p bin
-	CGO_ENABLED=0 GOOS=linux go build -a -ldflags '-extldflags "-static"' -o ./bin/csi-attacher ./cmd/csi-attacher
+	CGO_ENABLED=0 GOOS=linux go build -a -ldflags '-X main.version=$(REV) -extldflags "-static"' -o ./bin/csi-attacher ./cmd/csi-attacher
 
 clean:
 	-rm -rf bin
