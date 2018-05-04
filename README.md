@@ -77,19 +77,20 @@ $ csi-attacher -dummy -kubeconfig ~/.kube/config -v 5
 ### Real attacher
 
 #### Running on command line
-With `hack/local-up-cluster.sh`:
+For debugging, it's possible to run the attacher on command line:
 
 ```sh
 $ csi-attacher -kubeconfig ~/.kube/config -v 5 -csi-address /run/csi/socket
 ```
 
-#### Running in a stateful set
+#### Running in a deployment
 It is necessary to create a new service account and give it enough privileges to run the attacher. We provide one omnipotent yaml file that creates everything that's necessary, however it should be split into multiple files in production.
 
 ```sh
-$ kubectl create deploy/kubernetes/statefulset.yaml
+$ kubectl create deploy/kubernetes/deployment.yaml
 ```
 
+Note that the attacher does not scale with more replicas. Only one attacher is elected as leader and running. The others are waiting for the leader to die. They re-elect a new active leader in ~15 seconds after death of the old leader.
 
 ## Vendoring
 

@@ -9,7 +9,7 @@ script:
 - go fmt $(go list ./... | grep -v vendor) | wc -l | grep 0
 - go vet $(go list ./... | grep -v vendor)
 - go test $(go list ./... | grep -v vendor)
-- go build cmd/csi-attacher/main.go
+- make
 after_success:
   - if [ "${TRAVIS_BRANCH}" == "master" ] && [ "${TRAVIS_PULL_REQUEST}" == "false" ]; then
       make container;
