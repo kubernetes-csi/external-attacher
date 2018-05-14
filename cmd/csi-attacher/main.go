@@ -53,6 +53,10 @@ var (
 	csiAddress        = flag.String("csi-address", "/run/csi/socket", "Address of the CSI driver socket.")
 	dummy             = flag.Bool("dummy", false, "Run in dummy mode, i.e. not connecting to CSI driver and marking everything as attached. Expected CSI driver name is \"csi/dummy\".")
 	showVersion       = flag.Bool("version", false, "Show version.")
+
+	enableLeaderElection    = flag.Bool("leader-election", false, "Enable leader election.")
+	leaderElectionNamespace = flag.String("leader-election-namespace", "", "Namespace where this attacher runs.")
+	leaderElectionIdentity  = flag.String("leader-election-identity", "", "Unique idenity of this attcher. Typically name of the pod where the attacher runs.")
 )
 
 var (
@@ -81,6 +85,7 @@ func main() {
 		glog.Error(err.Error())
 		os.Exit(1)
 	}
+
 	factory := informers.NewSharedInformerFactory(clientset, *resync)
 
 	var handler controller.Handler
@@ -140,6 +145,21 @@ func main() {
 				glog.V(2).Infof("CSI driver does not support ControllerPublishUnpublish, using trivial handler")
 			}
 		}
+	}
+
+	if *enableLeaderElection {
+		// Leader election was requested.
+		if leaderElectionNamespace == nil || *leaderElectionNamespace == "" {
+			glog.Error("-leader-election-namespace must not be empty")
+			os.Exit(1)
+		}
+		if leaderElectionIdentity == nil || *leaderElectionIdentity == "" {
+			glog.Error("-leader-election-identity must not be empty")
+			os.Exit(1)
+		}
+		// Name of config map with leader election lock
+		lockName := "external-attacher-leader-" + attacher
+		waitForLeader(clientset, *leaderElectionNamespace, *leaderElectionIdentity, lockName)
 	}
 
 	ctrl := controller.NewCSIAttachController(
