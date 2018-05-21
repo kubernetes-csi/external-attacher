@@ -14,8 +14,10 @@
 
 .PHONY: all csi-attacher clean test
 
-IMAGE_NAME=quay.io/k8scsi/csi-attacher
+REGISTRY_NAME=quay.io/k8scsi
+IMAGE_NAME=csi-attacher
 IMAGE_VERSION=canary
+IMAGE_TAG=$(REGISTRY_NAME)/$(IMAGE_NAME):$(IMAGE_VERSION)
 
 REV=$(shell git describe --long --match='v*' --dirty)
 
@@ -36,10 +38,10 @@ clean:
 	-rm -rf bin
 
 container: csi-attacher
-	docker build -t $(IMAGE_NAME):$(IMAGE_VERSION) .
+	docker build -t $(IMAGE_TAG) .
 
 push: container
-	docker push $(IMAGE_NAME):$(IMAGE_VERSION)
+	docker push $(IMAGE_TAG)
 
 test:
 	go test `go list ./... | grep -v 'vendor'` $(TESTARGS)
