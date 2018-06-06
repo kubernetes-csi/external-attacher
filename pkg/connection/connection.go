@@ -253,14 +253,14 @@ func isFinalError(err error) bool {
 	if !ok {
 		// This is not gRPC error. The operation must have failed before gRPC
 		// method was called, otherwise we would get gRPC error.
-		return true
+		return false
 	}
 	switch st.Code() {
 	case codes.Canceled, // gRPC: Client Application cancelled the request
-		codes.DeadlineExceeded,   // gRPC: Timeout
-		codes.Unavailable,        // gRPC: Server shutting down, TCP connection broken - previous Attach() or Detach() may be still in progress.
-		codes.ResourceExhausted,  // gRPC: Server temporarily out of resources - previous Attach() or Detach() may be still in progress.
-		codes.FailedPrecondition: // CSI: Operation pending for volume
+		codes.DeadlineExceeded,  // gRPC: Timeout
+		codes.Unavailable,       // gRPC: Server shutting down, TCP connection broken - previous Attach() or Detach() may be still in progress.
+		codes.ResourceExhausted, // gRPC: Server temporarily out of resources - previous Attach() or Detach() may be still in progress.
+		codes.Aborted:           // CSI: Operation pending for volume
 		return false
 	}
 	// All other errors mean that the operation (attach/detach) either did not
