@@ -38,6 +38,18 @@ type service struct {
 	volsNID uint64
 }
 
+type Volume struct {
+	sync.Mutex
+	VolumeCSI       csi.Volume
+	NodeID          string
+	ISStaged        bool
+	ISPublished     bool
+	StageTargetPath string
+	TargetPath      string
+}
+
+var MockVolumes map[string]Volume
+
 // New returns a new Service.
 func New() Service {
 	s := &service{nodeID: Name}
@@ -46,6 +58,7 @@ func New() Service {
 		s.newVolume("Mock Volume 2", gib100),
 		s.newVolume("Mock Volume 3", gib100),
 	}
+	MockVolumes = map[string]Volume{}
 	return s
 }
 
