@@ -14,127 +14,218 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-//go:generate mockgen -package=driver -destination=driver.mock.go github.com/container-storage-interface/spec/lib/go/csi IdentityServer,ControllerServer,NodeServer
+//go:generate mockgen -package=driver -destination=driver.mock.go github.com/container-storage-interface/spec/lib/go/csi/v0 IdentityServer,ControllerServer,NodeServer
 
 package driver
 
 import (
+	context "context"
+	"errors"
 	"net"
 	"sync"
 
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
+
 	csi "github.com/container-storage-interface/spec/lib/go/csi/v0"
-	"github.com/kubernetes-csi/csi-test/utils"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/reflection"
 )
 
-type MockCSIDriverServers struct {
-	Controller *MockControllerServer
-	Identity   *MockIdentityServer
-	Node       *MockNodeServer
+var (
+	// ErrNoCredentials is the error when a secret is enabled but not passed in the request.
+	ErrNoCredentials = errors.New("secret must be provided")
+	// ErrAuthFailed is the error when the secret is incorrect.
+	ErrAuthFailed = errors.New("authentication failed")
+)
+
+type CSIDriverServers struct {
+	Controller csi.ControllerServer
+	Identity   csi.IdentityServer
+	Node       csi.NodeServer
 }
 
-type MockCSIDriver struct {
+// This is the key name in all the CSI secret objects.
+const secretField = "secretKey"
+
+// CSICreds is a driver specific secret type. Drivers can have a key-val pair of
+// secrets. This mock driver has a single string secret with secretField as the
+// key.
+type CSICreds struct {
+	CreateVolumeSecret              string
+	DeleteVolumeSecret              string
+	ControllerPublishVolumeSecret   string
+	ControllerUnpublishVolumeSecret string
+	NodeStageVolumeSecret           string
+	NodePublishVolumeSecret         string
+}
+
+type CSIDriver struct {
 	listener net.Listener
 	server   *grpc.Server
-	conn     *grpc.ClientConn
-	servers  *MockCSIDriverServers
+	servers  *CSIDriverServers
 	wg       sync.WaitGroup
 	running  bool
 	lock     sync.Mutex
+	creds    *CSICreds
 }
 
-func NewMockCSIDriver(servers *MockCSIDriverServers) *MockCSIDriver {
-	return &MockCSIDriver{
+func NewCSIDriver(servers *CSIDriverServers) *CSIDriver {
+	return &CSIDriver{
 		servers: servers,
 	}
 }
 
-func (m *MockCSIDriver) goServe(started chan<- bool) {
-	m.wg.Add(1)
+func (c *CSIDriver) goServe(started chan<- bool) {
+	c.wg.Add(1)
 	go func() {
-		defer m.wg.Done()
+		defer c.wg.Done()
 		started <- true
-		err := m.server.Serve(m.listener)
+		err := c.server.Serve(c.listener)
 		if err != nil {
 			panic(err.Error())
 		}
 	}()
 }
 
-func (m *MockCSIDriver) Address() string {
-	return m.listener.Addr().String()
+func (c *CSIDriver) Address() string {
+	return c.listener.Addr().String()
 }
-func (m *MockCSIDriver) Start() error {
-	m.lock.Lock()
-	defer m.lock.Unlock()
+func (c *CSIDriver) Start(l net.Listener) error {
+	c.lock.Lock()
+	defer c.lock.Unlock()
 
-	// Listen on a port assigned by the net package
-	l, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		return err
-	}
-	m.listener = l
+	// Set listener
+	c.listener = l
 
 	// Create a new grpc server
-	m.server = grpc.NewServer()
+	c.server = grpc.NewServer(
+		grpc.UnaryInterceptor(c.authInterceptor),
+	)
 
 	// Register Mock servers
-	if m.servers.Controller != nil {
-		csi.RegisterControllerServer(m.server, m.servers.Controller)
+	if c.servers.Controller != nil {
+		csi.RegisterControllerServer(c.server, c.servers.Controller)
 	}
-	if m.servers.Identity != nil {
-		csi.RegisterIdentityServer(m.server, m.servers.Identity)
+	if c.servers.Identity != nil {
+		csi.RegisterIdentityServer(c.server, c.servers.Identity)
 	}
-	if m.servers.Node != nil {
-		csi.RegisterNodeServer(m.server, m.servers.Node)
+	if c.servers.Node != nil {
+		csi.RegisterNodeServer(c.server, c.servers.Node)
 	}
-	reflection.Register(m.server)
+	reflection.Register(c.server)
 
 	// Start listening for requests
 	waitForServer := make(chan bool)
-	m.goServe(waitForServer)
+	c.goServe(waitForServer)
 	<-waitForServer
-	m.running = true
+	c.running = true
 	return nil
 }
 
-func (m *MockCSIDriver) Nexus() (*grpc.ClientConn, error) {
-	// Start server
-	err := m.Start()
-	if err != nil {
-		return nil, err
-	}
+func (c *CSIDriver) Stop() {
+	c.lock.Lock()
+	defer c.lock.Unlock()
 
-	// Create a client connection
-	m.conn, err = utils.Connect(m.Address())
-	if err != nil {
-		return nil, err
-	}
-
-	return m.conn, nil
-}
-
-func (m *MockCSIDriver) Stop() {
-	m.lock.Lock()
-	defer m.lock.Unlock()
-
-	if !m.running {
+	if !c.running {
 		return
 	}
 
-	m.server.Stop()
-	m.wg.Wait()
+	c.server.Stop()
+	c.wg.Wait()
 }
 
-func (m *MockCSIDriver) Close() {
-	m.conn.Close()
-	m.server.Stop()
+func (c *CSIDriver) Close() {
+	c.server.Stop()
 }
 
-func (m *MockCSIDriver) IsRunning() bool {
-	m.lock.Lock()
-	defer m.lock.Unlock()
+func (c *CSIDriver) IsRunning() bool {
+	c.lock.Lock()
+	defer c.lock.Unlock()
 
-	return m.running
+	return c.running
+}
+
+// SetDefaultCreds sets the default secrets for CSI creds.
+func (c *CSIDriver) SetDefaultCreds() {
+	c.creds = &CSICreds{
+		CreateVolumeSecret:              "secretval1",
+		DeleteVolumeSecret:              "secretval2",
+		ControllerPublishVolumeSecret:   "secretval3",
+		ControllerUnpublishVolumeSecret: "secretval4",
+		NodeStageVolumeSecret:           "secretval5",
+		NodePublishVolumeSecret:         "secretval6",
+	}
+}
+
+func (c *CSIDriver) authInterceptor(ctx context.Context, req interface{}, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (interface{}, error) {
+	if c.creds != nil {
+		authenticated, authErr := isAuthenticated(req, c.creds)
+		if !authenticated {
+			if authErr == ErrNoCredentials {
+				return nil, status.Error(codes.InvalidArgument, authErr.Error())
+			}
+			if authErr == ErrAuthFailed {
+				return nil, status.Error(codes.Unauthenticated, authErr.Error())
+			}
+		}
+	}
+
+	h, err := handler(ctx, req)
+
+	return h, err
+}
+
+func isAuthenticated(req interface{}, creds *CSICreds) (bool, error) {
+	switch r := req.(type) {
+	case *csi.CreateVolumeRequest:
+		return authenticateCreateVolume(r, creds)
+	case *csi.DeleteVolumeRequest:
+		return authenticateDeleteVolume(r, creds)
+	case *csi.ControllerPublishVolumeRequest:
+		return authenticateControllerPublishVolume(r, creds)
+	case *csi.ControllerUnpublishVolumeRequest:
+		return authenticateControllerUnpublishVolume(r, creds)
+	case *csi.NodeStageVolumeRequest:
+		return authenticateNodeStageVolume(r, creds)
+	case *csi.NodePublishVolumeRequest:
+		return authenticateNodePublishVolume(r, creds)
+	default:
+		return true, nil
+	}
+}
+
+func authenticateCreateVolume(req *csi.CreateVolumeRequest, creds *CSICreds) (bool, error) {
+	return credsCheck(req.GetControllerCreateSecrets(), creds.CreateVolumeSecret)
+}
+
+func authenticateDeleteVolume(req *csi.DeleteVolumeRequest, creds *CSICreds) (bool, error) {
+	return credsCheck(req.GetControllerDeleteSecrets(), creds.DeleteVolumeSecret)
+}
+
+func authenticateControllerPublishVolume(req *csi.ControllerPublishVolumeRequest, creds *CSICreds) (bool, error) {
+	return credsCheck(req.GetControllerPublishSecrets(), creds.ControllerPublishVolumeSecret)
+}
+
+func authenticateControllerUnpublishVolume(req *csi.ControllerUnpublishVolumeRequest, creds *CSICreds) (bool, error) {
+	return credsCheck(req.GetControllerUnpublishSecrets(), creds.ControllerUnpublishVolumeSecret)
+}
+
+func authenticateNodeStageVolume(req *csi.NodeStageVolumeRequest, creds *CSICreds) (bool, error) {
+	return credsCheck(req.GetNodeStageSecrets(), creds.NodeStageVolumeSecret)
+}
+
+func authenticateNodePublishVolume(req *csi.NodePublishVolumeRequest, creds *CSICreds) (bool, error) {
+	return credsCheck(req.GetNodePublishSecrets(), creds.NodePublishVolumeSecret)
+}
+
+func credsCheck(secrets map[string]string, secretVal string) (bool, error) {
+	if len(secrets) == 0 {
+		return false, ErrNoCredentials
+	}
+
+	if secrets[secretField] != secretVal {
+		return false, ErrAuthFailed
+	}
+	return true, nil
 }
