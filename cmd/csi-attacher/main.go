@@ -48,7 +48,7 @@ const (
 // Command line flags
 var (
 	kubeconfig        = flag.String("kubeconfig", "", "Absolute path to the kubeconfig file. Required only when running out of cluster.")
-	resync            = flag.Duration("resync", 10*time.Second, "Resync interval of the controller.")
+	resync            = flag.Duration("resync", 10*time.Minute, "Resync interval of the controller.")
 	connectionTimeout = flag.Duration("connection-timeout", 1*time.Minute, "Timeout for waiting for CSI driver socket.")
 	csiAddress        = flag.String("csi-address", "/run/csi/socket", "Address of the CSI driver socket.")
 	dummy             = flag.Bool("dummy", false, "Run in dummy mode, i.e. not connecting to CSI driver and marking everything as attached. Expected CSI driver name is \"csi/dummy\".")
