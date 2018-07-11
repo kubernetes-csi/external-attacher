@@ -20,6 +20,7 @@ import (
 	"errors"
 	"fmt"
 	"testing"
+	"time"
 
 	"github.com/kubernetes-csi/external-attacher/pkg/connection"
 
@@ -39,6 +40,8 @@ const (
 	fin = "external-attacher/csi-test"
 )
 
+var timeout = 1 * time.Minute
+
 func csiHandlerFactory(client kubernetes.Interface, informerFactory informers.SharedInformerFactory, csi connection.CSIConnection) Handler {
 	return NewCSIHandler(
 		client,
@@ -46,7 +49,9 @@ func csiHandlerFactory(client kubernetes.Interface, informerFactory informers.Sh
 		csi,
 		informerFactory.Core().V1().PersistentVolumes().Lister(),
 		informerFactory.Core().V1().Nodes().Lister(),
-		informerFactory.Storage().V1beta1().VolumeAttachments().Lister())
+		informerFactory.Storage().V1beta1().VolumeAttachments().Lister(),
+		&timeout,
+	)
 }
 
 func pv() *v1.PersistentVolume {
