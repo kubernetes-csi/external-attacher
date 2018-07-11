@@ -14,13 +14,17 @@ import (
 	"github.com/container-storage-interface/spec/lib/go/csi/v0"
 )
 
+const (
+	MaxStorageCapacity = tib
+)
+
 func (s *service) CreateVolume(
 	ctx context.Context,
 	req *csi.CreateVolumeRequest) (
 	*csi.CreateVolumeResponse, error) {
 
 	if len(req.Name) == 0 {
-		return nil, status.Error(codes.InvalidArgument, "Volume Name canot be empty")
+		return nil, status.Error(codes.InvalidArgument, "Volume Name cannot be empty")
 	}
 	if req.VolumeCapabilities == nil {
 		return nil, status.Error(codes.InvalidArgument, "Volume Capabilities cannot be empty")
@@ -28,6 +32,12 @@ func (s *service) CreateVolume(
 
 	// Check to see if the volume already exists.
 	if i, v := s.findVolByName(ctx, req.Name); i >= 0 {
+		// Requested volume name already exists, need to check if the existing volume's
+		// capacity is more or equal to new request's capacity.
+		if v.GetCapacityBytes() < req.GetCapacityRange().GetRequiredBytes() {
+			return nil, status.Error(codes.AlreadyExists,
+				fmt.Sprintf("Volume with name %s already exists", req.GetName()))
+		}
 		return &csi.CreateVolumeResponse{Volume: &v}, nil
 	}
 
@@ -41,12 +51,23 @@ func (s *service) CreateVolume(
 			capacity = lb
 		}
 	}
-
+	// Check for maximum available capacity
+	if capacity >= MaxStorageCapacity {
+		return nil, status.Errorf(codes.OutOfRange, "Requested capacity %d exceeds maximum allowed %d", capacity, MaxStorageCapacity)
+	}
 	// Create the volume and add it to the service's in-mem volume slice.
 	v := s.newVolume(req.Name, capacity)
 	s.volsRWL.Lock()
 	defer s.volsRWL.Unlock()
 	s.vols = append(s.vols, v)
+	MockVolumes[v.Id] = Volume{
+		VolumeCSI:       v,
+		NodeID:          "",
+		ISStaged:        false,
+		ISPublished:     false,
+		StageTargetPath: "",
+		TargetPath:      "",
+	}
 
 	return &csi.CreateVolumeResponse{Volume: &v}, nil
 }
@@ -58,6 +79,11 @@ func (s *service) DeleteVolume(
 
 	s.volsRWL.Lock()
 	defer s.volsRWL.Unlock()
+
+	//  If the volume is not specified, return error
+	if len(req.VolumeId) == 0 {
+		return nil, status.Error(codes.InvalidArgument, "Volume ID cannot be empty")
+	}
 
 	// If the volume does not exist then return an idempotent response.
 	i, _ := s.findVolNoLock("id", req.VolumeId)
@@ -79,6 +105,20 @@ func (s *service) ControllerPublishVolume(
 	ctx context.Context,
 	req *csi.ControllerPublishVolumeRequest) (
 	*csi.ControllerPublishVolumeResponse, error) {
+
+	if len(req.VolumeId) == 0 {
+		return nil, status.Error(codes.InvalidArgument, "Volume ID cannot be empty")
+	}
+	if len(req.NodeId) == 0 {
+		return nil, status.Error(codes.InvalidArgument, "Node ID cannot be empty")
+	}
+	if req.VolumeCapability == nil {
+		return nil, status.Error(codes.InvalidArgument, "Volume Capabilities cannot be empty")
+	}
+
+	if req.NodeId != s.nodeID {
+		return nil, status.Errorf(codes.NotFound, "Not matching Node ID %s to Mock Node ID %s", req.NodeId, s.nodeID)
+	}
 
 	s.volsRWL.Lock()
 	defer s.volsRWL.Unlock()
@@ -119,6 +159,19 @@ func (s *service) ControllerUnpublishVolume(
 	req *csi.ControllerUnpublishVolumeRequest) (
 	*csi.ControllerUnpublishVolumeResponse, error) {
 
+	if len(req.VolumeId) == 0 {
+		return nil, status.Error(codes.InvalidArgument, "Volume ID cannot be empty")
+	}
+	nodeID := req.NodeId
+	if len(nodeID) == 0 {
+		// If node id is empty, no failure as per Spec
+		nodeID = s.nodeID
+	}
+
+	if req.NodeId != s.nodeID {
+		return nil, status.Errorf(codes.NotFound, "Node ID %s does not match to expected Node ID %s", req.NodeId, s.nodeID)
+	}
+
 	s.volsRWL.Lock()
 	defer s.volsRWL.Unlock()
 
@@ -130,7 +183,7 @@ func (s *service) ControllerUnpublishVolume(
 	// devPathKey is the key in the volume's attributes that is set to a
 	// mock device path if the volume has been published by the controller
 	// to the specified node.
-	devPathKey := path.Join(req.NodeId, "dev")
+	devPathKey := path.Join(nodeID, "dev")
 
 	// Check to see if the volume is already unpublished.
 	if v.Attributes[devPathKey] == "" {
@@ -149,11 +202,14 @@ func (s *service) ValidateVolumeCapabilities(
 	req *csi.ValidateVolumeCapabilitiesRequest) (
 	*csi.ValidateVolumeCapabilitiesResponse, error) {
 
-	i, _ := s.findVolNoLock("id", req.VolumeId)
-	if i < 0 {
-		return nil, status.Error(codes.NotFound, req.VolumeId)
+	if len(req.GetVolumeId()) == 0 {
+		return nil, status.Error(codes.InvalidArgument, "Volume ID cannot be empty")
 	}
 	if len(req.VolumeCapabilities) == 0 {
+		return nil, status.Error(codes.InvalidArgument, req.VolumeId)
+	}
+	i, _ := s.findVolNoLock("id", req.VolumeId)
+	if i < 0 {
 		return nil, status.Error(codes.NotFound, req.VolumeId)
 	}
 
@@ -243,7 +299,7 @@ func (s *service) GetCapacity(
 	*csi.GetCapacityResponse, error) {
 
 	return &csi.GetCapacityResponse{
-		AvailableCapacity: tib100,
+		AvailableCapacity: MaxStorageCapacity,
 	}, nil
 }
 
@@ -284,4 +340,19 @@ func (s *service) ControllerGetCapabilities(
 			},
 		},
 	}, nil
+}
+
+func (s *service) CreateSnapshot(ctx context.Context,
+	req *csi.CreateSnapshotRequest) (*csi.CreateSnapshotResponse, error) {
+	return nil, status.Error(codes.InvalidArgument, "Not Implemented")
+}
+
+func (s *service) DeleteSnapshot(ctx context.Context,
+	req *csi.DeleteSnapshotRequest) (*csi.DeleteSnapshotResponse, error) {
+	return nil, status.Error(codes.InvalidArgument, "Not Implemented")
+}
+
+func (s *service) ListSnapshots(ctx context.Context,
+	req *csi.ListSnapshotsRequest) (*csi.ListSnapshotsResponse, error) {
+	return nil, status.Error(codes.InvalidArgument, "Not Implemented")
 }

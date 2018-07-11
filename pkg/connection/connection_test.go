@@ -24,6 +24,7 @@ import (
 
 	"github.com/container-storage-interface/spec/lib/go/csi/v0"
 	"github.com/golang/mock/gomock"
+	"github.com/golang/protobuf/proto"
 	"github.com/kubernetes-csi/csi-test/driver"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -32,6 +33,24 @@ import (
 const (
 	driverName = "foo/bar"
 )
+
+type pbMatcher struct {
+	x proto.Message
+}
+
+func (p pbMatcher) Matches(x interface{}) bool {
+	y := x.(proto.Message)
+	return proto.Equal(p.x, y)
+}
+
+func (p pbMatcher) String() string {
+	return fmt.Sprintf("pb equal to %v", p.x)
+}
+
+func pbMatch(x interface{}) gomock.Matcher {
+	v := x.(proto.Message)
+	return &pbMatcher{v}
+}
 
 func createMockServer(t *testing.T) (*gomock.Controller, *driver.MockCSIDriver, *driver.MockIdentityServer, *driver.MockControllerServer, CSIConnection, error) {
 	// Start the mock server
@@ -106,7 +125,7 @@ func TestGetPluginInfo(t *testing.T) {
 		}
 
 		// Setup expectation
-		identityServer.EXPECT().GetPluginInfo(gomock.Any(), in).Return(out, injectedErr).Times(1)
+		identityServer.EXPECT().GetPluginInfo(gomock.Any(), pbMatch(in)).Return(out, injectedErr).Times(1)
 
 		name, err := csiConn.GetDriverName(context.Background())
 		if test.expectError && err == nil {
@@ -210,7 +229,7 @@ func TestSupportsControllerPublish(t *testing.T) {
 		}
 
 		// Setup expectation
-		controllerServer.EXPECT().ControllerGetCapabilities(gomock.Any(), in).Return(out, injectedErr).Times(1)
+		controllerServer.EXPECT().ControllerGetCapabilities(gomock.Any(), pbMatch(in)).Return(out, injectedErr).Times(1)
 
 		_, err = csiConn.SupportsControllerPublish(context.Background())
 		if test.expectError && err == nil {
@@ -311,7 +330,7 @@ func TestSupportsPluginControllerService(t *testing.T) {
 		}
 
 		// Setup expectation
-		identityServer.EXPECT().GetPluginCapabilities(gomock.Any(), in).Return(out, injectedErr).Times(1)
+		identityServer.EXPECT().GetPluginCapabilities(gomock.Any(), pbMatch(in)).Return(out, injectedErr).Times(1)
 
 		_, err = csiConn.SupportsPluginControllerService(context.Background())
 		if test.expectError && err == nil {
@@ -489,7 +508,7 @@ func TestAttach(t *testing.T) {
 
 		// Setup expectation
 		if in != nil {
-			controllerServer.EXPECT().ControllerPublishVolume(gomock.Any(), in).Return(out, injectedErr).Times(1)
+			controllerServer.EXPECT().ControllerPublishVolume(gomock.Any(), pbMatch(in)).Return(out, injectedErr).Times(1)
 		}
 
 		publishInfo, detached, err := csiConn.Attach(context.Background(), test.volumeID, test.readonly, test.nodeID, test.caps, test.attributes, test.secrets)
@@ -594,7 +613,7 @@ func TestDetachAttach(t *testing.T) {
 
 		// Setup expectation
 		if in != nil {
-			controllerServer.EXPECT().ControllerUnpublishVolume(gomock.Any(), in).Return(out, injectedErr).Times(1)
+			controllerServer.EXPECT().ControllerUnpublishVolume(gomock.Any(), pbMatch(in)).Return(out, injectedErr).Times(1)
 		}
 
 		detached, err := csiConn.Detach(context.Background(), test.volumeID, test.nodeID, test.secrets)
