@@ -92,6 +92,8 @@ type csiCall struct {
 	detached bool
 	// metadata to return (used only in Attach calls)
 	metadata map[string]string
+	// Force the attach or detach to take a certain amount of time
+	delay time.Duration
 }
 
 type handlerFactory func(client kubernetes.Interface, informerFactory informers.SharedInformerFactory, csi connection.CSIConnection) Handler
@@ -341,8 +343,14 @@ func (f *fakeCSIConnection) Attach(ctx context.Context, volumeID string, readOnl
 		f.t.Errorf("Unexpected CSI Attach call: volume=%s, node=%s, index: %d, calls: %+v", volumeID, nodeID, f.index, f.calls)
 		return nil, true, fmt.Errorf("unexpected call")
 	}
+
 	call := f.calls[f.index]
 	f.index++
+
+	// Force a delay
+	if call.delay != time.Duration(0) {
+		time.Sleep(call.delay)
+	}
 
 	var err error
 	if call.functionName != "attach" {
@@ -381,6 +389,11 @@ func (f *fakeCSIConnection) Detach(ctx context.Context, volumeID string, nodeID 
 	}
 	call := f.calls[f.index]
 	f.index++
+
+	// Force a delay
+	if call.delay != time.Duration(0) {
+		time.Sleep(call.delay)
+	}
 
 	var err error
 	if call.functionName != "detach" {
