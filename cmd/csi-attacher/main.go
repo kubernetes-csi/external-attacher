@@ -53,6 +53,7 @@ var (
 	csiAddress        = flag.String("csi-address", "/run/csi/socket", "Address of the CSI driver socket.")
 	dummy             = flag.Bool("dummy", false, "Run in dummy mode, i.e. not connecting to CSI driver and marking everything as attached. Expected CSI driver name is \"csi/dummy\".")
 	showVersion       = flag.Bool("version", false, "Show version.")
+	timeout           = flag.Duration("timeout", 15*time.Second, "Timeout for waiting for attaching or detaching the volume.")
 
 	enableLeaderElection    = flag.Bool("leader-election", false, "Enable leader election.")
 	leaderElectionNamespace = flag.String("leader-election-namespace", "", "Namespace where this attacher runs.")
@@ -138,7 +139,7 @@ func main() {
 				pvLister := factory.Core().V1().PersistentVolumes().Lister()
 				nodeLister := factory.Core().V1().Nodes().Lister()
 				vaLister := factory.Storage().V1beta1().VolumeAttachments().Lister()
-				handler = controller.NewCSIHandler(clientset, attacher, csiConn, pvLister, nodeLister, vaLister)
+				handler = controller.NewCSIHandler(clientset, attacher, csiConn, pvLister, nodeLister, vaLister, timeout)
 				glog.V(2).Infof("CSI driver supports ControllerPublishUnpublish, using real CSI handler")
 			} else {
 				handler = controller.NewTrivialHandler(clientset)

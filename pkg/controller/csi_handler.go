@@ -19,6 +19,7 @@ package controller
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"github.com/golang/glog"
 
@@ -45,17 +46,20 @@ type csiHandler struct {
 	nodeLister       corelisters.NodeLister
 	vaLister         storagelisters.VolumeAttachmentLister
 	vaQueue, pvQueue workqueue.RateLimitingInterface
+	timeout          time.Duration
 }
 
 var _ Handler = &csiHandler{}
 
+// NewCSIHandler creates a new CSIHandler.
 func NewCSIHandler(
 	client kubernetes.Interface,
 	attacherName string,
 	csiConnection connection.CSIConnection,
 	pvLister corelisters.PersistentVolumeLister,
 	nodeLister corelisters.NodeLister,
-	vaLister storagelisters.VolumeAttachmentLister) Handler {
+	vaLister storagelisters.VolumeAttachmentLister,
+	timeout *time.Duration) Handler {
 
 	return &csiHandler{
 		client:        client,
@@ -64,6 +68,7 @@ func NewCSIHandler(
 		pvLister:      pvLister,
 		nodeLister:    nodeLister,
 		vaLister:      vaLister,
+		timeout:       *timeout,
 	}
 }
 
@@ -258,7 +263,8 @@ func (h *csiHandler) csiAttach(va *storage.VolumeAttachment) (*storage.VolumeAtt
 		return va, nil, fmt.Errorf("could not add VolumeAttachment finalizer: %s", err)
 	}
 
-	ctx := context.TODO()
+	ctx, cancel := context.WithTimeout(context.Background(), h.timeout)
+	defer cancel()
 	// We're not interested in `detached` return value, the controller will
 	// issue Detach to be sure the volume is really detached.
 	publishInfo, _, err := h.csiConnection.Attach(ctx, volumeHandle, readOnly, nodeID, volumeCapabilities, attributes, secrets)
@@ -296,7 +302,8 @@ func (h *csiHandler) csiDetach(va *storage.VolumeAttachment) (*storage.VolumeAtt
 		return va, err
 	}
 
-	ctx := context.TODO()
+	ctx, cancel := context.WithTimeout(context.Background(), h.timeout)
+	defer cancel()
 	detached, err := h.csiConnection.Detach(ctx, volumeHandle, nodeID, secrets)
 	if err != nil && !detached {
 		// The volume may not be fully detached. Save the error and try again
