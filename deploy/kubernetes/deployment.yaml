@@ -13,7 +13,8 @@ metadata:
   name: csi-attacher
 
 ---
-# Attacher must be able to work with PVs, nodes and VolumeAttachments
+# Attacher must be able to work with PVs, nodes and VolumeAttachments (for operation)
+# and ConfigMaps (for leader election)
 kind: ClusterRole
 apiVersion: rbac.authorization.k8s.io/v1
 metadata:
@@ -25,10 +26,12 @@ rules:
   - apiGroups: [""]
     resources: ["nodes"]
     verbs: ["get", "list", "watch"]
+  - apiGroups: [""]
+    resources: ["configmaps"]
+    verbs: ["get", "list", "watch", "create", "update"]
   - apiGroups: ["storage.k8s.io"]
     resources: ["volumeattachments"]
     verbs: ["get", "list", "watch", "update"]
-
 ---
 kind: ClusterRoleBinding
 apiVersion: rbac.authorization.k8s.io/v1
