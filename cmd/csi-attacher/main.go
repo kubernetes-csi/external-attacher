@@ -104,6 +104,12 @@ func main() {
 			os.Exit(1)
 		}
 
+		// Check it's ready
+		if err = waitForDriverReady(csiConn, *connectionTimeout); err != nil {
+			glog.Error(err.Error())
+			os.Exit(1)
+		}
+
 		// Find driver name.
 		ctx, cancel := context.WithTimeout(context.Background(), csiTimeout)
 		defer cancel()
@@ -113,12 +119,6 @@ func main() {
 			os.Exit(1)
 		}
 		glog.V(2).Infof("CSI driver name: %q", attacher)
-
-		// Check it's ready
-		if err = waitForDriverReady(csiConn, *connectionTimeout); err != nil {
-			glog.Error(err.Error())
-			os.Exit(1)
-		}
 
 		supportsService, err := csiConn.SupportsPluginControllerService(ctx)
 		if err != nil {
@@ -195,7 +195,7 @@ func waitForDriverReady(csiConn connection.CSIConnection, timeout time.Duration)
 	finish := now.Add(timeout)
 	var err error
 	for {
-		ctx, cancel := context.WithTimeout(context.Background(), csiTimeout)
+		ctx, cancel := context.WithTimeout(context.Background(), timeout)
 		defer cancel()
 		err = csiConn.Probe(ctx)
 		if err == nil {
