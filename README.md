@@ -97,3 +97,18 @@ Note that the attacher does not scale with more replicas. Only one attacher is e
 We use [dep](https://github.com/golang/dep) for management of `vendor/`.
 
 `vendor/k8s.io` is manually copied from `staging/` directory of work-in-progress API for CSI, namely https://github.com/kubernetes/kubernetes/pull/54463.
+
+## Community, discussion, contribution, and support
+
+Learn how to engage with the Kubernetes community on the [community page](http://kubernetes.io/community/).
+
+You can reach the maintainers of this project at:
+
+- Slack channels
+  - [#wg-csi](https://kubernetes.slack.com/messages/wg-csi)
+  - [#sig-storage](https://kubernetes.slack.com/messages/sig-storage)
+- [Mailing list](https://groups.google.com/forum/#!forum/kubernetes-sig-storage)
+
+### Code of conduct
+
+Participation in the Kubernetes community is governed by the [Kubernetes Code of Conduct](code-of-conduct.md).
