@@ -118,7 +118,7 @@ func runTests(t *testing.T, handlerFactory handlerFactory, tests []testCase) {
 		vaInformer := informers.Storage().V1beta1().VolumeAttachments()
 		pvInformer := informers.Core().V1().PersistentVolumes()
 		nodeInformer := informers.Core().V1().Nodes()
-		// Fill the informers with inital objects so controller can Get() them
+		// Fill the informers with initial objects so controller can Get() them
 		for _, obj := range objs {
 			switch obj.(type) {
 			case *v1.PersistentVolume:
