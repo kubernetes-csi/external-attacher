@@ -241,7 +241,7 @@ func logGRPC(ctx context.Context, method string, req, reply interface{}, cc *grp
 }
 
 // isFinished returns true if given error represents final error of an
-// operation. That means the operation has failed completelly and cannot be in
+// operation. That means the operation has failed completely and cannot be in
 // progress.  It returns false, if the error represents some transient error
 // like timeout and the operation itself or previous call to the same
 // operation can be actually in progress.
