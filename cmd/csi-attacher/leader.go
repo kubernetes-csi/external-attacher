@@ -23,7 +23,7 @@ import (
 	"time"
 
 	"github.com/golang/glog"
-	"github.com/kubernetes-csi/external-attacher/pkg/connection"
+	"github.com/kubernetes-csi/external-attacher/pkg/controller"
 	"k8s.io/api/core/v1"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/kubernetes/scheme"
@@ -49,7 +49,7 @@ func waitForLeader(clientset *kubernetes.Clientset, namespace string, identity s
 		Identity:      identity,
 		EventRecorder: eventRecorder,
 	}
-	lock, err := resourcelock.New(resourcelock.ConfigMapsResourceLock, namespace, connection.SanitizeDriverName(lockName), clientset.CoreV1(), rlConfig)
+	lock, err := resourcelock.New(resourcelock.ConfigMapsResourceLock, namespace, controller.SanitizeDriverName(lockName), clientset.CoreV1(), rlConfig)
 	if err != nil {
 		glog.Error(err)
 		os.Exit(1)

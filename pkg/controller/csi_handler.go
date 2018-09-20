@@ -154,7 +154,7 @@ func (h *csiHandler) syncDetach(va *storage.VolumeAttachment) error {
 }
 
 func (h *csiHandler) addVAFinalizer(va *storage.VolumeAttachment) (*storage.VolumeAttachment, error) {
-	finalizerName := connection.GetFinalizerName(h.attacherName)
+	finalizerName := GetFinalizerName(h.attacherName)
 	for _, f := range va.Finalizers {
 		if f == finalizerName {
 			// Finalizer is already present
@@ -177,7 +177,7 @@ func (h *csiHandler) addVAFinalizer(va *storage.VolumeAttachment) (*storage.Volu
 }
 
 func (h *csiHandler) addPVFinalizer(pv *v1.PersistentVolume) (*v1.PersistentVolume, error) {
-	finalizerName := connection.GetFinalizerName(h.attacherName)
+	finalizerName := GetFinalizerName(h.attacherName)
 	for _, f := range pv.Finalizers {
 		if f == finalizerName {
 			// Finalizer is already present
@@ -200,7 +200,7 @@ func (h *csiHandler) addPVFinalizer(pv *v1.PersistentVolume) (*v1.PersistentVolu
 }
 
 func (h *csiHandler) hasVAFinalizer(va *storage.VolumeAttachment) bool {
-	finalizerName := connection.GetFinalizerName(h.attacherName)
+	finalizerName := GetFinalizerName(h.attacherName)
 	for _, f := range va.Finalizers {
 		if f == finalizerName {
 			return true
@@ -231,16 +231,16 @@ func (h *csiHandler) csiAttach(va *storage.VolumeAttachment) (*storage.VolumeAtt
 		return va, nil, fmt.Errorf("could not add PersistentVolume finalizer: %s", err)
 	}
 
-	attributes, err := connection.GetVolumeAttributes(pv)
+	attributes, err := GetVolumeAttributes(pv)
 	if err != nil {
 		return va, nil, err
 	}
 
-	volumeHandle, readOnly, err := connection.GetVolumeHandle(pv)
+	volumeHandle, readOnly, err := GetVolumeHandle(pv)
 	if err != nil {
 		return va, nil, err
 	}
-	volumeCapabilities, err := connection.GetVolumeCapabilities(pv)
+	volumeCapabilities, err := GetVolumeCapabilities(pv)
 	if err != nil {
 		return va, nil, err
 	}
@@ -253,7 +253,7 @@ func (h *csiHandler) csiAttach(va *storage.VolumeAttachment) (*storage.VolumeAtt
 	if err != nil {
 		return va, nil, err
 	}
-	nodeID, err := connection.GetNodeID(h.attacherName, node)
+	nodeID, err := GetNodeID(h.attacherName, node)
 	if err != nil {
 		return va, nil, err
 	}
@@ -284,7 +284,7 @@ func (h *csiHandler) csiDetach(va *storage.VolumeAttachment) (*storage.VolumeAtt
 	if err != nil {
 		return va, err
 	}
-	volumeHandle, _, err := connection.GetVolumeHandle(pv)
+	volumeHandle, _, err := GetVolumeHandle(pv)
 	if err != nil {
 		return va, err
 	}
@@ -297,7 +297,7 @@ func (h *csiHandler) csiDetach(va *storage.VolumeAttachment) (*storage.VolumeAtt
 	if err != nil {
 		return va, err
 	}
-	nodeID, err := connection.GetNodeID(h.attacherName, node)
+	nodeID, err := GetNodeID(h.attacherName, node)
 	if err != nil {
 		return va, err
 	}
@@ -364,7 +364,7 @@ func (h *csiHandler) SyncNewOrUpdatedPersistentVolume(pv *v1.PersistentVolume) {
 	}
 
 	// Check if the PV has finalizer
-	finalizer := connection.GetFinalizerName(h.attacherName)
+	finalizer := GetFinalizerName(h.attacherName)
 	found := false
 	for _, f := range pv.Finalizers {
 		if f == finalizer {
