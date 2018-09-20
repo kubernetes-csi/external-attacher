@@ -31,6 +31,7 @@ import (
 	corelisters "k8s.io/client-go/listers/core/v1"
 	storagelisters "k8s.io/client-go/listers/storage/v1beta1"
 	"k8s.io/client-go/util/workqueue"
+	csilisters "k8s.io/csi-api/pkg/client/listers/csi/v1alpha1"
 
 	"github.com/kubernetes-csi/external-attacher/pkg/connection"
 )
@@ -44,6 +45,7 @@ type csiHandler struct {
 	csiConnection    connection.CSIConnection
 	pvLister         corelisters.PersistentVolumeLister
 	nodeLister       corelisters.NodeLister
+	nodeInfoLister   csilisters.CSINodeInfoLister
 	vaLister         storagelisters.VolumeAttachmentLister
 	vaQueue, pvQueue workqueue.RateLimitingInterface
 	timeout          time.Duration
@@ -58,17 +60,19 @@ func NewCSIHandler(
 	csiConnection connection.CSIConnection,
 	pvLister corelisters.PersistentVolumeLister,
 	nodeLister corelisters.NodeLister,
+	nodeInfoLister csilisters.CSINodeInfoLister,
 	vaLister storagelisters.VolumeAttachmentLister,
 	timeout *time.Duration) Handler {
 
 	return &csiHandler{
-		client:        client,
-		attacherName:  attacherName,
-		csiConnection: csiConnection,
-		pvLister:      pvLister,
-		nodeLister:    nodeLister,
-		vaLister:      vaLister,
-		timeout:       *timeout,
+		client:         client,
+		attacherName:   attacherName,
+		csiConnection:  csiConnection,
+		pvLister:       pvLister,
+		nodeLister:     nodeLister,
+		nodeInfoLister: nodeInfoLister,
+		vaLister:       vaLister,
+		timeout:        *timeout,
 	}
 }
 
@@ -249,11 +253,7 @@ func (h *csiHandler) csiAttach(va *storage.VolumeAttachment) (*storage.VolumeAtt
 		return va, nil, err
 	}
 
-	node, err := h.nodeLister.Get(va.Spec.NodeName)
-	if err != nil {
-		return va, nil, err
-	}
-	nodeID, err := GetNodeID(h.attacherName, node)
+	nodeID, err := h.getNodeID(h.attacherName, va.Spec.NodeName)
 	if err != nil {
 		return va, nil, err
 	}
@@ -293,11 +293,7 @@ func (h *csiHandler) csiDetach(va *storage.VolumeAttachment) (*storage.VolumeAtt
 		return va, err
 	}
 
-	node, err := h.nodeLister.Get(va.Spec.NodeName)
-	if err != nil {
-		return va, err
-	}
-	nodeID, err := GetNodeID(h.attacherName, node)
+	nodeID, err := h.getNodeID(h.attacherName, va.Spec.NodeName)
 	if err != nil {
 		return va, err
 	}
@@ -442,4 +438,29 @@ func (h *csiHandler) getCredentialsFromPV(pv *v1.PersistentVolume) (map[string]s
 	}
 
 	return credentials, nil
+}
+
+func (h *csiHandler) getNodeID(driver string, nodeName string) (string, error) {
+	// Try to find CSINodeInfo first.
+	nodeInfo, err := h.nodeInfoLister.Get(nodeName)
+	if err == nil {
+		if nodeID, found := GetNodeIDFromNodeInfo(driver, nodeInfo); found {
+			glog.V(4).Infof("Found NodeID %s in CSINodeInfo %s", nodeID, nodeName)
+			return nodeID, nil
+		}
+		glog.V(4).Infof("CSINodeInfo %s does not contain driver %s", nodeName, driver)
+		// CSINodeInfo exists, but does not have the requested driver.
+		// Fall through to Node annotation.
+	} else {
+		// Can't get CSINodeInfo, fall through to Node annotation.
+		glog.V(4).Infof("Can't get CSINodeInfo %s: %s", nodeName, err)
+	}
+
+	// Check Node annotation.
+	node, err := h.nodeLister.Get(nodeName)
+	if err != nil {
+		return "", err
+	}
+
+	return GetNodeIDFromNode(driver, node)
 }

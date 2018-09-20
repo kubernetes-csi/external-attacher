@@ -37,6 +37,9 @@ import (
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/kubernetes/fake"
 	core "k8s.io/client-go/testing"
+	csiapi "k8s.io/csi-api/pkg/apis/csi/v1alpha1"
+	fakecsi "k8s.io/csi-api/pkg/client/clientset/versioned/fake"
+	csiinformers "k8s.io/csi-api/pkg/client/informers/externalversions"
 )
 
 // This is an unit test framework. It is heavily inspired by serviceaccount
@@ -96,7 +99,7 @@ type csiCall struct {
 	delay time.Duration
 }
 
-type handlerFactory func(client kubernetes.Interface, informerFactory informers.SharedInformerFactory, csi connection.CSIConnection) Handler
+type handlerFactory func(client kubernetes.Interface, informerFactory informers.SharedInformerFactory, csiInformerFactory csiinformers.SharedInformerFactory, csi connection.CSIConnection) Handler
 
 func runTests(t *testing.T, handlerFactory handlerFactory, tests []testCase) {
 	for _, test := range tests {
@@ -112,12 +115,26 @@ func runTests(t *testing.T, handlerFactory handlerFactory, tests []testCase) {
 			objs = append(objs, test.updatedPV)
 		}
 
+		coreObjs := []runtime.Object{}
+		csiObjs := []runtime.Object{}
+		for _, obj := range objs {
+			switch obj.(type) {
+			case *csiapi.CSINodeInfo:
+				csiObjs = append(csiObjs, obj)
+			default:
+				coreObjs = append(coreObjs, obj)
+			}
+		}
+
 		// Create client and informers
-		client := fake.NewSimpleClientset(objs...)
+		client := fake.NewSimpleClientset(coreObjs...)
+		csiClient := fakecsi.NewSimpleClientset(csiObjs...)
 		informers := informers.NewSharedInformerFactory(client, time.Hour /* disable resync*/)
 		vaInformer := informers.Storage().V1beta1().VolumeAttachments()
 		pvInformer := informers.Core().V1().PersistentVolumes()
 		nodeInformer := informers.Core().V1().Nodes()
+		csiInformers := csiinformers.NewSharedInformerFactory(csiClient, time.Hour /* disable resync*/)
+		nodeInfoInformer := csiInformers.Csi().V1alpha1().CSINodeInfos()
 		// Fill the informers with initial objects so controller can Get() them
 		for _, obj := range objs {
 			switch obj.(type) {
@@ -129,6 +146,8 @@ func runTests(t *testing.T, handlerFactory handlerFactory, tests []testCase) {
 				vaInformer.Informer().GetStore().Add(obj)
 			case *v1.Secret:
 				// Secrets are not cached in any informer
+			case *csiapi.CSINodeInfo:
+				nodeInfoInformer.Informer().GetStore().Add(obj)
 			default:
 				t.Fatalf("Unknown initalObject type: %+v", obj)
 			}
@@ -158,7 +177,7 @@ func runTests(t *testing.T, handlerFactory handlerFactory, tests []testCase) {
 
 		// Construct controller
 		csiConnection := &fakeCSIConnection{t: t, calls: test.expectedCSICalls}
-		handler := handlerFactory(client, informers, csiConnection)
+		handler := handlerFactory(client, informers, csiInformers, csiConnection)
 		ctrl := NewCSIAttachController(client, testAttacherName, handler, vaInformer, pvInformer)
 
 		// Start the test by enqueueing the right event

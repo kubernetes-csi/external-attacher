@@ -26,6 +26,7 @@ import (
 	"k8s.io/api/core/v1"
 	storage "k8s.io/api/storage/v1beta1"
 	"k8s.io/client-go/kubernetes"
+	csiapi "k8s.io/csi-api/pkg/apis/csi/v1alpha1"
 )
 
 func markAsAttached(client kubernetes.Interface, va *storage.VolumeAttachment, metadata map[string]string) (*storage.VolumeAttachment, error) {
@@ -103,7 +104,7 @@ func GetFinalizerName(driver string) string {
 	return "external-attacher/" + SanitizeDriverName(driver)
 }
 
-func GetNodeID(driver string, node *v1.Node) (string, error) {
+func GetNodeIDFromNode(driver string, node *v1.Node) (string, error) {
 	nodeIDJSON, ok := node.Annotations[nodeIDAnnotation]
 	if !ok {
 		return "", fmt.Errorf("node %q has no NodeID annotation", node.Name)
@@ -119,6 +120,15 @@ func GetNodeID(driver string, node *v1.Node) (string, error) {
 	}
 
 	return nodeID, nil
+}
+
+func GetNodeIDFromNodeInfo(driver string, nodeInfo *csiapi.CSINodeInfo) (string, bool) {
+	for _, d := range nodeInfo.CSIDrivers {
+		if d.Driver == driver {
+			return d.NodeID, true
+		}
+	}
+	return "", false
 }
 
 func GetVolumeCapabilities(pv *v1.PersistentVolume) (*csi.VolumeCapability, error) {
