@@ -33,6 +33,8 @@ import (
 	"k8s.io/client-go/informers"
 	"k8s.io/client-go/kubernetes"
 	core "k8s.io/client-go/testing"
+	csiapi "k8s.io/csi-api/pkg/apis/csi/v1alpha1"
+	csiinformers "k8s.io/csi-api/pkg/client/informers/externalversions"
 )
 
 const (
@@ -42,13 +44,14 @@ const (
 
 var timeout = 10 * time.Millisecond
 
-func csiHandlerFactory(client kubernetes.Interface, informerFactory informers.SharedInformerFactory, csi connection.CSIConnection) Handler {
+func csiHandlerFactory(client kubernetes.Interface, informerFactory informers.SharedInformerFactory, csiInformerFactory csiinformers.SharedInformerFactory, csi connection.CSIConnection) Handler {
 	return NewCSIHandler(
 		client,
 		testAttacherName,
 		csi,
 		informerFactory.Core().V1().PersistentVolumes().Lister(),
 		informerFactory.Core().V1().Nodes().Lister(),
+		csiInformerFactory.Csi().V1alpha1().CSINodeInfos().Lister(),
 		informerFactory.Storage().V1beta1().VolumeAttachments().Lister(),
 		&timeout,
 	)
@@ -111,6 +114,35 @@ func node() *v1.Node {
 				"csi.volume.kubernetes.io/nodeid": fmt.Sprintf("{ %q: %q }", testAttacherName, testNodeID),
 			},
 		},
+	}
+}
+
+func nodeWithoutAnnotations() *v1.Node {
+	n := node()
+	n.Annotations = nil
+	return n
+}
+
+func csiNodeInfo() *csiapi.CSINodeInfo {
+	return &csiapi.CSINodeInfo{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: testNodeName,
+		},
+		CSIDrivers: []csiapi.CSIDriverInfo{
+			{
+				Driver: testAttacherName,
+				NodeID: testNodeID,
+			},
+		},
+	}
+}
+
+func csiNodeInfoEmpty() *csiapi.CSINodeInfo {
+	return &csiapi.CSINodeInfo{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: testNodeName,
+		},
+		CSIDrivers: []csiapi.CSIDriverInfo{},
 	}
 }
 
@@ -474,6 +506,35 @@ func TestCSIHandler(t *testing.T) {
 			expectedCSICalls: []csiCall{
 				{"attach", testVolumeHandle, testNodeID, noAttrs, noSecrets, success, notDetached, noMetadata, 500 * time.Millisecond},
 				{"attach", testVolumeHandle, testNodeID, noAttrs, noSecrets, success, notDetached, noMetadata, time.Duration(0)},
+			},
+		},
+		{
+			name:           "Node without annotations -> error",
+			initialObjects: []runtime.Object{pvWithFinalizer(), nodeWithoutAnnotations()},
+			addedVA:        va(false, fin),
+			expectedActions: []core.Action{
+				core.NewUpdateAction(vaGroupResourceVersion, metav1.NamespaceNone, vaWithAttachError(va(false, fin), "node \"node1\" has no NodeID annotation")),
+			},
+		},
+		{
+			name:           "CSINodeInfo exists without the driver, Node without annotations -> error",
+			initialObjects: []runtime.Object{pvWithFinalizer(), nodeWithoutAnnotations(), csiNodeInfoEmpty()},
+			addedVA:        va(false, fin),
+			expectedActions: []core.Action{
+				core.NewUpdateAction(vaGroupResourceVersion, metav1.NamespaceNone, vaWithAttachError(va(false, fin), "node \"node1\" has no NodeID annotation")),
+			},
+		},
+		{
+			name:           "CSINodeInfo exists with the driver, Node without annotations -> success",
+			initialObjects: []runtime.Object{pvWithFinalizer(), nodeWithoutAnnotations(), csiNodeInfo()},
+			addedVA:        va(false /*attached*/, "" /*finalizer*/),
+			expectedActions: []core.Action{
+				// Finalizer is saved first
+				core.NewUpdateAction(vaGroupResourceVersion, metav1.NamespaceNone, va(false /*attached*/, fin)),
+				core.NewUpdateAction(vaGroupResourceVersion, metav1.NamespaceNone, va(true /*attached*/, fin)),
+			},
+			expectedCSICalls: []csiCall{
+				{"attach", testVolumeHandle, testNodeID, noAttrs, noSecrets, success, notDetached, noMetadata, 0},
 			},
 		},
 		//

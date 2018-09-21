@@ -1,4 +1,4 @@
-package connection
+package controller
 
 import (
 	"reflect"
@@ -9,7 +9,11 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
-func TestGetNodeID(t *testing.T) {
+const (
+	driverName = "foo/bar"
+)
+
+func TestGetNodeIDFromNode(t *testing.T) {
 	tests := []struct {
 		name        string
 		annotations map[string]string
@@ -59,7 +63,7 @@ func TestGetNodeID(t *testing.T) {
 				Annotations: test.annotations,
 			},
 		}
-		nodeID, err := GetNodeID(driverName, node)
+		nodeID, err := GetNodeIDFromNode(driverName, node)
 
 		if err == nil && test.expectError {
 			t.Errorf("test %s: expected error, got none", test.name)
