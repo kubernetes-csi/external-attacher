@@ -5,8 +5,7 @@ The csi-attacher is part of Kubernetes implementation of [Container Storage Inte
 
 ## Overview
 
-In short, it's an external controller that monitors `VolumeAttachment` objects and attaches/detaches volumes to/from nodes. Full design can be found at Kubernetes proposal at https://github.com/kubernetes/community/pull/1258. TODO: update the link after merge.
-
+In short, it's an external controller that monitors `VolumeAttachment` objects and attaches/detaches volumes to/from nodes. Full design can be found at Kubernetes proposal at [container-storage-interface.md](https://github.com/kubernetes/community/blob/master/contributors/design-proposals/storage/container-storage-interface.md)
 There is no plan to implement a generic external attacher library, csi-attacher is the only external attacher that exists. If this proves false in future, splitting a generic external-attacher library should be possible with some effort.
 
 ## Design
