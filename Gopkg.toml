@@ -26,15 +26,15 @@
 
 [[constraint]]
   name = "k8s.io/api"
-  branch = "release-1.12"
+  version = "kubernetes-1.12.0"
 
 [[constraint]]
   name = "k8s.io/apimachinery"
-  branch = "release-1.12"
+  version = "kubernetes-1.12.0"
 
 [[constraint]]
   name = "k8s.io/client-go"
-  version = "kubernetes-1.12.0-rc.2"
+  version = "kubernetes-1.12.0"
 
 [[override]]
   name = "github.com/json-iterator/go"
