@@ -346,7 +346,6 @@
   version = "v2.1.1"
 
 [[projects]]
-  branch = "release-1.12"
   digest = "1:5f076f6f9c3ac4f2b99d79dc7974eabd3f51be35254aa0d8c4cf920fdb9c7ff8"
   name = "k8s.io/api"
   packages = [
@@ -383,10 +382,10 @@
     "storage/v1beta1",
   ]
   pruneopts = ""
-  revision = "507f29373a170184d325ea007e032b686bb189ac"
+  revision = "fd83cbc87e7632ccd8bbab63d2b673d4e0c631cc"
+  version = "kubernetes-1.12.0"
 
 [[projects]]
-  branch = "release-1.12"
   digest = "1:7aa037a4df5432be2820d164f378d7c22335e5cbba124e90e42114757ebd11ac"
   name = "k8s.io/apimachinery"
   packages = [
@@ -435,9 +434,10 @@
   ]
   pruneopts = ""
   revision = "6dd46049f39503a1fc8d65de4bd566829e95faff"
+  version = "kubernetes-1.12.0"
 
 [[projects]]
-  digest = "1:f750eea76a41b0d4fcf8ba4a8df3bd3158b96c6179991408ae596433f772f297"
+  digest = "1:5d4153d12c3aed2c90a94262520d2498d5afa4d692554af55e65a7c5af0bc399"
   name = "k8s.io/client-go"
   packages = [
     "discovery",
@@ -609,8 +609,8 @@
     "util/workqueue",
   ]
   pruneopts = ""
-  revision = "f95740e171023a8be8649df0e40ece69cd095bd8"
-  version = "kubernetes-1.12.0-rc.2"
+  revision = "1638f8970cefaa404ff3a62950f88b08292b2696"
+  version = "kubernetes-1.12.0"
 
 [[projects]]
   branch = "master"
