@@ -1,4 +1,5 @@
 approvers:
+- openshift-maintainers
 - saad-ali
 - jsafrane
 reviewers:
