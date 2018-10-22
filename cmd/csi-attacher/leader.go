@@ -39,8 +39,8 @@ const (
 	retryPeriod   = 5 * time.Second
 )
 
-// waitForLeader waits until this particular external attacher becomes a leader.
-func waitForLeader(clientset *kubernetes.Clientset, namespace string, identity string, lockName string) {
+// runAsLeader starts this particular external attacher after becoming a leader.
+func runAsLeader(clientset *kubernetes.Clientset, namespace string, identity string, lockName string, startFunc func(ctx context.Context)) {
 	broadcaster := record.NewBroadcaster()
 	broadcaster.StartRecordingToSink(&corev1.EventSinkImpl{Interface: clientset.CoreV1().Events(namespace)})
 	eventRecorder := broadcaster.NewRecorder(scheme.Scheme, v1.EventSource{Component: fmt.Sprintf("%s %s", lockName, string(identity))})
@@ -55,8 +55,6 @@ func waitForLeader(clientset *kubernetes.Clientset, namespace string, identity s
 		os.Exit(1)
 	}
 
-	elected := make(chan struct{})
-
 	leaderConfig := leaderelection.LeaderElectionConfig{
 		Lock:          lock,
 		LeaseDuration: leaseDuration,
@@ -65,11 +63,10 @@ func waitForLeader(clientset *kubernetes.Clientset, namespace string, identity s
 		Callbacks: leaderelection.LeaderCallbacks{
 			OnStartedLeading: func(ctx context.Context) {
 				glog.V(2).Info("Became leader, starting")
-				close(elected)
+				startFunc(ctx)
 			},
 			OnStoppedLeading: func() {
-				glog.Error("Stopped leading")
-				os.Exit(1)
+				glog.Fatal("Stopped leading")
 			},
 			OnNewLeader: func(identity string) {
 				glog.V(3).Infof("Current leader: %s", identity)
@@ -77,8 +74,5 @@ func waitForLeader(clientset *kubernetes.Clientset, namespace string, identity s
 		},
 	}
 
-	go leaderelection.RunOrDie(context.TODO(), leaderConfig)
-
-	// wait for being elected
-	<-elected
+	leaderelection.RunOrDie(context.TODO(), leaderConfig)
 }
