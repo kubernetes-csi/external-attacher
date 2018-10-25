@@ -10,4 +10,4 @@ COPY --from=0 /go/src/github.com/kubernetes-csi/external-attacher/csi-attacher /
 RUN useradd csi-attacher
 USER csi-attacher
 
-CMD ["/usr/bin/csi-attacher"]
+ENTRYPOINT ["/usr/bin/csi-attacher"]
