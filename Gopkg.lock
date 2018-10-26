@@ -154,6 +154,17 @@
   revision = "1bf94ed5c3afa2db7d3117f206f1b00249764790"
 
 [[projects]]
+  branch = "master"
+  digest = "1:3162e91e0a20faee7756465f3816ecf389eb3d52850dff8218ca56a1f7060880"
+  name = "github.com/kubernetes-csi/kubernetes-csi-migration-library"
+  packages = [
+    ".",
+    "plugins",
+  ]
+  pruneopts = ""
+  revision = "edcf4b4169dcecadd06e071c4801e0373f14d7a2"
+
+[[projects]]
   digest = "1:76a22f13ffa6d5d0b91beecdcec5c7651a42d3c5fcc12757e578808826fe4b0a"
   name = "github.com/modern-go/concurrent"
   packages = ["."]
@@ -382,8 +393,8 @@
     "storage/v1beta1",
   ]
   pruneopts = ""
-  revision = "fd83cbc87e7632ccd8bbab63d2b673d4e0c631cc"
-  version = "kubernetes-1.12.0"
+  revision = "357ec6384fa7e10d6ea160d2299a98ddfdc3ab3c"
+  version = "kubernetes-1.12.1"
 
 [[projects]]
   digest = "1:7aa037a4df5432be2820d164f378d7c22335e5cbba124e90e42114757ebd11ac"
@@ -650,6 +661,7 @@
     "github.com/golang/mock/gomock",
     "github.com/golang/protobuf/proto",
     "github.com/kubernetes-csi/csi-test/driver",
+    "github.com/kubernetes-csi/kubernetes-csi-migration-library",
     "google.golang.org/grpc",
     "google.golang.org/grpc/codes",
     "google.golang.org/grpc/connectivity",
