@@ -21,7 +21,6 @@ import (
 	"flag"
 	"fmt"
 	"os"
-	"os/signal"
 	"time"
 
 	"github.com/golang/glog"
@@ -158,7 +157,26 @@ func main() {
 		}
 	}
 
-	if *enableLeaderElection {
+	ctrl := controller.NewCSIAttachController(
+		clientset,
+		attacher,
+		handler,
+		factory.Storage().V1beta1().VolumeAttachments(),
+		factory.Core().V1().PersistentVolumes(),
+	)
+
+	run := func(ctx context.Context) {
+		stopCh := ctx.Done()
+		factory.Start(stopCh)
+		if csiFactory != nil {
+			csiFactory.Start(stopCh)
+		}
+		ctrl.Run(threads, stopCh)
+	}
+
+	if !*enableLeaderElection {
+		run(context.TODO())
+	} else {
 		// Leader election was requested.
 		if leaderElectionNamespace == nil || *leaderElectionNamespace == "" {
 			glog.Error("-leader-election-namespace must not be empty")
@@ -170,30 +188,8 @@ func main() {
 		}
 		// Name of config map with leader election lock
 		lockName := "external-attacher-leader-" + attacher
-		waitForLeader(clientset, *leaderElectionNamespace, *leaderElectionIdentity, lockName)
+		runAsLeader(clientset, *leaderElectionNamespace, *leaderElectionIdentity, lockName, run)
 	}
-
-	ctrl := controller.NewCSIAttachController(
-		clientset,
-		attacher,
-		handler,
-		factory.Storage().V1beta1().VolumeAttachments(),
-		factory.Core().V1().PersistentVolumes(),
-	)
-
-	// run...
-	stopCh := make(chan struct{})
-	factory.Start(stopCh)
-	if csiFactory != nil {
-		csiFactory.Start(stopCh)
-	}
-	go ctrl.Run(threads, stopCh)
-
-	// ...until SIGINT
-	c := make(chan os.Signal, 1)
-	signal.Notify(c, os.Interrupt)
-	<-c
-	close(stopCh)
 }
 
 func buildConfig(kubeconfig string) (*rest.Config, error) {
