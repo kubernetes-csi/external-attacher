@@ -77,6 +77,36 @@ func pv() *v1.PersistentVolume {
 	}
 }
 
+func gcePDPV() *v1.PersistentVolume {
+	return &v1.PersistentVolume{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: testPVName,
+			Labels: map[string]string{
+				"failure-domain.beta.kubernetes.io/zone": "testZone",
+			},
+		},
+		Spec: v1.PersistentVolumeSpec{
+			PersistentVolumeSource: v1.PersistentVolumeSource{
+				GCEPersistentDisk: &v1.GCEPersistentDiskVolumeSource{
+					PDName:    "testpd",
+					FSType:    "ext4",
+					Partition: 0,
+					ReadOnly:  false,
+				},
+			},
+			AccessModes: []v1.PersistentVolumeAccessMode{
+				v1.ReadWriteOnce,
+			},
+		},
+	}
+}
+
+func gcePDPVWithFinalizer() *v1.PersistentVolume {
+	pv := gcePDPV()
+	pv.Finalizers = []string{fin}
+	return pv
+}
+
 func pvWithFinalizer() *v1.PersistentVolume {
 	pv := pv()
 	pv.Finalizers = []string{fin}
@@ -537,6 +567,20 @@ func TestCSIHandler(t *testing.T) {
 				{"attach", testVolumeHandle, testNodeID, noAttrs, noSecrets, success, notDetached, noMetadata, 0},
 			},
 		},
+		{
+			name:           "VolumeAttachment with GCEPersistentDiskVolumeSource -> successful attachment",
+			initialObjects: []runtime.Object{gcePDPVWithFinalizer(), node()},
+			addedVA:        va(false /*attached*/, "" /*finalizer*/),
+			expectedActions: []core.Action{
+				// Finalizer is saved first
+				core.NewUpdateAction(vaGroupResourceVersion, metav1.NamespaceNone, va(false /*attached*/, fin)),
+				core.NewUpdateAction(vaGroupResourceVersion, metav1.NamespaceNone, va(true /*attached*/, fin)),
+			},
+			expectedCSICalls: []csiCall{
+				{"attach", "projects/UNSPECIFIED/zones/testZone/disks/testpd", testNodeID,
+					map[string]string{"partition": "0"}, noSecrets, success, notDetached, noMetadata, 0},
+			},
+		},
 		//
 		// DETACH
 		//
@@ -713,7 +757,19 @@ func TestCSIHandler(t *testing.T) {
 				{"detach", testVolumeHandle, testNodeID, noAttrs, noSecrets, success, detached, noMetadata, 0},
 			},
 		},
-
+		{
+			name:           "VolumeAttachment with GCEPersistentDiskVolumeSource marked for deletion -> successful detach",
+			initialObjects: []runtime.Object{gcePDPVWithFinalizer(), node()},
+			addedVA:        deleted(va(true /*attached*/, fin /*finalizer*/)),
+			expectedActions: []core.Action{
+				// Finalizer is saved first
+				core.NewUpdateAction(vaGroupResourceVersion, metav1.NamespaceNone, deleted(va(false /*attached*/, ""))),
+			},
+			expectedCSICalls: []csiCall{
+				{"detach", "projects/UNSPECIFIED/zones/testZone/disks/testpd", testNodeID,
+					map[string]string{"partition": "0"}, noSecrets, success, detached, noMetadata, 0},
+			},
+		},
 		//
 		// PV finalizers
 		//

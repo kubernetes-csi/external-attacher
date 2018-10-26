@@ -164,7 +164,7 @@ func TestGetVolumeCapabilities(t *testing.T) {
 				},
 			},
 		}
-		cap, err := GetVolumeCapabilities(pv)
+		cap, err := GetVolumeCapabilities(pv, pv.Spec.CSI)
 
 		if err == nil && test.expectError {
 			t.Errorf("test %s: expected error, got none", test.name)
@@ -272,7 +272,7 @@ func TestGetVolumeHandle(t *testing.T) {
 	}
 
 	for i, test := range tests {
-		output, readOnly, err := GetVolumeHandle(test.pv)
+		output, readOnly, err := GetVolumeHandle(test.pv.Spec.CSI)
 		if output != test.output {
 			t.Errorf("test %d: expected volume ID %q, got %q", i, test.output, output)
 		}

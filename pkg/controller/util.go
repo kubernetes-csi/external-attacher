@@ -131,17 +131,17 @@ func GetNodeIDFromNodeInfo(driver string, nodeInfo *csiapi.CSINodeInfo) (string,
 	return "", false
 }
 
-func GetVolumeCapabilities(pv *v1.PersistentVolume) (*csi.VolumeCapability, error) {
+func GetVolumeCapabilities(pv *v1.PersistentVolume, csiSource *v1.CSIPersistentVolumeSource) (*csi.VolumeCapability, error) {
 	m := map[v1.PersistentVolumeAccessMode]bool{}
 	for _, mode := range pv.Spec.AccessModes {
 		m[mode] = true
 	}
 
-	if pv.Spec.PersistentVolumeSource.CSI == nil {
-		return nil, fmt.Errorf("persistent volume does not contain CSI volume source")
+	if csiSource == nil {
+		return nil, fmt.Errorf("CSI volume source was nil")
 	}
 
-	fsType := pv.Spec.CSI.FSType
+	fsType := csiSource.FSType
 	if len(fsType) == 0 {
 		fsType = defaultFSType
 	}
@@ -180,16 +180,16 @@ func GetVolumeCapabilities(pv *v1.PersistentVolume) (*csi.VolumeCapability, erro
 	return cap, nil
 }
 
-func GetVolumeHandle(pv *v1.PersistentVolume) (string, bool, error) {
-	if pv.Spec.PersistentVolumeSource.CSI == nil {
-		return "", false, fmt.Errorf("persistent volume does not contain CSI volume source")
+func GetVolumeHandle(csiSource *v1.CSIPersistentVolumeSource) (string, bool, error) {
+	if csiSource == nil {
+		return "", false, fmt.Errorf("csi source was nil")
 	}
-	return pv.Spec.PersistentVolumeSource.CSI.VolumeHandle, pv.Spec.PersistentVolumeSource.CSI.ReadOnly, nil
+	return csiSource.VolumeHandle, csiSource.ReadOnly, nil
 }
 
-func GetVolumeAttributes(pv *v1.PersistentVolume) (map[string]string, error) {
-	if pv.Spec.PersistentVolumeSource.CSI == nil {
-		return nil, fmt.Errorf("persistent volume does not contain CSI volume source")
+func GetVolumeAttributes(csiSource *v1.CSIPersistentVolumeSource) (map[string]string, error) {
+	if csiSource == nil {
+		return nil, fmt.Errorf("csi source was nil")
 	}
-	return pv.Spec.PersistentVolumeSource.CSI.VolumeAttributes, nil
+	return csiSource.VolumeAttributes, nil
 }
