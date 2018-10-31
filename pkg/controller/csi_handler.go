@@ -34,6 +34,8 @@ import (
 	csilisters "k8s.io/csi-api/pkg/client/listers/csi/v1alpha1"
 
 	"github.com/kubernetes-csi/external-attacher/pkg/connection"
+
+	csiMigration "github.com/kubernetes-csi/kubernetes-csi-migration-library"
 )
 
 // csiHandler is a handler that calls CSI to attach/detach volume.
@@ -213,6 +215,22 @@ func (h *csiHandler) hasVAFinalizer(va *storage.VolumeAttachment) bool {
 	return false
 }
 
+func getCSISource(pv *v1.PersistentVolume) (*v1.CSIPersistentVolumeSource, error) {
+	if pv == nil {
+		return nil, fmt.Errorf("could not get CSI source, pv was nil")
+	}
+	if pv.Spec.CSI != nil {
+		return pv.Spec.CSI, nil
+	} else if csiMigration.IsPVMigrated(pv) {
+		csiPV, err := csiMigration.TranslateInTreePVToCSI(pv)
+		if err != nil {
+			return nil, fmt.Errorf("failed to translate in tree pv to CSI: %v", err)
+		}
+		return csiPV.Spec.CSI, nil
+	}
+	return nil, fmt.Errorf("pv contained non-csi source that was not migrated")
+}
+
 func (h *csiHandler) csiAttach(va *storage.VolumeAttachment) (*storage.VolumeAttachment, map[string]string, error) {
 	glog.V(4).Infof("Starting attach operation for %q", va.Name)
 	// Check as much as possible before adding VA finalizer - it would block
@@ -235,20 +253,25 @@ func (h *csiHandler) csiAttach(va *storage.VolumeAttachment) (*storage.VolumeAtt
 		return va, nil, fmt.Errorf("could not add PersistentVolume finalizer: %s", err)
 	}
 
-	attributes, err := GetVolumeAttributes(pv)
+	csiSource, err := getCSISource(pv)
 	if err != nil {
 		return va, nil, err
 	}
 
-	volumeHandle, readOnly, err := GetVolumeHandle(pv)
+	attributes, err := GetVolumeAttributes(csiSource)
 	if err != nil {
 		return va, nil, err
 	}
-	volumeCapabilities, err := GetVolumeCapabilities(pv)
+
+	volumeHandle, readOnly, err := GetVolumeHandle(csiSource)
 	if err != nil {
 		return va, nil, err
 	}
-	secrets, err := h.getCredentialsFromPV(pv)
+	volumeCapabilities, err := GetVolumeCapabilities(pv, csiSource)
+	if err != nil {
+		return va, nil, err
+	}
+	secrets, err := h.getCredentialsFromPV(csiSource)
 	if err != nil {
 		return va, nil, err
 	}
@@ -284,11 +307,17 @@ func (h *csiHandler) csiDetach(va *storage.VolumeAttachment) (*storage.VolumeAtt
 	if err != nil {
 		return va, err
 	}
-	volumeHandle, _, err := GetVolumeHandle(pv)
+
+	csiSource, err := getCSISource(pv)
 	if err != nil {
 		return va, err
 	}
-	secrets, err := h.getCredentialsFromPV(pv)
+
+	volumeHandle, _, err := GetVolumeHandle(csiSource)
+	if err != nil {
+		return va, err
+	}
+	secrets, err := h.getCredentialsFromPV(csiSource)
 	if err != nil {
 		return va, err
 	}
@@ -419,11 +448,11 @@ func (h *csiHandler) SyncNewOrUpdatedPersistentVolume(pv *v1.PersistentVolume) {
 	return
 }
 
-func (h *csiHandler) getCredentialsFromPV(pv *v1.PersistentVolume) (map[string]string, error) {
-	if pv.Spec.PersistentVolumeSource.CSI == nil {
-		return nil, fmt.Errorf("persistent volume does not contain CSI volume source")
+func (h *csiHandler) getCredentialsFromPV(csiSource *v1.CSIPersistentVolumeSource) (map[string]string, error) {
+	if csiSource == nil {
+		return nil, fmt.Errorf("CSI volume source was nil")
 	}
-	secretRef := pv.Spec.PersistentVolumeSource.CSI.ControllerPublishSecretRef
+	secretRef := csiSource.ControllerPublishSecretRef
 	if secretRef == nil {
 		return nil, nil
 	}
