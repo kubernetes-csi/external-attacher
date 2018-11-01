@@ -276,10 +276,11 @@ const (
 	testNodeID       = "nodeID1"
 )
 
-func createVolumeAttachment(attacher string, pvName string, nodeName string, attached bool, finalizers string) *storage.VolumeAttachment {
+func createVolumeAttachment(attacher string, pvName string, nodeName string, attached bool, finalizers string, annotations map[string]string) *storage.VolumeAttachment {
 	va := &storage.VolumeAttachment{
 		ObjectMeta: metav1.ObjectMeta{
-			Name: pvName + "-" + nodeName,
+			Name:        pvName + "-" + nodeName,
+			Annotations: annotations,
 		},
 		Spec: storage.VolumeAttachmentSpec{
 			Attacher: attacher,
@@ -298,8 +299,8 @@ func createVolumeAttachment(attacher string, pvName string, nodeName string, att
 	return va
 }
 
-func va(attached bool, finalizers string) *storage.VolumeAttachment {
-	return createVolumeAttachment(testAttacherName, testPVName, testNodeName, attached, finalizers)
+func va(attached bool, finalizers string, annotations map[string]string) *storage.VolumeAttachment {
+	return createVolumeAttachment(testAttacherName, testPVName, testNodeName, attached, finalizers, annotations)
 }
 
 func deleted(va *storage.VolumeAttachment) *storage.VolumeAttachment {
@@ -318,7 +319,7 @@ func vaWithNoPVReference(va *storage.VolumeAttachment) *storage.VolumeAttachment
 }
 
 func vaWithInvalidDriver(va *storage.VolumeAttachment) *storage.VolumeAttachment {
-	return createVolumeAttachment("unknownDriver", testPVName, testNodeName, false, "")
+	return createVolumeAttachment("unknownDriver", testPVName, testNodeName, false, "", nil)
 }
 
 func vaWithAttachError(va *storage.VolumeAttachment, message string) *storage.VolumeAttachment {

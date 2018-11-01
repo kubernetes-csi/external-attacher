@@ -47,26 +47,26 @@ func TestTrivialHandler(t *testing.T) {
 	tests := []testCase{
 		{
 			name:    "add -> successful write",
-			addedVA: va(false, ""),
+			addedVA: va(false, "", nil),
 			expectedActions: []core.Action{
-				core.NewUpdateAction(vaGroupResourceVersion, metav1.NamespaceNone, va(true, "")),
+				core.NewUpdateAction(vaGroupResourceVersion, metav1.NamespaceNone, va(true, "", nil)),
 			},
 		},
 		{
 			name:      "update -> successful write",
-			updatedVA: va(false, ""),
+			updatedVA: va(false, "", nil),
 			expectedActions: []core.Action{
-				core.NewUpdateAction(vaGroupResourceVersion, metav1.NamespaceNone, va(true, "")),
+				core.NewUpdateAction(vaGroupResourceVersion, metav1.NamespaceNone, va(true, "", nil)),
 			},
 		},
 		{
 			name:            "unknown driver -> controller ignores",
-			addedVA:         vaWithInvalidDriver(va(false, "")),
+			addedVA:         vaWithInvalidDriver(va(false, "", nil)),
 			expectedActions: []core.Action{},
 		},
 		{
 			name:    "failed write -> controller retries",
-			addedVA: va(false, ""),
+			addedVA: va(false, "", nil),
 			reactors: []reaction{
 				{
 					verb:     "update",
@@ -86,9 +86,9 @@ func TestTrivialHandler(t *testing.T) {
 				},
 			},
 			expectedActions: []core.Action{
-				core.NewUpdateAction(vaGroupResourceVersion, metav1.NamespaceNone, va(true, "")),
-				core.NewUpdateAction(vaGroupResourceVersion, metav1.NamespaceNone, va(true, "")),
-				core.NewUpdateAction(vaGroupResourceVersion, metav1.NamespaceNone, va(true, "")),
+				core.NewUpdateAction(vaGroupResourceVersion, metav1.NamespaceNone, va(true, "", nil)),
+				core.NewUpdateAction(vaGroupResourceVersion, metav1.NamespaceNone, va(true, "", nil)),
+				core.NewUpdateAction(vaGroupResourceVersion, metav1.NamespaceNone, va(true, "", nil)),
 			},
 		},
 	}
