@@ -159,26 +159,44 @@ func (h *csiHandler) syncDetach(va *storage.VolumeAttachment) error {
 	return nil
 }
 
-func (h *csiHandler) addVAFinalizer(va *storage.VolumeAttachment) (*storage.VolumeAttachment, error) {
+func (h *csiHandler) prepareVAFinalizer(va *storage.VolumeAttachment) (newVA *storage.VolumeAttachment, modified bool) {
 	finalizerName := GetFinalizerName(h.attacherName)
 	for _, f := range va.Finalizers {
 		if f == finalizerName {
 			// Finalizer is already present
 			glog.V(4).Infof("VA finalizer is already set on %q", va.Name)
-			return va, nil
+			return va, false
 		}
 	}
 
 	// Finalizer is not present, add it
-	glog.V(4).Infof("Adding finalizer to VA %q", va.Name)
 	clone := va.DeepCopy()
 	clone.Finalizers = append(clone.Finalizers, finalizerName)
+	glog.V(4).Infof("VA finalizer added to %q", va.Name)
+	return clone, true
+}
+
+func (h *csiHandler) prepareVANodeID(va *storage.VolumeAttachment, nodeID string) (newVA *storage.VolumeAttachment, modified bool) {
+	if existingID, ok := va.Annotations[vaNodeIDAnnotation]; ok && existingID == nodeID {
+		glog.V(4).Infof("NodeID annotation is already set on %q", va.Name)
+		return va, false
+	}
+	clone := va.DeepCopy()
+	if clone.Annotations == nil {
+		clone.Annotations = map[string]string{}
+	}
+	clone.Annotations[vaNodeIDAnnotation] = nodeID
+	glog.V(4).Infof("NodeID annotation added to %q", va.Name)
+	return clone, true
+}
+
+func (h *csiHandler) saveVA(va *storage.VolumeAttachment) (*storage.VolumeAttachment, error) {
 	// TODO: use patch to save us from VersionError
-	newVA, err := h.client.StorageV1beta1().VolumeAttachments().Update(clone)
+	newVA, err := h.client.StorageV1beta1().VolumeAttachments().Update(va)
 	if err != nil {
 		return va, err
 	}
-	glog.V(4).Infof("VA finalizer added to %q", va.Name)
+	glog.V(4).Infof("VolumeAttachment %q updated with finalizer and/or NodeID annotation", va.Name)
 	return newVA, nil
 }
 
@@ -276,14 +294,20 @@ func (h *csiHandler) csiAttach(va *storage.VolumeAttachment) (*storage.VolumeAtt
 		return va, nil, err
 	}
 
-	nodeID, err := h.getNodeID(h.attacherName, va.Spec.NodeName)
+	nodeID, err := h.getNodeID(h.attacherName, va.Spec.NodeName, nil)
 	if err != nil {
 		return va, nil, err
 	}
 
-	va, err = h.addVAFinalizer(va)
-	if err != nil {
-		return va, nil, fmt.Errorf("could not add VolumeAttachment finalizer: %s", err)
+	originalVA := va
+	va, finalizerAdded := h.prepareVAFinalizer(va)
+	va, nodeIDAdded := h.prepareVANodeID(va, nodeID)
+	if finalizerAdded || nodeIDAdded {
+		va, err = h.saveVA(va)
+		if err != nil {
+			// va modification failed, return the original va that's still on API server
+			return originalVA, nil, fmt.Errorf("could not save VolumeAttachment: %s", err)
+		}
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), h.timeout)
@@ -322,7 +346,7 @@ func (h *csiHandler) csiDetach(va *storage.VolumeAttachment) (*storage.VolumeAtt
 		return va, err
 	}
 
-	nodeID, err := h.getNodeID(h.attacherName, va.Spec.NodeName)
+	nodeID, err := h.getNodeID(h.attacherName, va.Spec.NodeName, va)
 	if err != nil {
 		return va, err
 	}
@@ -469,7 +493,9 @@ func (h *csiHandler) getCredentialsFromPV(csiSource *v1.CSIPersistentVolumeSourc
 	return credentials, nil
 }
 
-func (h *csiHandler) getNodeID(driver string, nodeName string) (string, error) {
+// getNodeID finds node ID from Node API object. If caller wants, it can find
+// node ID stored in VolumeAttachment annotation.
+func (h *csiHandler) getNodeID(driver string, nodeName string, va *storage.VolumeAttachment) (string, error) {
 	// Try to find CSINodeInfo first.
 	nodeInfo, err := h.nodeInfoLister.Get(nodeName)
 	if err == nil {
@@ -487,9 +513,18 @@ func (h *csiHandler) getNodeID(driver string, nodeName string) (string, error) {
 
 	// Check Node annotation.
 	node, err := h.nodeLister.Get(nodeName)
-	if err != nil {
-		return "", err
+	if err == nil {
+		return GetNodeIDFromNode(driver, node)
 	}
 
-	return GetNodeIDFromNode(driver, node)
+	// Check VolumeAttachment annotation as the last resort if caller wants so (i.e. has provided one).
+	if va == nil {
+		return "", err
+	}
+	if nodeID, found := va.Annotations[vaNodeIDAnnotation]; found {
+		return nodeID, nil
+	}
+
+	// return nodeLister.Get error
+	return "", err
 }

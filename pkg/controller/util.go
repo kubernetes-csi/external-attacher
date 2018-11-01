@@ -87,6 +87,7 @@ const (
 	defaultFSType              = "ext4"
 	nodeIDAnnotation           = "csi.volume.kubernetes.io/nodeid"
 	csiVolAttribsAnnotationKey = "csi.volume.kubernetes.io/volume-attributes"
+	vaNodeIDAnnotation         = "csi.alpha.kubernetes.io/node-id"
 )
 
 func SanitizeDriverName(driver string) string {
