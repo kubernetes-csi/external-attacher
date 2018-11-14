@@ -38,5 +38,15 @@ container: $(APP)
 push: container
 	docker push $(IMAGE_NAME):$(IMAGE_VERSION)
 
-.PHONY: all clean container push
+test: $(APP)
+	files=$$(find ./ -name '*.go' | grep -v '^./vendor' ); \
+        if [ $$(gofmt -d $$files | wc -l) -ne 0 ]; then \
+                echo "formatting errors:"; \
+                gofmt -d $$files; \
+                false; \
+        fi
+	go vet $$(go list ./... | grep -v vendor)
+	go test $$(go list ./... | grep -v vendor | grep -v "cmd/csi-sanity")
+	./hack/e2e.sh
 
+.PHONY: all clean container push test
