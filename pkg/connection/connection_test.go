@@ -22,7 +22,7 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/container-storage-interface/spec/lib/go/csi/v0"
+	"github.com/container-storage-interface/spec/lib/go/csi"
 	"github.com/golang/mock/gomock"
 	"github.com/golang/protobuf/proto"
 	"github.com/kubernetes-csi/csi-test/driver"
@@ -538,8 +538,8 @@ func TestDetachAttach(t *testing.T) {
 	}
 
 	secretsRequest := &csi.ControllerUnpublishVolumeRequest{
-		VolumeId: defaultVolumeID,
-		NodeId:   defaultNodeID,
+		VolumeId:                   defaultVolumeID,
+		NodeId:                     defaultNodeID,
 		ControllerUnpublishSecrets: map[string]string{"foo": "bar"},
 	}
 

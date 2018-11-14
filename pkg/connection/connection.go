@@ -23,7 +23,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/container-storage-interface/spec/lib/go/csi/v0"
+	"github.com/container-storage-interface/spec/lib/go/csi"
 	"github.com/golang/glog"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
@@ -215,8 +215,8 @@ func (c *csiConnection) Detach(ctx context.Context, volumeID string, nodeID stri
 	client := csi.NewControllerClient(c.conn)
 
 	req := csi.ControllerUnpublishVolumeRequest{
-		VolumeId: volumeID,
-		NodeId:   nodeID,
+		VolumeId:                   volumeID,
+		NodeId:                     nodeID,
 		ControllerUnpublishSecrets: secrets,
 	}
 

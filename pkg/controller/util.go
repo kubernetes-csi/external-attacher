@@ -21,7 +21,7 @@ import (
 	"fmt"
 	"regexp"
 
-	"github.com/container-storage-interface/spec/lib/go/csi/v0"
+	"github.com/container-storage-interface/spec/lib/go/csi"
 	"github.com/golang/glog"
 	"k8s.io/api/core/v1"
 	storage "k8s.io/api/storage/v1beta1"
