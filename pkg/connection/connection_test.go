@@ -374,15 +374,15 @@ func TestAttach(t *testing.T) {
 		VolumeId:         defaultVolumeID,
 		NodeId:           defaultNodeID,
 		VolumeCapability: defaultCaps,
-		VolumeAttributes: map[string]string{"foo": "bar"},
+		VolumeContext:    map[string]string{"foo": "bar"},
 		Readonly:         false,
 	}
 	secretsRequest := &csi.ControllerPublishVolumeRequest{
-		VolumeId:                 defaultVolumeID,
-		NodeId:                   defaultNodeID,
-		VolumeCapability:         defaultCaps,
-		ControllerPublishSecrets: map[string]string{"foo": "bar"},
-		Readonly:                 false,
+		VolumeId:         defaultVolumeID,
+		NodeId:           defaultNodeID,
+		VolumeCapability: defaultCaps,
+		Secrets:          map[string]string{"foo": "bar"},
+		Readonly:         false,
 	}
 
 	tests := []struct {
@@ -407,7 +407,7 @@ func TestAttach(t *testing.T) {
 			caps:     defaultCaps,
 			input:    defaultRequest,
 			output: &csi.ControllerPublishVolumeResponse{
-				PublishInfo: publishVolumeInfo,
+				PublishContext: publishVolumeInfo,
 			},
 			expectError:    false,
 			expectedInfo:   publishVolumeInfo,
@@ -432,7 +432,7 @@ func TestAttach(t *testing.T) {
 			readonly: true,
 			input:    readOnlyRequest,
 			output: &csi.ControllerPublishVolumeResponse{
-				PublishInfo: publishVolumeInfo,
+				PublishContext: publishVolumeInfo,
 			},
 			expectError:    false,
 			expectedInfo:   publishVolumeInfo,
@@ -468,7 +468,7 @@ func TestAttach(t *testing.T) {
 			attributes: map[string]string{"foo": "bar"},
 			input:      attributesRequest,
 			output: &csi.ControllerPublishVolumeResponse{
-				PublishInfo: publishVolumeInfo,
+				PublishContext: publishVolumeInfo,
 			},
 			expectError:    false,
 			expectedInfo:   publishVolumeInfo,
@@ -482,7 +482,7 @@ func TestAttach(t *testing.T) {
 			secrets:  map[string]string{"foo": "bar"},
 			input:    secretsRequest,
 			output: &csi.ControllerPublishVolumeResponse{
-				PublishInfo: publishVolumeInfo,
+				PublishContext: publishVolumeInfo,
 			},
 			expectError:    false,
 			expectedInfo:   publishVolumeInfo,
@@ -519,7 +519,7 @@ func TestAttach(t *testing.T) {
 			t.Errorf("test %q: got error: %v", test.name, err)
 		}
 		if err == nil && !reflect.DeepEqual(publishInfo, test.expectedInfo) {
-			t.Errorf("got unexpected PublishInfo: %+v", publishInfo)
+			t.Errorf("got unexpected PublishContext: %+v", publishInfo)
 		}
 		if detached != test.expectDetached {
 			t.Errorf("test %q: expected detached=%v, got %v", test.name, test.expectDetached, detached)
@@ -538,9 +538,9 @@ func TestDetachAttach(t *testing.T) {
 	}
 
 	secretsRequest := &csi.ControllerUnpublishVolumeRequest{
-		VolumeId:                   defaultVolumeID,
-		NodeId:                     defaultNodeID,
-		ControllerUnpublishSecrets: map[string]string{"foo": "bar"},
+		VolumeId: defaultVolumeID,
+		NodeId:   defaultNodeID,
+		Secrets:  map[string]string{"foo": "bar"},
 	}
 
 	tests := []struct {

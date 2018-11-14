@@ -192,32 +192,32 @@ func (c *csiConnection) SupportsPluginControllerService(ctx context.Context) (bo
 	return false, nil
 }
 
-func (c *csiConnection) Attach(ctx context.Context, volumeID string, readOnly bool, nodeID string, caps *csi.VolumeCapability, attributes, secrets map[string]string) (metadata map[string]string, detached bool, err error) {
+func (c *csiConnection) Attach(ctx context.Context, volumeID string, readOnly bool, nodeID string, caps *csi.VolumeCapability, context, secrets map[string]string) (metadata map[string]string, detached bool, err error) {
 	client := csi.NewControllerClient(c.conn)
 
 	req := csi.ControllerPublishVolumeRequest{
-		VolumeId:                 volumeID,
-		NodeId:                   nodeID,
-		VolumeCapability:         caps,
-		Readonly:                 readOnly,
-		VolumeAttributes:         attributes,
-		ControllerPublishSecrets: secrets,
+		VolumeId:         volumeID,
+		NodeId:           nodeID,
+		VolumeCapability: caps,
+		Readonly:         readOnly,
+		VolumeContext:    context,
+		Secrets:          secrets,
 	}
 
 	rsp, err := client.ControllerPublishVolume(ctx, &req)
 	if err != nil {
 		return nil, isFinalError(err), err
 	}
-	return rsp.PublishInfo, false, nil
+	return rsp.PublishContext, false, nil
 }
 
 func (c *csiConnection) Detach(ctx context.Context, volumeID string, nodeID string, secrets map[string]string) (detached bool, err error) {
 	client := csi.NewControllerClient(c.conn)
 
 	req := csi.ControllerUnpublishVolumeRequest{
-		VolumeId:                   volumeID,
-		NodeId:                     nodeID,
-		ControllerUnpublishSecrets: secrets,
+		VolumeId: volumeID,
+		NodeId:   nodeID,
+		Secrets:  secrets,
 	}
 
 	_, err = client.ControllerUnpublishVolume(ctx, &req)
