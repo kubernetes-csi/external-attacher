@@ -24,7 +24,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/container-storage-interface/spec/lib/go/csi/v0"
+	"github.com/container-storage-interface/spec/lib/go/csi"
 	"github.com/davecgh/go-spew/spew"
 	"github.com/golang/glog"
 	"github.com/kubernetes-csi/external-attacher/pkg/connection"
