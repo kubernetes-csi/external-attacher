@@ -2,7 +2,7 @@
 
 [[constraint]]
   name = "github.com/container-storage-interface/spec"
-  version = "1.0.0-rc2"
+  version = "1.0.0"
 
 [[constraint]]
   name = "github.com/golang/protobuf"
@@ -14,7 +14,7 @@
 
 [[constraint]]
   name = "github.com/kubernetes-csi/csi-test"
-  version = "1.0.0-rc2"
+  version = "v1.0.0-1"
 
 [[constraint]]
   name = "google.golang.org/grpc"
