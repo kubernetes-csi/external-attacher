@@ -36,6 +36,7 @@ import (
 	"github.com/kubernetes-csi/external-attacher/pkg/connection"
 
 	csiMigration "github.com/kubernetes-csi/kubernetes-csi-migration-library"
+	csiclient "k8s.io/csi-api/pkg/client/clientset/versioned"
 )
 
 // csiHandler is a handler that calls CSI to attach/detach volume.
@@ -43,6 +44,7 @@ import (
 // before deletion.
 type csiHandler struct {
 	client           kubernetes.Interface
+	csiClientSet     csiclient.Interface
 	attacherName     string
 	csiConnection    connection.CSIConnection
 	pvLister         corelisters.PersistentVolumeLister
@@ -58,6 +60,7 @@ var _ Handler = &csiHandler{}
 // NewCSIHandler creates a new CSIHandler.
 func NewCSIHandler(
 	client kubernetes.Interface,
+	csiClientSet csiclient.Interface,
 	attacherName string,
 	csiConnection connection.CSIConnection,
 	pvLister corelisters.PersistentVolumeLister,
@@ -68,6 +71,7 @@ func NewCSIHandler(
 
 	return &csiHandler{
 		client:         client,
+		csiClientSet:   csiClientSet,
 		attacherName:   attacherName,
 		csiConnection:  csiConnection,
 		pvLister:       pvLister,
@@ -497,7 +501,8 @@ func (h *csiHandler) getCredentialsFromPV(csiSource *v1.CSIPersistentVolumeSourc
 // node ID stored in VolumeAttachment annotation.
 func (h *csiHandler) getNodeID(driver string, nodeName string, va *storage.VolumeAttachment) (string, error) {
 	// Try to find CSINodeInfo first.
-	nodeInfo, err := h.nodeInfoLister.Get(nodeName)
+	// nodeInfo, err := h.nodeInfoLister.Get(nodeName) // TODO (kubernetes/kubernetes #71052) use the lister once it syncs existing CSINodeInfo objects properly.
+	nodeInfo, err := h.csiClientSet.CsiV1alpha1().CSINodeInfos().Get(nodeName, metav1.GetOptions{})
 	if err == nil {
 		if nodeID, found := GetNodeIDFromNodeInfo(driver, nodeInfo); found {
 			glog.V(4).Infof("Found NodeID %s in CSINodeInfo %s", nodeID, nodeName)

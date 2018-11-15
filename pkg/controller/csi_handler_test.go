@@ -34,6 +34,7 @@ import (
 	"k8s.io/client-go/kubernetes"
 	core "k8s.io/client-go/testing"
 	csiapi "k8s.io/csi-api/pkg/apis/csi/v1alpha1"
+	csiclient "k8s.io/csi-api/pkg/client/clientset/versioned"
 	csiinformers "k8s.io/csi-api/pkg/client/informers/externalversions"
 )
 
@@ -50,9 +51,10 @@ var (
 
 var timeout = 10 * time.Millisecond
 
-func csiHandlerFactory(client kubernetes.Interface, informerFactory informers.SharedInformerFactory, csiInformerFactory csiinformers.SharedInformerFactory, csi connection.CSIConnection) Handler {
+func csiHandlerFactory(client kubernetes.Interface, csiClient csiclient.Interface, informerFactory informers.SharedInformerFactory, csiInformerFactory csiinformers.SharedInformerFactory, csi connection.CSIConnection) Handler {
 	return NewCSIHandler(
 		client,
+		csiClient,
 		testAttacherName,
 		csi,
 		informerFactory.Core().V1().PersistentVolumes().Lister(),
