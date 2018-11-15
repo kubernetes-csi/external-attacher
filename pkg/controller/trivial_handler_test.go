@@ -30,10 +30,11 @@ import (
 	"k8s.io/client-go/informers"
 	"k8s.io/client-go/kubernetes"
 	core "k8s.io/client-go/testing"
+	csiclient "k8s.io/csi-api/pkg/client/clientset/versioned"
 	csiinformers "k8s.io/csi-api/pkg/client/informers/externalversions"
 )
 
-func trivialHandlerFactory(client kubernetes.Interface, informerFactory informers.SharedInformerFactory, csiInformerFactory csiinformers.SharedInformerFactory, csi connection.CSIConnection) Handler {
+func trivialHandlerFactory(client kubernetes.Interface, csiClient csiclient.Interface, informerFactory informers.SharedInformerFactory, csiInformerFactory csiinformers.SharedInformerFactory, csi connection.CSIConnection) Handler {
 	return NewTrivialHandler(client)
 }
 

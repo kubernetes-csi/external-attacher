@@ -38,6 +38,7 @@ import (
 	"k8s.io/client-go/kubernetes/fake"
 	core "k8s.io/client-go/testing"
 	csiapi "k8s.io/csi-api/pkg/apis/csi/v1alpha1"
+	csiclient "k8s.io/csi-api/pkg/client/clientset/versioned"
 	fakecsi "k8s.io/csi-api/pkg/client/clientset/versioned/fake"
 	csiinformers "k8s.io/csi-api/pkg/client/informers/externalversions"
 )
@@ -99,7 +100,7 @@ type csiCall struct {
 	delay time.Duration
 }
 
-type handlerFactory func(client kubernetes.Interface, informerFactory informers.SharedInformerFactory, csiInformerFactory csiinformers.SharedInformerFactory, csi connection.CSIConnection) Handler
+type handlerFactory func(client kubernetes.Interface, csiClient csiclient.Interface, informerFactory informers.SharedInformerFactory, csiInformerFactory csiinformers.SharedInformerFactory, csi connection.CSIConnection) Handler
 
 func runTests(t *testing.T, handlerFactory handlerFactory, tests []testCase) {
 	for _, test := range tests {
@@ -177,7 +178,7 @@ func runTests(t *testing.T, handlerFactory handlerFactory, tests []testCase) {
 
 		// Construct controller
 		csiConnection := &fakeCSIConnection{t: t, calls: test.expectedCSICalls}
-		handler := handlerFactory(client, informers, csiInformers, csiConnection)
+		handler := handlerFactory(client, csiClient, informers, csiInformers, csiConnection)
 		ctrl := NewCSIAttachController(client, testAttacherName, handler, vaInformer, pvInformer)
 
 		// Start the test by enqueueing the right event
