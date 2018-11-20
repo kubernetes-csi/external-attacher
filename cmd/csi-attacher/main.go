@@ -36,9 +36,6 @@ import (
 )
 
 const (
-	// Number of worker threads
-	threads = 10
-
 	// Default timeout of short CSI calls like GetPluginInfo
 	csiTimeout = time.Second
 
@@ -59,6 +56,7 @@ var (
 	enableLeaderElection    = flag.Bool("leader-election", false, "Enable leader election.")
 	leaderElectionNamespace = flag.String("leader-election-namespace", "", "Namespace where this attacher runs.")
 	leaderElectionIdentity  = flag.String("leader-election-identity", "", "Unique idenity of this attcher. Typically name of the pod where the attacher runs.")
+	threads                 = flag.Int("threads", 10, "Number of worker threads.")
 )
 
 var (
@@ -171,7 +169,7 @@ func main() {
 		if csiFactory != nil {
 			csiFactory.Start(stopCh)
 		}
-		ctrl.Run(threads, stopCh)
+		ctrl.Run(*threads, stopCh)
 	}
 
 	if !*enableLeaderElection {
