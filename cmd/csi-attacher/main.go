@@ -137,7 +137,7 @@ func main() {
 			glog.V(2).Infof("CSI driver does not support Plugin Controller Service, using trivial handler")
 		} else {
 			// Find out if the driver supports attach/detach.
-			supportsAttach, err := csiConn.SupportsControllerPublish(ctx)
+			supportsAttach, supportsReadOnly, err := csiConn.SupportsControllerPublish(ctx)
 			if err != nil {
 				glog.Error(err.Error())
 				os.Exit(1)
@@ -148,7 +148,7 @@ func main() {
 				vaLister := factory.Storage().V1beta1().VolumeAttachments().Lister()
 				csiFactory := csiinformers.NewSharedInformerFactory(csiClientset, *resync)
 				nodeInfoLister := csiFactory.Csi().V1alpha1().CSINodeInfos().Lister()
-				handler = controller.NewCSIHandler(clientset, csiClientset, attacher, csiConn, pvLister, nodeLister, nodeInfoLister, vaLister, timeout)
+				handler = controller.NewCSIHandler(clientset, csiClientset, attacher, csiConn, pvLister, nodeLister, nodeInfoLister, vaLister, timeout, supportsReadOnly)
 				glog.V(2).Infof("CSI driver supports ControllerPublishUnpublish, using real CSI handler")
 			} else {
 				handler = controller.NewTrivialHandler(clientset)
