@@ -124,8 +124,8 @@ func GetNodeIDFromNode(driver string, node *v1.Node) (string, error) {
 }
 
 func GetNodeIDFromNodeInfo(driver string, nodeInfo *csiapi.CSINodeInfo) (string, bool) {
-	for _, d := range nodeInfo.CSIDrivers {
-		if d.Driver == driver {
+	for _, d := range nodeInfo.Spec.Drivers {
+		if d.Name == driver {
 			return d.NodeID, true
 		}
 	}

@@ -187,10 +187,12 @@ func csiNodeInfo() *csiapi.CSINodeInfo {
 		ObjectMeta: metav1.ObjectMeta{
 			Name: testNodeName,
 		},
-		CSIDrivers: []csiapi.CSIDriverInfo{
-			{
-				Driver: testAttacherName,
-				NodeID: testNodeID,
+		Spec: csiapi.CSINodeInfoSpec{
+			Drivers: []csiapi.CSIDriverInfoSpec{
+				{
+					Name:   testAttacherName,
+					NodeID: testNodeID,
+				},
 			},
 		},
 	}
@@ -201,7 +203,7 @@ func csiNodeInfoEmpty() *csiapi.CSINodeInfo {
 		ObjectMeta: metav1.ObjectMeta{
 			Name: testNodeName,
 		},
-		CSIDrivers: []csiapi.CSIDriverInfo{},
+		Spec: csiapi.CSINodeInfoSpec{Drivers: []csiapi.CSIDriverInfoSpec{}},
 	}
 }
 
