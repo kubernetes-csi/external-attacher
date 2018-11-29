@@ -90,6 +90,8 @@ type csiCall struct {
 	volumeAttributes map[string]string
 	// Expected secrets
 	secrets map[string]string
+	// expected readOnly flag
+	readOnly bool
 	// error to return
 	err error
 	// "detached" bool to return. Used only when err != nil
@@ -355,8 +357,8 @@ func (f *fakeCSIConnection) SupportsPluginControllerService(ctx context.Context)
 	return false, fmt.Errorf("Not implemented")
 }
 
-func (f *fakeCSIConnection) SupportsControllerPublish(ctx context.Context) (bool, error) {
-	return false, fmt.Errorf("Not implemented")
+func (f *fakeCSIConnection) SupportsControllerPublish(ctx context.Context) (bool, bool, error) {
+	return false, false, fmt.Errorf("Not implemented")
 }
 
 func (f *fakeCSIConnection) Attach(ctx context.Context, volumeID string, readOnly bool, nodeID string, caps *csi.VolumeCapability, attributes, secrets map[string]string) (map[string]string, bool, error) {
@@ -395,6 +397,10 @@ func (f *fakeCSIConnection) Attach(ctx context.Context, volumeID string, readOnl
 
 	if !reflect.DeepEqual(call.secrets, secrets) {
 		f.t.Errorf("Wrong CSI Attach call: volume=%s, node=%s, expected secrets %+v, got %+v", volumeID, nodeID, call.secrets, secrets)
+	}
+
+	if call.readOnly != readOnly {
+		f.t.Errorf("Wrong CSI Attach call: volume=%s, node=%s, expected readOnly %t, got %t", volumeID, nodeID, call.readOnly, readOnly)
 	}
 
 	if err != nil {

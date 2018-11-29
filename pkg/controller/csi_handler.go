@@ -43,16 +43,17 @@ import (
 // It adds finalizer to VolumeAttachment instance to make sure they're detached
 // before deletion.
 type csiHandler struct {
-	client           kubernetes.Interface
-	csiClientSet     csiclient.Interface
-	attacherName     string
-	csiConnection    connection.CSIConnection
-	pvLister         corelisters.PersistentVolumeLister
-	nodeLister       corelisters.NodeLister
-	nodeInfoLister   csilisters.CSINodeInfoLister
-	vaLister         storagelisters.VolumeAttachmentLister
-	vaQueue, pvQueue workqueue.RateLimitingInterface
-	timeout          time.Duration
+	client                  kubernetes.Interface
+	csiClientSet            csiclient.Interface
+	attacherName            string
+	csiConnection           connection.CSIConnection
+	pvLister                corelisters.PersistentVolumeLister
+	nodeLister              corelisters.NodeLister
+	nodeInfoLister          csilisters.CSINodeInfoLister
+	vaLister                storagelisters.VolumeAttachmentLister
+	vaQueue, pvQueue        workqueue.RateLimitingInterface
+	timeout                 time.Duration
+	supportsPublishReadOnly bool
 }
 
 var _ Handler = &csiHandler{}
@@ -67,18 +68,20 @@ func NewCSIHandler(
 	nodeLister corelisters.NodeLister,
 	nodeInfoLister csilisters.CSINodeInfoLister,
 	vaLister storagelisters.VolumeAttachmentLister,
-	timeout *time.Duration) Handler {
+	timeout *time.Duration,
+	supportsPublishReadOnly bool) Handler {
 
 	return &csiHandler{
-		client:         client,
-		csiClientSet:   csiClientSet,
-		attacherName:   attacherName,
-		csiConnection:  csiConnection,
-		pvLister:       pvLister,
-		nodeLister:     nodeLister,
-		nodeInfoLister: nodeInfoLister,
-		vaLister:       vaLister,
-		timeout:        *timeout,
+		client:                  client,
+		csiClientSet:            csiClientSet,
+		attacherName:            attacherName,
+		csiConnection:           csiConnection,
+		pvLister:                pvLister,
+		nodeLister:              nodeLister,
+		nodeInfoLister:          nodeInfoLister,
+		vaLister:                vaLister,
+		timeout:                 *timeout,
+		supportsPublishReadOnly: supportsPublishReadOnly,
 	}
 }
 
@@ -289,6 +292,12 @@ func (h *csiHandler) csiAttach(va *storage.VolumeAttachment) (*storage.VolumeAtt
 	if err != nil {
 		return va, nil, err
 	}
+	if !h.supportsPublishReadOnly {
+		// "CO MUST set this field to false if SP does not have the
+		// PUBLISH_READONLY controller capability"
+		readOnly = false
+	}
+
 	volumeCapabilities, err := GetVolumeCapabilities(pv, csiSource)
 	if err != nil {
 		return va, nil, err
