@@ -23,6 +23,7 @@ import (
 
 	"k8s.io/api/core/v1"
 	storage "k8s.io/api/storage/v1beta1"
+	"k8s.io/apimachinery/pkg/api/equality"
 	apierrs "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/util/wait"
 	coreinformers "k8s.io/client-go/informers/core/v1"
@@ -130,8 +131,13 @@ func (ctrl *CSIAttachController) vaAdded(obj interface{}) {
 
 // vaUpdated reacts to a VolumeAttachment update
 func (ctrl *CSIAttachController) vaUpdated(old, new interface{}) {
-	va := new.(*storage.VolumeAttachment)
-	ctrl.vaQueue.Add(va.Name)
+	oldVA := old.(*storage.VolumeAttachment)
+	newVA := new.(*storage.VolumeAttachment)
+	if shouldEnqueueVAChange(oldVA, newVA) {
+		ctrl.vaQueue.Add(newVA.Name)
+	} else {
+		glog.V(3).Infof("Ignoring VolumeAttachment %q change", newVA.Name)
+	}
 }
 
 // vaDeleted reacts to a VolumeAttachment deleted
@@ -209,4 +215,31 @@ func (ctrl *CSIAttachController) syncPV() {
 		return
 	}
 	ctrl.handler.SyncNewOrUpdatedPersistentVolume(pv)
+}
+
+// shouldEnqueueVAChange checks if a changed VolumeAttachment should be enqueued.
+// It filters out changes in Status.Attach/DetachError - these were posted by the controller
+// just few moments ago. If they were enqueued, Attach()/Detach() would be called again,
+// breaking exponential backoff.
+func shouldEnqueueVAChange(old, new *storage.VolumeAttachment) bool {
+	if old.ResourceVersion == new.ResourceVersion {
+		// This is most probably periodic sync, enqueue it
+		return true
+	}
+	if new.Status.AttachError == nil && new.Status.DetachError == nil && old.Status.AttachError == nil && old.Status.DetachError == nil {
+		// The difference between old and new must be elsewhere than Status.Attach/DetachError
+		return true
+	}
+
+	sanitized := new.DeepCopy()
+	sanitized.ResourceVersion = old.ResourceVersion
+	sanitized.Status.AttachError = old.Status.AttachError
+	sanitized.Status.DetachError = old.Status.DetachError
+
+	if equality.Semantic.DeepEqual(old, sanitized) {
+		// The objects are the same except Status.Attach/DetachError.
+		// Don't enqueue them.
+		return false
+	}
+	return true
 }
