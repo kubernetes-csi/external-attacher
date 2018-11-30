@@ -40,7 +40,7 @@ type CSIConnection interface {
 
 	// SupportsControllerPublish returns true if the CSI driver reports
 	// PUBLISH_UNPUBLISH_VOLUME in ControllerGetCapabilities() gRPC call.
-	SupportsControllerPublish(ctx context.Context) (bool, error)
+	SupportsControllerPublish(ctx context.Context) (supportsControllerPublish bool, supportsPublishReadOnly bool, err error)
 
 	// SupportsPluginControllerService return true if the CSI driver reports
 	// CONTROLLER_SERVICE in GetPluginCapabilities() gRPC call.
@@ -144,13 +144,16 @@ func (c *csiConnection) Probe(ctx context.Context) error {
 	return nil
 }
 
-func (c *csiConnection) SupportsControllerPublish(ctx context.Context) (bool, error) {
+func (c *csiConnection) SupportsControllerPublish(ctx context.Context) (supportsControllerPublish bool, supportsPublishReadOnly bool, err error) {
+	supportsControllerPublish = false
+	supportsPublishReadOnly = false
+
 	client := csi.NewControllerClient(c.conn)
 	req := csi.ControllerGetCapabilitiesRequest{}
 
 	rsp, err := client.ControllerGetCapabilities(ctx, &req)
 	if err != nil {
-		return false, err
+		return false, false, err
 	}
 	caps := rsp.GetCapabilities()
 	for _, cap := range caps {
@@ -162,10 +165,13 @@ func (c *csiConnection) SupportsControllerPublish(ctx context.Context) (bool, er
 			continue
 		}
 		if rpc.GetType() == csi.ControllerServiceCapability_RPC_PUBLISH_UNPUBLISH_VOLUME {
-			return true, nil
+			supportsControllerPublish = true
+		}
+		if rpc.GetType() == csi.ControllerServiceCapability_RPC_PUBLISH_READONLY {
+			supportsPublishReadOnly = true
 		}
 	}
-	return false, nil
+	return supportsControllerPublish, supportsPublishReadOnly, nil
 }
 
 func (c *csiConnection) SupportsPluginControllerService(ctx context.Context) (bool, error) {

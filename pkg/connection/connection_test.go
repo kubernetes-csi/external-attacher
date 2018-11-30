@@ -142,10 +142,12 @@ func TestGetPluginInfo(t *testing.T) {
 
 func TestSupportsControllerPublish(t *testing.T) {
 	tests := []struct {
-		name        string
-		output      *csi.ControllerGetCapabilitiesResponse
-		injectError bool
-		expectError bool
+		name                   string
+		output                 *csi.ControllerGetCapabilitiesResponse
+		injectError            bool
+		expectSupportsPublish  bool
+		expectSupportsReadOnly bool
+		expectError            bool
 	}{
 		{
 			name: "success",
@@ -167,7 +169,33 @@ func TestSupportsControllerPublish(t *testing.T) {
 					},
 				},
 			},
-			expectError: false,
+			expectSupportsPublish:  true,
+			expectSupportsReadOnly: false,
+			expectError:            false,
+		},
+		{
+			name: "supports read only",
+			output: &csi.ControllerGetCapabilitiesResponse{
+				Capabilities: []*csi.ControllerServiceCapability{
+					{
+						Type: &csi.ControllerServiceCapability_Rpc{
+							Rpc: &csi.ControllerServiceCapability_RPC{
+								Type: csi.ControllerServiceCapability_RPC_PUBLISH_READONLY,
+							},
+						},
+					},
+					{
+						Type: &csi.ControllerServiceCapability_Rpc{
+							Rpc: &csi.ControllerServiceCapability_RPC{
+								Type: csi.ControllerServiceCapability_RPC_PUBLISH_UNPUBLISH_VOLUME,
+							},
+						},
+					},
+				},
+			},
+			expectSupportsPublish:  true,
+			expectSupportsReadOnly: true,
+			expectError:            false,
 		},
 		{
 			name:        "gRPC error",
@@ -188,7 +216,9 @@ func TestSupportsControllerPublish(t *testing.T) {
 					},
 				},
 			},
-			expectError: false,
+			expectSupportsPublish:  false,
+			expectSupportsReadOnly: false,
+			expectError:            false,
 		},
 		{
 			name: "empty capability",
@@ -199,14 +229,18 @@ func TestSupportsControllerPublish(t *testing.T) {
 					},
 				},
 			},
-			expectError: false,
+			expectSupportsPublish:  false,
+			expectSupportsReadOnly: false,
+			expectError:            false,
 		},
 		{
 			name: "no capabilities",
 			output: &csi.ControllerGetCapabilitiesResponse{
 				Capabilities: []*csi.ControllerServiceCapability{},
 			},
-			expectError: false,
+			expectSupportsPublish:  false,
+			expectSupportsReadOnly: false,
+			expectError:            false,
 		},
 	}
 
@@ -231,12 +265,18 @@ func TestSupportsControllerPublish(t *testing.T) {
 		// Setup expectation
 		controllerServer.EXPECT().ControllerGetCapabilities(gomock.Any(), pbMatch(in)).Return(out, injectedErr).Times(1)
 
-		_, err = csiConn.SupportsControllerPublish(context.Background())
+		supportsPublish, supportsReadOnly, err := csiConn.SupportsControllerPublish(context.Background())
 		if test.expectError && err == nil {
 			t.Errorf("test %q: Expected error, got none", test.name)
 		}
 		if !test.expectError && err != nil {
 			t.Errorf("test %q: got error: %v", test.name, err)
+		}
+		if test.expectSupportsPublish != supportsPublish {
+			t.Errorf("test %q: expected PUBLISH_UNPUBLISH_VOLUME %t, got %t", test.name, test.expectSupportsPublish, supportsPublish)
+		}
+		if test.expectSupportsReadOnly != supportsReadOnly {
+			t.Errorf("test %q: expected PUBLISH_READONLY %t, got %t", test.name, test.expectSupportsReadOnly, supportsReadOnly)
 		}
 	}
 }

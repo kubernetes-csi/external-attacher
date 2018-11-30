@@ -62,6 +62,22 @@ func csiHandlerFactory(client kubernetes.Interface, csiClient csiclient.Interfac
 		csiInformerFactory.Csi().V1alpha1().CSINodeInfos().Lister(),
 		informerFactory.Storage().V1beta1().VolumeAttachments().Lister(),
 		&timeout,
+		true, /* supports PUBLISH_READONLY */
+	)
+}
+
+func csiHandlerFactoryNoReadOnly(client kubernetes.Interface, csiClient csiclient.Interface, informerFactory informers.SharedInformerFactory, csiInformerFactory csiinformers.SharedInformerFactory, csi connection.CSIConnection) Handler {
+	return NewCSIHandler(
+		client,
+		csiClient,
+		testAttacherName,
+		csi,
+		informerFactory.Core().V1().PersistentVolumes().Lister(),
+		informerFactory.Core().V1().Nodes().Lister(),
+		csiInformerFactory.Csi().V1alpha1().CSINodeInfos().Lister(),
+		informerFactory.Storage().V1beta1().VolumeAttachments().Lister(),
+		&timeout,
+		false, /* does not support PUBLISH_READONLY */
 	)
 }
 
@@ -144,6 +160,11 @@ func pvWithSecret(pv *v1.PersistentVolume, secretName string) *v1.PersistentVolu
 	return pv
 }
 
+func pvReadOnly(pv *v1.PersistentVolume) *v1.PersistentVolume {
+	pv.Spec.PersistentVolumeSource.CSI.ReadOnly = true
+	return pv
+}
+
 func node() *v1.Node {
 	return &v1.Node{
 		ObjectMeta: metav1.ObjectMeta{
@@ -166,10 +187,12 @@ func csiNodeInfo() *csiapi.CSINodeInfo {
 		ObjectMeta: metav1.ObjectMeta{
 			Name: testNodeName,
 		},
-		CSIDrivers: []csiapi.CSIDriverInfo{
-			{
-				Driver: testAttacherName,
-				NodeID: testNodeID,
+		Spec: csiapi.CSINodeInfoSpec{
+			Drivers: []csiapi.CSIDriverInfoSpec{
+				{
+					Name:   testAttacherName,
+					NodeID: testNodeID,
+				},
 			},
 		},
 	}
@@ -180,7 +203,7 @@ func csiNodeInfoEmpty() *csiapi.CSINodeInfo {
 		ObjectMeta: metav1.ObjectMeta{
 			Name: testNodeName,
 		},
-		CSIDrivers: []csiapi.CSIDriverInfo{},
+		Spec: csiapi.CSINodeInfoSpec{Drivers: []csiapi.CSIDriverInfoSpec{}},
 	}
 }
 
@@ -228,6 +251,8 @@ func TestCSIHandler(t *testing.T) {
 	var notDetached = false
 	var detached = true
 	var success error = nil
+	var readWrite = false
+	var readOnly = true
 
 	tests := []testCase{
 		//
@@ -243,7 +268,20 @@ func TestCSIHandler(t *testing.T) {
 				core.NewUpdateAction(vaGroupResourceVersion, metav1.NamespaceNone, va(true /*attached*/, fin, ann)),
 			},
 			expectedCSICalls: []csiCall{
-				{"attach", testVolumeHandle, testNodeID, noAttrs, noSecrets, success, notDetached, noMetadata, 0},
+				{"attach", testVolumeHandle, testNodeID, noAttrs, noSecrets, readWrite, success, notDetached, noMetadata, 0},
+			},
+		},
+		{
+			name:           "readOnly VolumeAttachment added -> successful attachment",
+			initialObjects: []runtime.Object{pvReadOnly(pvWithFinalizer()), node()},
+			addedVA:        va(false /*attached*/, "" /*finalizer*/, nil /* annotations */),
+			expectedActions: []core.Action{
+				// Finalizer is saved first
+				core.NewUpdateAction(vaGroupResourceVersion, metav1.NamespaceNone, va(false /*attached*/, fin, ann)),
+				core.NewUpdateAction(vaGroupResourceVersion, metav1.NamespaceNone, va(true /*attached*/, fin, ann)),
+			},
+			expectedCSICalls: []csiCall{
+				{"attach", testVolumeHandle, testNodeID, noAttrs, noSecrets, readOnly, success, notDetached, noMetadata, 0},
 			},
 		},
 		{
@@ -256,7 +294,7 @@ func TestCSIHandler(t *testing.T) {
 				core.NewUpdateAction(vaGroupResourceVersion, metav1.NamespaceNone, va(true /*attached*/, fin, ann)),
 			},
 			expectedCSICalls: []csiCall{
-				{"attach", testVolumeHandle, testNodeID, noAttrs, noSecrets, success, notDetached, noMetadata, 0},
+				{"attach", testVolumeHandle, testNodeID, noAttrs, noSecrets, readWrite, success, notDetached, noMetadata, 0},
 			},
 		},
 		{
@@ -269,7 +307,7 @@ func TestCSIHandler(t *testing.T) {
 				core.NewUpdateAction(vaGroupResourceVersion, metav1.NamespaceNone, va(true /*attached*/, fin, ann)),
 			},
 			expectedCSICalls: []csiCall{
-				{"attach", testVolumeHandle, testNodeID, map[string]string{"foo": "bar"}, noSecrets, success, notDetached, noMetadata, 0},
+				{"attach", testVolumeHandle, testNodeID, map[string]string{"foo": "bar"}, noSecrets, readWrite, success, notDetached, noMetadata, 0},
 			},
 		},
 		{
@@ -283,7 +321,7 @@ func TestCSIHandler(t *testing.T) {
 				core.NewUpdateAction(vaGroupResourceVersion, metav1.NamespaceNone, va(true /*attached*/, fin, ann)),
 			},
 			expectedCSICalls: []csiCall{
-				{"attach", testVolumeHandle, testNodeID, noAttrs, map[string]string{"foo": "bar"}, success, notDetached, noMetadata, 0},
+				{"attach", testVolumeHandle, testNodeID, noAttrs, map[string]string{"foo": "bar"}, readWrite, success, notDetached, noMetadata, 0},
 			},
 		},
 		{
@@ -297,7 +335,7 @@ func TestCSIHandler(t *testing.T) {
 				core.NewUpdateAction(vaGroupResourceVersion, metav1.NamespaceNone, va(true /*attached*/, fin, ann)),
 			},
 			expectedCSICalls: []csiCall{
-				{"attach", testVolumeHandle, testNodeID, noAttrs, map[string]string{}, success, notDetached, noMetadata, 0},
+				{"attach", testVolumeHandle, testNodeID, noAttrs, map[string]string{}, readWrite, success, notDetached, noMetadata, 0},
 			},
 		},
 		{
@@ -322,7 +360,7 @@ func TestCSIHandler(t *testing.T) {
 				core.NewUpdateAction(vaGroupResourceVersion, metav1.NamespaceNone, va(true /*attached*/, fin, ann)),
 			},
 			expectedCSICalls: []csiCall{
-				{"attach", testVolumeHandle, testNodeID, noAttrs, noSecrets, success, notDetached, noMetadata, 0},
+				{"attach", testVolumeHandle, testNodeID, noAttrs, noSecrets, readWrite, success, notDetached, noMetadata, 0},
 			},
 		},
 		{
@@ -360,7 +398,7 @@ func TestCSIHandler(t *testing.T) {
 				core.NewUpdateAction(vaGroupResourceVersion, metav1.NamespaceNone, va(true /*attached*/, fin, ann)),
 			},
 			expectedCSICalls: []csiCall{
-				{"attach", testVolumeHandle, testNodeID, noAttrs, noSecrets, success, notDetached, noMetadata, 0},
+				{"attach", testVolumeHandle, testNodeID, noAttrs, noSecrets, readWrite, success, notDetached, noMetadata, 0},
 			},
 		},
 		{
@@ -389,7 +427,7 @@ func TestCSIHandler(t *testing.T) {
 				core.NewUpdateAction(vaGroupResourceVersion, metav1.NamespaceNone, vaWithMetadata(va(true, fin, ann), map[string]string{"foo": "bar"})),
 			},
 			expectedCSICalls: []csiCall{
-				{"attach", testVolumeHandle, testNodeID, noAttrs, noSecrets, success, notDetached, map[string]string{"foo": "bar"}, 0},
+				{"attach", testVolumeHandle, testNodeID, noAttrs, noSecrets, readWrite, success, notDetached, map[string]string{"foo": "bar"}, 0},
 			},
 		},
 		{
@@ -482,7 +520,7 @@ func TestCSIHandler(t *testing.T) {
 				core.NewUpdateAction(vaGroupResourceVersion, metav1.NamespaceNone, va(true /*attached*/, fin, ann)),
 			},
 			expectedCSICalls: []csiCall{
-				{"attach", testVolumeHandle, testNodeID, noAttrs, noSecrets, success, notDetached, noMetadata, 0},
+				{"attach", testVolumeHandle, testNodeID, noAttrs, noSecrets, readWrite, success, notDetached, noMetadata, 0},
 			},
 		},
 		{
@@ -513,8 +551,8 @@ func TestCSIHandler(t *testing.T) {
 				core.NewUpdateAction(vaGroupResourceVersion, metav1.NamespaceNone, va(true /*attached*/, fin, ann)),
 			},
 			expectedCSICalls: []csiCall{
-				{"attach", testVolumeHandle, testNodeID, noAttrs, noSecrets, success, notDetached, noMetadata, 0},
-				{"attach", testVolumeHandle, testNodeID, noAttrs, noSecrets, success, notDetached, noMetadata, 0},
+				{"attach", testVolumeHandle, testNodeID, noAttrs, noSecrets, readWrite, success, notDetached, noMetadata, 0},
+				{"attach", testVolumeHandle, testNodeID, noAttrs, noSecrets, readWrite, success, notDetached, noMetadata, 0},
 			},
 		},
 		{
@@ -528,8 +566,8 @@ func TestCSIHandler(t *testing.T) {
 				core.NewUpdateAction(vaGroupResourceVersion, metav1.NamespaceNone, va(true /*attached*/, fin, ann)),
 			},
 			expectedCSICalls: []csiCall{
-				{"attach", testVolumeHandle, testNodeID, noAttrs, noSecrets, fmt.Errorf("mock error"), notDetached, noMetadata, 0},
-				{"attach", testVolumeHandle, testNodeID, noAttrs, noSecrets, success, notDetached, noMetadata, 0},
+				{"attach", testVolumeHandle, testNodeID, noAttrs, noSecrets, readWrite, fmt.Errorf("mock error"), notDetached, noMetadata, 0},
+				{"attach", testVolumeHandle, testNodeID, noAttrs, noSecrets, readWrite, success, notDetached, noMetadata, 0},
 			},
 		},
 		{
@@ -542,8 +580,8 @@ func TestCSIHandler(t *testing.T) {
 				core.NewUpdateAction(vaGroupResourceVersion, metav1.NamespaceNone, va(true /*attached*/, fin, ann)),
 			},
 			expectedCSICalls: []csiCall{
-				{"attach", testVolumeHandle, testNodeID, noAttrs, noSecrets, success, notDetached, noMetadata, 500 * time.Millisecond},
-				{"attach", testVolumeHandle, testNodeID, noAttrs, noSecrets, success, notDetached, noMetadata, time.Duration(0)},
+				{"attach", testVolumeHandle, testNodeID, noAttrs, noSecrets, readWrite, success, notDetached, noMetadata, 500 * time.Millisecond},
+				{"attach", testVolumeHandle, testNodeID, noAttrs, noSecrets, readWrite, success, notDetached, noMetadata, time.Duration(0)},
 			},
 		},
 		{
@@ -572,7 +610,7 @@ func TestCSIHandler(t *testing.T) {
 				core.NewUpdateAction(vaGroupResourceVersion, metav1.NamespaceNone, va(true /*attached*/, fin, ann)),
 			},
 			expectedCSICalls: []csiCall{
-				{"attach", testVolumeHandle, testNodeID, noAttrs, noSecrets, success, notDetached, noMetadata, 0},
+				{"attach", testVolumeHandle, testNodeID, noAttrs, noSecrets, readWrite, success, notDetached, noMetadata, 0},
 			},
 		},
 		{
@@ -586,7 +624,7 @@ func TestCSIHandler(t *testing.T) {
 			},
 			expectedCSICalls: []csiCall{
 				{"attach", "projects/UNSPECIFIED/zones/testZone/disks/testpd", testNodeID,
-					map[string]string{"partition": "0"}, noSecrets, success, notDetached, noMetadata, 0},
+					map[string]string{"partition": "0"}, noSecrets, readWrite, success, notDetached, noMetadata, 0},
 			},
 		},
 		//
@@ -600,7 +638,7 @@ func TestCSIHandler(t *testing.T) {
 				core.NewUpdateAction(vaGroupResourceVersion, metav1.NamespaceNone, deleted(va(false /*attached*/, "", ann))),
 			},
 			expectedCSICalls: []csiCall{
-				{"detach", testVolumeHandle, testNodeID, noAttrs, noSecrets, success, detached, noMetadata, 0},
+				{"detach", testVolumeHandle, testNodeID, noAttrs, noSecrets, readWrite, success, detached, noMetadata, 0},
 			},
 		},
 		{
@@ -612,7 +650,7 @@ func TestCSIHandler(t *testing.T) {
 				core.NewUpdateAction(vaGroupResourceVersion, metav1.NamespaceNone, deleted(va(false /*attached*/, "", ann))),
 			},
 			expectedCSICalls: []csiCall{
-				{"detach", testVolumeHandle, testNodeID, noAttrs, map[string]string{"foo": "bar"}, success, detached, noMetadata, 0},
+				{"detach", testVolumeHandle, testNodeID, noAttrs, map[string]string{"foo": "bar"}, readWrite, success, detached, noMetadata, 0},
 			},
 		},
 		{
@@ -624,7 +662,7 @@ func TestCSIHandler(t *testing.T) {
 				core.NewUpdateAction(vaGroupResourceVersion, metav1.NamespaceNone, deleted(va(false /*attached*/, "", ann))),
 			},
 			expectedCSICalls: []csiCall{
-				{"detach", testVolumeHandle, testNodeID, noAttrs, map[string]string{}, success, detached, noMetadata, 0},
+				{"detach", testVolumeHandle, testNodeID, noAttrs, map[string]string{}, readWrite, success, detached, noMetadata, 0},
 			},
 		},
 		{
@@ -646,8 +684,8 @@ func TestCSIHandler(t *testing.T) {
 				core.NewUpdateAction(vaGroupResourceVersion, metav1.NamespaceNone, deleted(va(false /*attached*/, "", ann))),
 			},
 			expectedCSICalls: []csiCall{
-				{"detach", testVolumeHandle, testNodeID, noAttrs, noSecrets, fmt.Errorf("mock error"), notDetached, noMetadata, 0},
-				{"detach", testVolumeHandle, testNodeID, noAttrs, noSecrets, success, detached, noMetadata, 0},
+				{"detach", testVolumeHandle, testNodeID, noAttrs, noSecrets, readWrite, fmt.Errorf("mock error"), notDetached, noMetadata, 0},
+				{"detach", testVolumeHandle, testNodeID, noAttrs, noSecrets, readWrite, success, detached, noMetadata, 0},
 			},
 		},
 		{
@@ -658,8 +696,8 @@ func TestCSIHandler(t *testing.T) {
 				core.NewUpdateAction(vaGroupResourceVersion, metav1.NamespaceNone, deleted(va(false /*attached*/, "", ann))),
 			},
 			expectedCSICalls: []csiCall{
-				{"detach", testVolumeHandle, testNodeID, noAttrs, noSecrets, success, detached, noMetadata, 500 * time.Millisecond},
-				{"detach", testVolumeHandle, testNodeID, noAttrs, noSecrets, success, detached, noMetadata, time.Duration(0)},
+				{"detach", testVolumeHandle, testNodeID, noAttrs, noSecrets, readWrite, success, detached, noMetadata, 500 * time.Millisecond},
+				{"detach", testVolumeHandle, testNodeID, noAttrs, noSecrets, readWrite, success, detached, noMetadata, time.Duration(0)},
 			},
 		},
 		{
@@ -670,7 +708,7 @@ func TestCSIHandler(t *testing.T) {
 				core.NewUpdateAction(vaGroupResourceVersion, metav1.NamespaceNone, deleted(va(false /*attached*/, "", ann))),
 			},
 			expectedCSICalls: []csiCall{
-				{"detach", testVolumeHandle, testNodeID, noAttrs, noSecrets, fmt.Errorf("mock error"), detached, noMetadata, 0},
+				{"detach", testVolumeHandle, testNodeID, noAttrs, noSecrets, readWrite, fmt.Errorf("mock error"), detached, noMetadata, 0},
 			},
 		},
 		{
@@ -740,7 +778,7 @@ func TestCSIHandler(t *testing.T) {
 				core.NewUpdateAction(vaGroupResourceVersion, metav1.NamespaceNone, deleted(va(false /*attached*/, "", map[string]string{vaNodeIDAnnotation: "annotatedNodeID"}))),
 			},
 			expectedCSICalls: []csiCall{
-				{"detach", testVolumeHandle, "annotatedNodeID", noAttrs, noSecrets, success, detached, noMetadata, 0},
+				{"detach", testVolumeHandle, "annotatedNodeID", noAttrs, noSecrets, readWrite, success, detached, noMetadata, 0},
 			},
 		},
 		{
@@ -751,7 +789,7 @@ func TestCSIHandler(t *testing.T) {
 				core.NewUpdateAction(vaGroupResourceVersion, metav1.NamespaceNone, deleted(va(false /*attached*/, "", map[string]string{vaNodeIDAnnotation: "annotatedNodeID"}))),
 			},
 			expectedCSICalls: []csiCall{
-				{"detach", testVolumeHandle, testNodeID, noAttrs, noSecrets, success, detached, noMetadata, 0},
+				{"detach", testVolumeHandle, testNodeID, noAttrs, noSecrets, readWrite, success, detached, noMetadata, 0},
 			},
 		},
 		{
@@ -783,8 +821,8 @@ func TestCSIHandler(t *testing.T) {
 				core.NewUpdateAction(vaGroupResourceVersion, metav1.NamespaceNone, deleted(va(false, "", ann))),
 			},
 			expectedCSICalls: []csiCall{
-				{"detach", testVolumeHandle, testNodeID, noAttrs, noSecrets, success, detached, noMetadata, 0},
-				{"detach", testVolumeHandle, testNodeID, noAttrs, noSecrets, success, detached, noMetadata, 0},
+				{"detach", testVolumeHandle, testNodeID, noAttrs, noSecrets, readWrite, success, detached, noMetadata, 0},
+				{"detach", testVolumeHandle, testNodeID, noAttrs, noSecrets, readWrite, success, detached, noMetadata, 0},
 			},
 		},
 		{
@@ -797,7 +835,7 @@ func TestCSIHandler(t *testing.T) {
 			},
 			expectedCSICalls: []csiCall{
 				{"detach", "projects/UNSPECIFIED/zones/testZone/disks/testpd", testNodeID,
-					map[string]string{"partition": "0"}, noSecrets, success, detached, noMetadata, 0},
+					map[string]string{"partition": "0"}, noSecrets, readWrite, success, detached, noMetadata, 0},
 			},
 		},
 		//
@@ -877,4 +915,51 @@ func TestCSIHandler(t *testing.T) {
 	}
 
 	runTests(t, csiHandlerFactory, tests)
+}
+
+func TestCSIHandlerReadOnly(t *testing.T) {
+	vaGroupResourceVersion := schema.GroupVersionResource{
+		Group:    storage.GroupName,
+		Version:  "v1beta1",
+		Resource: "volumeattachments",
+	}
+	var noMetadata map[string]string = nil
+	var noAttrs map[string]string = nil
+	var noSecrets map[string]string = nil
+	var notDetached = false
+	var success error = nil
+	var readWrite = false
+
+	tests := []testCase{
+		//
+		// ATTACH with driver that does not support PUBLISH_READONLY
+		//
+		{
+			name:           "read-write PV -> attached as read-write",
+			initialObjects: []runtime.Object{pvWithFinalizer(), node()},
+			addedVA:        va(false /*attached*/, "" /*finalizer*/, nil /* annotations */),
+			expectedActions: []core.Action{
+				// Finalizer is saved first
+				core.NewUpdateAction(vaGroupResourceVersion, metav1.NamespaceNone, va(false /*attached*/, fin, ann)),
+				core.NewUpdateAction(vaGroupResourceVersion, metav1.NamespaceNone, va(true /*attached*/, fin, ann)),
+			},
+			expectedCSICalls: []csiCall{
+				{"attach", testVolumeHandle, testNodeID, noAttrs, noSecrets, readWrite, success, notDetached, noMetadata, 0},
+			},
+		},
+		{
+			name:           "read-only PV -> attached as read-write",
+			initialObjects: []runtime.Object{pvReadOnly(pvWithFinalizer()), node()},
+			addedVA:        va(false /*attached*/, "" /*finalizer*/, nil /* annotations */),
+			expectedActions: []core.Action{
+				// Finalizer is saved first
+				core.NewUpdateAction(vaGroupResourceVersion, metav1.NamespaceNone, va(false /*attached*/, fin, ann)),
+				core.NewUpdateAction(vaGroupResourceVersion, metav1.NamespaceNone, va(true /*attached*/, fin, ann)),
+			},
+			expectedCSICalls: []csiCall{
+				{"attach", testVolumeHandle, testNodeID, noAttrs, noSecrets, readWrite, success, notDetached, noMetadata, 0},
+			},
+		},
+	}
+	runTests(t, csiHandlerFactoryNoReadOnly, tests)
 }
