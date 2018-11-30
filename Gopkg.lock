@@ -49,6 +49,7 @@
 [[projects]]
   name = "github.com/golang/protobuf"
   packages = [
+    "descriptor",
     "proto",
     "protoc-gen-go/descriptor",
     "ptypes",
@@ -111,6 +112,12 @@
   packages = ["."]
   revision = "1624edc4454b8682399def8740d46db5e4362ba4"
   version = "v1.1.5"
+
+[[projects]]
+  name = "github.com/kubernetes-csi/csi-lib-utils"
+  packages = ["protosanitizer"]
+  revision = "1628ab5351eafa4fc89a96862a08a891e601e03a"
+  version = "v0.1.0"
 
 [[projects]]
   name = "github.com/kubernetes-csi/csi-test"
@@ -333,6 +340,7 @@
   branch = "release-1.13"
   name = "k8s.io/apimachinery"
   packages = [
+    "pkg/api/equality",
     "pkg/api/errors",
     "pkg/api/meta",
     "pkg/api/resource",
@@ -596,6 +604,6 @@
 [solve-meta]
   analyzer-name = "dep"
   analyzer-version = 1
-  inputs-digest = "4a68e9ed3e8dd79738c891bbb36bb8d5dfd82b23a1a49d202164c513a701fc7c"
+  inputs-digest = "f4ac87732a46be1f9a45b1869c3a50f32e912112df9c700b3f8693d33e05d824"
   solver-name = "gps-cdcl"
   solver-version = 1
