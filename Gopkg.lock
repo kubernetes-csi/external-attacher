@@ -64,6 +64,7 @@
   digest = "1:f958a1c137db276e52f0b50efee41a1a389dcdded59a69711f3e872757dab34b"
   name = "github.com/golang/protobuf"
   packages = [
+    "descriptor",
     "proto",
     "protoc-gen-go/descriptor",
     "ptypes",
@@ -141,6 +142,14 @@
   pruneopts = ""
   revision = "1624edc4454b8682399def8740d46db5e4362ba4"
   version = "v1.1.5"
+
+[[projects]]
+  digest = "1:d1f1992c09d7b77bc5102cd8c369025d31d28dd5e6ca2a3a1a4ec9434724a4f5"
+  name = "github.com/kubernetes-csi/csi-lib-utils"
+  packages = ["protosanitizer"]
+  pruneopts = ""
+  revision = "5853414e1d4771302e0df10d1870c444c2135799"
+  version = "v0.2.0"
 
 [[projects]]
   branch = "master"
@@ -649,6 +658,7 @@
     "github.com/golang/glog",
     "github.com/golang/mock/gomock",
     "github.com/golang/protobuf/proto",
+    "github.com/kubernetes-csi/csi-lib-utils/protosanitizer",
     "github.com/kubernetes-csi/csi-test/driver",
     "google.golang.org/grpc",
     "google.golang.org/grpc/codes",
