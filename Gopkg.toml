@@ -45,3 +45,9 @@
 [[constraint]]
   name = "github.com/kubernetes-csi/csi-lib-utils"
   version = "0.1.0"
+
+[prune]
+   non-go = true
+   go-tests = true
+   unused-packages = true
+
