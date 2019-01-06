@@ -90,6 +90,7 @@ const (
 	vaNodeIDAnnotation         = "csi.alpha.kubernetes.io/node-id"
 )
 
+// SanitizeDriverName sanitizes provided driver name.
 func SanitizeDriverName(driver string) string {
 	re := regexp.MustCompile("[^a-zA-Z0-9-]")
 	name := re.ReplaceAllString(driver, "-")
@@ -100,11 +101,12 @@ func SanitizeDriverName(driver string) string {
 	return name
 }
 
-// getFinalizerName returns Attacher name suitable to be used as finalizer
+// GetFinalizerName returns Attacher name suitable to be used as finalizer
 func GetFinalizerName(driver string) string {
 	return "external-attacher/" + SanitizeDriverName(driver)
 }
 
+// GetNodeIDFromNode returns nodeID string from node annotations.
 func GetNodeIDFromNode(driver string, node *v1.Node) (string, error) {
 	nodeIDJSON, ok := node.Annotations[nodeIDAnnotation]
 	if !ok {
@@ -123,6 +125,7 @@ func GetNodeIDFromNode(driver string, node *v1.Node) (string, error) {
 	return nodeID, nil
 }
 
+// GetNodeIDFromNodeInfo returns nodeID from CSIDriverInfoSpec
 func GetNodeIDFromNodeInfo(driver string, nodeInfo *csiapi.CSINodeInfo) (string, bool) {
 	for _, d := range nodeInfo.Spec.Drivers {
 		if d.Name == driver {
@@ -132,6 +135,7 @@ func GetNodeIDFromNodeInfo(driver string, nodeInfo *csiapi.CSINodeInfo) (string,
 	return "", false
 }
 
+// GetVolumeCapabilities returns volumecapability from PV spec
 func GetVolumeCapabilities(pv *v1.PersistentVolume, csiSource *v1.CSIPersistentVolumeSource) (*csi.VolumeCapability, error) {
 	m := map[v1.PersistentVolumeAccessMode]bool{}
 	for _, mode := range pv.Spec.AccessModes {
@@ -181,6 +185,7 @@ func GetVolumeCapabilities(pv *v1.PersistentVolume, csiSource *v1.CSIPersistentV
 	return cap, nil
 }
 
+// GetVolumeHandle returns VolumeHandle and Readonly flag from CSI PV source
 func GetVolumeHandle(csiSource *v1.CSIPersistentVolumeSource) (string, bool, error) {
 	if csiSource == nil {
 		return "", false, fmt.Errorf("csi source was nil")
@@ -188,6 +193,7 @@ func GetVolumeHandle(csiSource *v1.CSIPersistentVolumeSource) (string, bool, err
 	return csiSource.VolumeHandle, csiSource.ReadOnly, nil
 }
 
+// GetVolumeAttributes returns a dictionary of volume attributes from CSI PV source
 func GetVolumeAttributes(csiSource *v1.CSIPersistentVolumeSource) (map[string]string, error) {
 	if csiSource == nil {
 		return nil, fmt.Errorf("csi source was nil")

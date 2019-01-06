@@ -75,6 +75,7 @@ var (
 	_ CSIConnection = &csiConnection{}
 )
 
+// New provides a new CSI connection object.
 func New(address string, timeout time.Duration) (CSIConnection, error) {
 	conn, err := connect(address, timeout)
 	if err != nil {

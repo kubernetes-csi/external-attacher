@@ -38,6 +38,7 @@ import (
 	"k8s.io/client-go/util/workqueue"
 )
 
+// CSIAttachController is a controller that attaches / detaches CSI volumes using provided Handler interface
 type CSIAttachController struct {
 	client        kubernetes.Interface
 	attacherName  string
@@ -104,6 +105,7 @@ func NewCSIAttachController(client kubernetes.Interface, attacherName string, ha
 	return ctrl
 }
 
+// Run starts CSI attacher and listens on channel events
 func (ctrl *CSIAttachController) Run(workers int, stopCh <-chan struct{}) {
 	defer ctrl.vaQueue.ShutDown()
 	defer ctrl.pvQueue.ShutDown()
