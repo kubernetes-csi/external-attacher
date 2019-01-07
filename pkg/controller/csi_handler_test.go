@@ -245,12 +245,12 @@ func TestCSIHandler(t *testing.T) {
 		Resource: "secrets",
 	}
 
-	var noMetadata map[string]string = nil
-	var noAttrs map[string]string = nil
-	var noSecrets map[string]string = nil
+	var noMetadata map[string]string
+	var noAttrs map[string]string
+	var noSecrets map[string]string
 	var notDetached = false
 	var detached = true
-	var success error = nil
+	var success error
 	var readWrite = false
 	var readOnly = true
 
@@ -923,11 +923,11 @@ func TestCSIHandlerReadOnly(t *testing.T) {
 		Version:  "v1beta1",
 		Resource: "volumeattachments",
 	}
-	var noMetadata map[string]string = nil
-	var noAttrs map[string]string = nil
-	var noSecrets map[string]string = nil
+	var noMetadata map[string]string
+	var noAttrs map[string]string
+	var noSecrets map[string]string
 	var notDetached = false
-	var success error = nil
+	var success error
 	var readWrite = false
 
 	tests := []testCase{
