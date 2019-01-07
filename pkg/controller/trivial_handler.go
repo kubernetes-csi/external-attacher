@@ -35,6 +35,7 @@ type trivialHandler struct {
 
 var _ Handler = &trivialHandler{}
 
+// NewTrivialHandler provides new Handler for Volumeattachments and PV object handling.
 func NewTrivialHandler(client kubernetes.Interface) Handler {
 	return &trivialHandler{client: client}
 }
