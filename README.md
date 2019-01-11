@@ -1,4 +1,5 @@
 [![Build Status](https://travis-ci.org/kubernetes-csi/external-attacher.svg?branch=master)](https://travis-ci.org/kubernetes-csi/external-attacher)
+
 # CSI attacher
 
 The csi-attacher is part of Kubernetes implementation of [Container Storage Interface (CSI)](https://github.com/container-storage-interface/spec).
@@ -47,7 +48,6 @@ The attacher then:
   * Removes Attacher's finalizer on the PV if so.
   * On any error, the PV is re-queued with exponential backoff.
 
-
 #### Concurrency
 
 Both PV queue and `VolumeAttachment` queue run in parallel. To ensure that removal of PV finalizers work without races:
@@ -70,23 +70,25 @@ Dummy attacher watches for `VolumeAttachment` instances with `Attacher=="csi/dum
 To run dummy attacher in `hack/local-up-cluster.sh` environment:
 
 ```sh
-$ csi-attacher -dummy -kubeconfig ~/.kube/config -v 5
+csi-attacher -dummy -kubeconfig ~/.kube/config -v 5
 ```
 
 ### Real attacher
 
 #### Running on command line
+
 For debugging, it's possible to run the attacher on command line:
 
 ```sh
-$ csi-attacher -kubeconfig ~/.kube/config -v 5 -csi-address /run/csi/socket
+csi-attacher -kubeconfig ~/.kube/config -v 5 -csi-address /run/csi/socket
 ```
 
 #### Running in a deployment
+
 It is necessary to create a new service account and give it enough privileges to run the attacher. We provide one omnipotent yaml file that creates everything that's necessary, however it should be split into multiple files in production.
 
 ```sh
-$ kubectl create deploy/kubernetes/deployment.yaml
+kubectl create deploy/kubernetes/deployment.yaml
 ```
 
 Note that the attacher does not scale with more replicas. Only one attacher is elected as leader and running. The others are waiting for the leader to die. They re-elect a new active leader in ~15 seconds after death of the old leader.
@@ -95,7 +97,7 @@ Note that the attacher does not scale with more replicas. Only one attacher is e
 
 We use [dep](https://github.com/golang/dep) for management of `vendor/`.
 
-`vendor/k8s.io` is manually copied from `staging/` directory of work-in-progress API for CSI, namely https://github.com/kubernetes/kubernetes/pull/54463.
+`vendor/k8s.io` is manually copied from `staging/` directory of work-in-progress API for CSI, namely <https://github.com/kubernetes/kubernetes/pull/54463>.
 
 ## Community, discussion, contribution, and support
 
@@ -103,10 +105,10 @@ Learn how to engage with the Kubernetes community on the [community page](http:/
 
 You can reach the maintainers of this project at:
 
-- Slack channels
-  - [#wg-csi](https://kubernetes.slack.com/messages/wg-csi)
-  - [#sig-storage](https://kubernetes.slack.com/messages/sig-storage)
-- [Mailing list](https://groups.google.com/forum/#!forum/kubernetes-sig-storage)
+* Slack channels
+  * [#wg-csi](https://kubernetes.slack.com/messages/wg-csi)
+  * [#sig-storage](https://kubernetes.slack.com/messages/sig-storage)
+* [Mailing list](https://groups.google.com/forum/#!forum/kubernetes-sig-storage)
 
 ### Code of conduct
 
