@@ -1,10 +1,12 @@
 /*
-Copyright 2018 The Kubernetes Authors.
+Copyright 2019 The Kubernetes Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
 You may obtain a copy of the License at
+
     http://www.apache.org/licenses/LICENSE-2.0
+
 Unless required by applicable law or agreed to in writing, software
 distributed under the License is distributed on an "AS IS" BASIS,
 WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
@@ -16,12 +18,13 @@ package plugins
 
 import "k8s.io/api/core/v1"
 
+// InTreePlugin handles translations between CSI and in-tree sources in a PV
 type InTreePlugin interface {
-	// TranslateToCSI takes a persistent volume and will translate
+	// TranslateInTreePVToCSI takes a persistent volume and will translate
 	// the in-tree source to a CSI Source. The input persistent volume can be modified
 	TranslateInTreePVToCSI(pv *v1.PersistentVolume) (*v1.PersistentVolume, error)
 
-	// TranslateToIntree takes a PV with a CSI PersistentVolume Source and will translate
+	// TranslateCSIPVToInTree takes a PV with a CSI PersistentVolume Source and will translate
 	// it to a in-tree Persistent Volume Source for the in-tree volume
 	// by the `Driver` field in the CSI Source. The input PV object can be modified
 	TranslateCSIPVToInTree(pv *v1.PersistentVolume) (*v1.PersistentVolume, error)
