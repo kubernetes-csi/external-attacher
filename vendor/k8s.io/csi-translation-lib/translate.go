@@ -1,10 +1,12 @@
 /*
-Copyright 2018 The Kubernetes Authors.
+Copyright 2019 The Kubernetes Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
 You may obtain a copy of the License at
+
     http://www.apache.org/licenses/LICENSE-2.0
+
 Unless required by applicable law or agreed to in writing, software
 distributed under the License is distributed on an "AS IS" BASIS,
 WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
@@ -12,23 +14,24 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package translate
+package csitranslation
 
 import (
 	"fmt"
 
-	"github.com/kubernetes-csi/kubernetes-csi-migration-library/plugins"
 	"k8s.io/api/core/v1"
+	"k8s.io/csi-translation-lib/plugins"
 )
 
 var (
 	inTreePlugins = map[string]plugins.InTreePlugin{
-		plugins.GCEPDDriverName:  &plugins.GCEPD{},
-		plugins.AWSEBSDriverName: &plugins.AWSEBS{},
+		plugins.GCEPDDriverName:  plugins.NewGCEPersistentDiskCSITranslator(),
+		plugins.AWSEBSDriverName: plugins.NewAWSElasticBlockStoreCSITranslator(),
+		plugins.CinderDriverName: plugins.NewOpenStackCinderCSITranslator(),
 	}
 )
 
-// TranslateToCSI takes a persistent volume and will translate
+// TranslateInTreePVToCSI takes a persistent volume and will translate
 // the in-tree source to a CSI Source if the translation logic
 // has been implemented. The input persistent volume will not
 // be modified
@@ -45,7 +48,7 @@ func TranslateInTreePVToCSI(pv *v1.PersistentVolume) (*v1.PersistentVolume, erro
 	return nil, fmt.Errorf("could not find in-tree plugin translation logic for %#v", copiedPV.Name)
 }
 
-// TranslateToIntree takes a PV with a CSI PersistentVolume Source and will translate
+// TranslateCSIPVToInTree takes a PV with a CSI PersistentVolume Source and will translate
 // it to a in-tree Persistent Volume Source for the specific in-tree volume specified
 // by the `Driver` field in the CSI Source. The input PV object will not be modified.
 func TranslateCSIPVToInTree(pv *v1.PersistentVolume) (*v1.PersistentVolume, error) {
@@ -61,9 +64,9 @@ func TranslateCSIPVToInTree(pv *v1.PersistentVolume) (*v1.PersistentVolume, erro
 	return nil, fmt.Errorf("could not find in-tree plugin translation logic for %s", copiedPV.Spec.CSI.Driver)
 }
 
-// IsMigratedByName tests whether there is Migration logic for the in-tree plugin
+// IsMigratableByName tests whether there is Migration logic for the in-tree plugin
 // for the given `pluginName`
-func IsMigratedByName(pluginName string) bool {
+func IsMigratableByName(pluginName string) bool {
 	for _, curPlugin := range inTreePlugins {
 		if curPlugin.GetInTreePluginName() == pluginName {
 			return true
@@ -72,6 +75,7 @@ func IsMigratedByName(pluginName string) bool {
 	return false
 }
 
+// GetCSINameFromIntreeName maps the name of a CSI driver to its in-tree version
 func GetCSINameFromIntreeName(pluginName string) (string, error) {
 	for csiDriverName, curPlugin := range inTreePlugins {
 		if curPlugin.GetInTreePluginName() == pluginName {
@@ -81,8 +85,8 @@ func GetCSINameFromIntreeName(pluginName string) (string, error) {
 	return "", fmt.Errorf("Could not find CSI Driver name for plugin %v", pluginName)
 }
 
-// IsPVMigrated tests whether there is Migration logic for the given Persistent Volume
-func IsPVMigrated(pv *v1.PersistentVolume) bool {
+// IsPVMigratable tests whether there is Migration logic for the given Persistent Volume
+func IsPVMigratable(pv *v1.PersistentVolume) bool {
 	for _, curPlugin := range inTreePlugins {
 		if curPlugin.CanSupport(pv) {
 			return true
@@ -91,7 +95,7 @@ func IsPVMigrated(pv *v1.PersistentVolume) bool {
 	return false
 }
 
-// IsInlineMigrated tests whether there is Migration logic for the given Inline Volume
-func IsInlineMigrated(vol *v1.Volume) bool {
+// IsInlineMigratable tests whether there is Migration logic for the given Inline Volume
+func IsInlineMigratable(vol *v1.Volume) bool {
 	return false
 }

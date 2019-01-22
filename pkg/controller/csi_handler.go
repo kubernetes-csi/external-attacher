@@ -25,7 +25,6 @@ import (
 
 	"github.com/kubernetes-csi/external-attacher/pkg/connection"
 
-	csiMigration "github.com/kubernetes-csi/kubernetes-csi-migration-library"
 	"k8s.io/api/core/v1"
 	storage "k8s.io/api/storage/v1beta1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -36,6 +35,7 @@ import (
 	"k8s.io/client-go/util/workqueue"
 	csiclient "k8s.io/csi-api/pkg/client/clientset/versioned"
 	csilisters "k8s.io/csi-api/pkg/client/listers/csi/v1alpha1"
+	csitranslationlib "k8s.io/csi-translation-lib"
 )
 
 // csiHandler is a handler that calls CSI to attach/detach volume.
@@ -245,8 +245,8 @@ func getCSISource(pv *v1.PersistentVolume) (*v1.CSIPersistentVolumeSource, error
 	}
 	if pv.Spec.CSI != nil {
 		return pv.Spec.CSI, nil
-	} else if csiMigration.IsPVMigrated(pv) {
-		csiPV, err := csiMigration.TranslateInTreePVToCSI(pv)
+	} else if csitranslationlib.IsPVMigratable(pv) {
+		csiPV, err := csitranslationlib.TranslateInTreePVToCSI(pv)
 		if err != nil {
 			return nil, fmt.Errorf("failed to translate in tree pv to CSI: %v", err)
 		}

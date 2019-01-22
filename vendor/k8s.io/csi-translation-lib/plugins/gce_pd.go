@@ -1,10 +1,12 @@
 /*
-Copyright 2018 The Kubernetes Authors.
+Copyright 2019 The Kubernetes Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
 You may obtain a copy of the License at
+
     http://www.apache.org/licenses/LICENSE-2.0
+
 Unless required by applicable law or agreed to in writing, software
 distributed under the License is distributed on an "AS IS" BASIS,
 WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
@@ -24,11 +26,11 @@ import (
 )
 
 const (
-	// GCE PD CSI driver constants
-	GCEPDDriverName       = "com.google.csi.gcepd"
+	// GCEPDDriverName is the name of the CSI driver for GCE PD
+	GCEPDDriverName = "pd.csi.storage.gke.io"
+	// GCEPDInTreePluginName is the name of the intree plugin for GCE PD
 	GCEPDInTreePluginName = "kubernetes.io/gce-pd"
 
-	UnspecifiedValue = "UNSPECIFIED"
 	// Volume ID Expected Format
 	// "projects/{projectName}/zones/{zoneName}/disks/{diskName}"
 	volIDZonalFmt = "projects/%s/zones/%s/disks/%s"
@@ -37,17 +39,28 @@ const (
 	volIDDiskNameValue = 5
 	volIDTotalElements = 6
 
-	// Kubernetes label constants
-	LabelZoneFailureDomain  = "failure-domain.beta.kubernetes.io/zone"
+	// LabelZoneFailureDomain is the label on PVs indicating the zone they are provisioned in
+	LabelZoneFailureDomain = "failure-domain.beta.kubernetes.io/zone"
+	// LabelMultiZoneDelimiter separates zones for RePD volumes
 	LabelMultiZoneDelimiter = "__"
+	// UnspecifiedValue is used for an unknown zone string
+	UnspecifiedValue = "UNSPECIFIED"
 )
 
-type GCEPD struct{}
+var _ InTreePlugin = &gcePersistentDiskCSITranslator{}
 
-// TranslateToCSI takes a volume.Spec and will translate it to a
-// CSIPersistentVolumeSource if the translation logic for that
-// specific in-tree volume spec has been implemented
-func (g *GCEPD) TranslateInTreePVToCSI(pv *v1.PersistentVolume) (*v1.PersistentVolume, error) {
+// gcePersistentDiskCSITranslator handles translation of PV spec from In-tree
+// GCE PD to CSI GCE PD and vice versa
+type gcePersistentDiskCSITranslator struct{}
+
+// NewGCEPersistentDiskCSITranslator returns a new instance of gcePersistentDiskTranslator
+func NewGCEPersistentDiskCSITranslator() InTreePlugin {
+	return &gcePersistentDiskCSITranslator{}
+}
+
+// TranslateInTreePVToCSI takes a PV with GCEPersistentDisk set from in-tree
+// and converts the GCEPersistentDisk source to a CSIPersistentVolumeSource
+func (g *gcePersistentDiskCSITranslator) TranslateInTreePVToCSI(pv *v1.PersistentVolume) (*v1.PersistentVolume, error) {
 	var volID string
 
 	if pv == nil || pv.Spec.GCEPersistentDisk == nil {
@@ -88,10 +101,9 @@ func (g *GCEPD) TranslateInTreePVToCSI(pv *v1.PersistentVolume) (*v1.PersistentV
 	return pv, nil
 }
 
-// TranslateToIntree takes a CSIPersistentVolumeSource and will translate
-// it to a volume.Spec for the specific in-tree volume specified by
-//`inTreePlugin`, if that translation logic has been implemented
-func (g *GCEPD) TranslateCSIPVToInTree(pv *v1.PersistentVolume) (*v1.PersistentVolume, error) {
+// TranslateCSIPVToInTree takes a PV with CSIPersistentVolumeSource set and
+// translates the GCE PD CSI source to a GCEPersistentDisk source.
+func (g *gcePersistentDiskCSITranslator) TranslateCSIPVToInTree(pv *v1.PersistentVolume) (*v1.PersistentVolume, error) {
 	if pv == nil || pv.Spec.CSI == nil {
 		return nil, fmt.Errorf("pv is nil or CSI source not defined on pv")
 	}
@@ -126,20 +138,21 @@ func (g *GCEPD) TranslateCSIPVToInTree(pv *v1.PersistentVolume) (*v1.PersistentV
 // CanSupport tests whether the plugin supports a given volume
 // specification from the API.  The spec pointer should be considered
 // const.
-func (g *GCEPD) CanSupport(pv *v1.PersistentVolume) bool {
+func (g *gcePersistentDiskCSITranslator) CanSupport(pv *v1.PersistentVolume) bool {
 	return pv != nil && pv.Spec.GCEPersistentDisk != nil
 }
 
-func (g *GCEPD) GetInTreePluginName() string {
+// GetInTreePluginName returns the name of the intree plugin driver
+func (g *gcePersistentDiskCSITranslator) GetInTreePluginName() string {
 	return GCEPDInTreePluginName
 }
 
 func pdNameFromVolumeID(id string) (string, error) {
-	splitId := strings.Split(id, "/")
-	if len(splitId) != volIDTotalElements {
+	splitID := strings.Split(id, "/")
+	if len(splitID) != volIDTotalElements {
 		return "", fmt.Errorf("failed to get id components. Expected projects/{project}/zones/{zone}/disks/{name}. Got: %s", id)
 	}
-	return splitId[volIDDiskNameValue], nil
+	return splitID[volIDDiskNameValue], nil
 }
 
 // TODO: Replace this with the imported one from GCE PD CSI Driver when
