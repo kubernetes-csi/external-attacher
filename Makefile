@@ -12,37 +12,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-.PHONY: all csi-attacher clean test
+CMDS=csi-attacher
+all: build
 
-REGISTRY_NAME=quay.io/k8scsi
-IMAGE_NAME=csi-attacher
-IMAGE_VERSION=canary
-IMAGE_TAG=$(REGISTRY_NAME)/$(IMAGE_NAME):$(IMAGE_VERSION)
+include release-tools/build.make
 
-REV=$(shell git describe --long --tags --match='v*' --dirty)
-
-ifdef V
-TESTARGS = -v -args -alsologtostderr -v 5
-else
-TESTARGS =
-endif
-
-
-all: csi-attacher
-
-csi-attacher:
-	mkdir -p bin
-	CGO_ENABLED=0 GOOS=linux go build -a -ldflags '-X main.version=$(REV) -extldflags "-static"' -o ./bin/csi-attacher ./cmd/csi-attacher
-
-clean:
-	-rm -rf bin
-
-container: csi-attacher
-	docker build -t $(IMAGE_TAG) .
-
-push: container
-	docker push $(IMAGE_TAG)
-
-test:
-	go test `go list ./... | grep -v 'vendor'` $(TESTARGS)
-	go vet `go list ./... | grep -v vendor`
