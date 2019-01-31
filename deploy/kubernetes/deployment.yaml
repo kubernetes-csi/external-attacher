@@ -57,7 +57,7 @@ spec:
               mountPath: /var/lib/csi/sockets/pluginproxy/
 
         - name: mock-driver
-          image: quay.io/k8scsi/mock-plugin
+          image: quay.io/k8scsi/mock-driver
           imagePullPolicy: "IfNotPresent"
           env:
             - name: CSI_ENDPOINT
