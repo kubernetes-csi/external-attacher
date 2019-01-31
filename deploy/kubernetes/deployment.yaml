@@ -33,7 +33,7 @@ spec:
       serviceAccount: csi-attacher
       containers:
         - name: csi-attacher
-          image: quay.io/k8scsi/csi-attacher
+          image: quay.io/k8scsi/csi-attacher:canary
           args:
             - "--v=5"
             - "--csi-address=$(ADDRESS)"
@@ -57,7 +57,7 @@ spec:
               mountPath: /var/lib/csi/sockets/pluginproxy/
 
         - name: mock-driver
-          image: quay.io/k8scsi/mock-driver
+          image: quay.io/k8scsi/mock-driver:canary
           imagePullPolicy: "IfNotPresent"
           env:
             - name: CSI_ENDPOINT
