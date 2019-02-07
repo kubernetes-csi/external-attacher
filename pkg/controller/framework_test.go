@@ -26,8 +26,8 @@ import (
 
 	"github.com/container-storage-interface/spec/lib/go/csi"
 	"github.com/davecgh/go-spew/spew"
-	"github.com/golang/glog"
 	"github.com/kubernetes-csi/external-attacher/pkg/connection"
+	"k8s.io/klog"
 
 	"k8s.io/api/core/v1"
 	storage "k8s.io/api/storage/v1beta1"
@@ -106,7 +106,7 @@ type handlerFactory func(client kubernetes.Interface, csiClient csiclient.Interf
 
 func runTests(t *testing.T, handlerFactory handlerFactory, tests []testCase) {
 	for _, test := range tests {
-		glog.Infof("Test %q: started", test.name)
+		klog.Infof("Test %q: started", test.name)
 		objs := test.initialObjects
 		if test.addedVA != nil {
 			objs = append(objs, test.addedVA)
@@ -162,10 +162,10 @@ func runTests(t *testing.T, handlerFactory handlerFactory, tests []testCase) {
 			if action.GetVerb() == "update" {
 				switch action.GetResource().Resource {
 				case "volumeattachments":
-					glog.V(5).Infof("Test reactor: updated VA")
+					klog.V(5).Infof("Test reactor: updated VA")
 					vaInformer.Informer().GetStore().Update(action.(core.UpdateAction).GetObject())
 				case "persistentvolumes":
-					glog.V(5).Infof("Test reactor: updated PV")
+					klog.V(5).Infof("Test reactor: updated PV")
 					pvInformer.Informer().GetStore().Update(action.(core.UpdateAction).GetObject())
 				default:
 					t.Errorf("Unknown update resource: %s", action.GetResource())
@@ -206,11 +206,11 @@ func runTests(t *testing.T, handlerFactory handlerFactory, tests []testCase) {
 				break
 			}
 			if ctrl.vaQueue.Len() > 0 {
-				glog.V(5).Infof("Test %q: %d events in VA queue, processing one", test.name, ctrl.vaQueue.Len())
+				klog.V(5).Infof("Test %q: %d events in VA queue, processing one", test.name, ctrl.vaQueue.Len())
 				ctrl.syncVA()
 			}
 			if ctrl.pvQueue.Len() > 0 {
-				glog.V(5).Infof("Test %q: %d events in PV queue, processing one", test.name, ctrl.vaQueue.Len())
+				klog.V(5).Infof("Test %q: %d events in PV queue, processing one", test.name, ctrl.vaQueue.Len())
 				ctrl.syncPV()
 			}
 			if ctrl.vaQueue.Len() > 0 || ctrl.pvQueue.Len() > 0 {
@@ -220,7 +220,7 @@ func runTests(t *testing.T, handlerFactory handlerFactory, tests []testCase) {
 			currentActionCount := len(client.Actions())
 			if currentActionCount < len(test.expectedActions) {
 				if lastReportedActionCount < currentActionCount {
-					glog.V(5).Infof("Test %q: got %d actions out of %d, waiting for the rest", test.name, currentActionCount, len(test.expectedActions))
+					klog.V(5).Infof("Test %q: got %d actions out of %d, waiting for the rest", test.name, currentActionCount, len(test.expectedActions))
 					lastReportedActionCount = currentActionCount
 				}
 				// The test expected more to happen, wait for them
@@ -266,7 +266,7 @@ func runTests(t *testing.T, handlerFactory handlerFactory, tests []testCase) {
 		if test.additionalCheck != nil {
 			test.additionalCheck(t, test)
 		}
-		glog.Infof("Test %q: finished \n\n", test.name)
+		klog.Infof("Test %q: finished \n\n", test.name)
 	}
 }
 

@@ -22,15 +22,15 @@ import (
 	"regexp"
 
 	"github.com/container-storage-interface/spec/lib/go/csi"
-	"github.com/golang/glog"
 	"k8s.io/api/core/v1"
 	storage "k8s.io/api/storage/v1beta1"
 	"k8s.io/client-go/kubernetes"
 	csiapi "k8s.io/csi-api/pkg/apis/csi/v1alpha1"
+	"k8s.io/klog"
 )
 
 func markAsAttached(client kubernetes.Interface, va *storage.VolumeAttachment, metadata map[string]string) (*storage.VolumeAttachment, error) {
-	glog.V(4).Infof("Marking as attached %q", va.Name)
+	klog.V(4).Infof("Marking as attached %q", va.Name)
 	clone := va.DeepCopy()
 	clone.Status.Attached = true
 	clone.Status.AttachmentMetadata = metadata
@@ -40,7 +40,7 @@ func markAsAttached(client kubernetes.Interface, va *storage.VolumeAttachment, m
 	if err != nil {
 		return va, err
 	}
-	glog.V(4).Infof("Marked as attached %q", va.Name)
+	klog.V(4).Infof("Marked as attached %q", va.Name)
 	return newVA, nil
 }
 
@@ -64,11 +64,11 @@ func markAsDetached(client kubernetes.Interface, va *storage.VolumeAttachment) (
 
 	if !found && !va.Status.Attached {
 		// Finalizer was not present, nothing to update
-		glog.V(4).Infof("Already fully detached %q", va.Name)
+		klog.V(4).Infof("Already fully detached %q", va.Name)
 		return va, nil
 	}
 
-	glog.V(4).Infof("Marking as detached %q", va.Name)
+	klog.V(4).Infof("Marking as detached %q", va.Name)
 	clone := va.DeepCopy()
 	clone.Finalizers = newFinalizers
 	clone.Status.Attached = false
@@ -79,7 +79,7 @@ func markAsDetached(client kubernetes.Interface, va *storage.VolumeAttachment) (
 	if err != nil {
 		return va, err
 	}
-	glog.V(4).Infof("Finalizer removed from %q", va.Name)
+	klog.V(4).Infof("Finalizer removed from %q", va.Name)
 	return newVA, nil
 }
 
