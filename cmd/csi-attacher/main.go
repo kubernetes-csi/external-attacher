@@ -23,13 +23,13 @@ import (
 	"os"
 	"time"
 
-	"github.com/golang/glog"
 	"k8s.io/client-go/informers"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
 	csiclient "k8s.io/csi-api/pkg/client/clientset/versioned"
 	csiinformers "k8s.io/csi-api/pkg/client/informers/externalversions"
+	"k8s.io/klog"
 
 	"github.com/kubernetes-csi/external-attacher/pkg/connection"
 	"github.com/kubernetes-csi/external-attacher/pkg/controller"
@@ -66,6 +66,7 @@ var (
 )
 
 func main() {
+	klog.InitFlags(nil)
 	flag.Set("logtostderr", "true")
 	flag.Parse()
 
@@ -73,24 +74,24 @@ func main() {
 		fmt.Println(os.Args[0], version)
 		return
 	}
-	glog.Infof("Version: %s", version)
+	klog.Infof("Version: %s", version)
 
 	// Create the client config. Use kubeconfig if given, otherwise assume in-cluster.
 	config, err := buildConfig(*kubeconfig)
 	if err != nil {
-		glog.Error(err.Error())
+		klog.Error(err.Error())
 		os.Exit(1)
 	}
 
 	clientset, err := kubernetes.NewForConfig(config)
 	if err != nil {
-		glog.Error(err.Error())
+		klog.Error(err.Error())
 		os.Exit(1)
 	}
 
 	csiClientset, err := csiclient.NewForConfig(config)
 	if err != nil {
-		glog.Error(err.Error())
+		klog.Error(err.Error())
 		os.Exit(1)
 	}
 
@@ -107,13 +108,13 @@ func main() {
 		// Connect to CSI.
 		csiConn, err := connection.New(*csiAddress, *connectionTimeout)
 		if err != nil {
-			glog.Error(err.Error())
+			klog.Error(err.Error())
 			os.Exit(1)
 		}
 
 		// Check it's ready
 		if err = waitForDriverReady(csiConn, *connectionTimeout); err != nil {
-			glog.Error(err.Error())
+			klog.Error(err.Error())
 			os.Exit(1)
 		}
 
@@ -122,24 +123,24 @@ func main() {
 		defer cancel()
 		attacher, err = csiConn.GetDriverName(ctx)
 		if err != nil {
-			glog.Error(err.Error())
+			klog.Error(err.Error())
 			os.Exit(1)
 		}
-		glog.V(2).Infof("CSI driver name: %q", attacher)
+		klog.V(2).Infof("CSI driver name: %q", attacher)
 
 		supportsService, err := csiConn.SupportsPluginControllerService(ctx)
 		if err != nil {
-			glog.Error(err.Error())
+			klog.Error(err.Error())
 			os.Exit(1)
 		}
 		if !supportsService {
 			handler = controller.NewTrivialHandler(clientset)
-			glog.V(2).Infof("CSI driver does not support Plugin Controller Service, using trivial handler")
+			klog.V(2).Infof("CSI driver does not support Plugin Controller Service, using trivial handler")
 		} else {
 			// Find out if the driver supports attach/detach.
 			supportsAttach, supportsReadOnly, err := csiConn.SupportsControllerPublish(ctx)
 			if err != nil {
-				glog.Error(err.Error())
+				klog.Error(err.Error())
 				os.Exit(1)
 			}
 			if supportsAttach {
@@ -149,10 +150,10 @@ func main() {
 				csiFactory := csiinformers.NewSharedInformerFactory(csiClientset, *resync)
 				nodeInfoLister := csiFactory.Csi().V1alpha1().CSINodeInfos().Lister()
 				handler = controller.NewCSIHandler(clientset, csiClientset, attacher, csiConn, pvLister, nodeLister, nodeInfoLister, vaLister, timeout, supportsReadOnly)
-				glog.V(2).Infof("CSI driver supports ControllerPublishUnpublish, using real CSI handler")
+				klog.V(2).Infof("CSI driver supports ControllerPublishUnpublish, using real CSI handler")
 			} else {
 				handler = controller.NewTrivialHandler(clientset)
-				glog.V(2).Infof("CSI driver does not support ControllerPublishUnpublish, using trivial handler")
+				klog.V(2).Infof("CSI driver does not support ControllerPublishUnpublish, using trivial handler")
 			}
 		}
 	}
@@ -179,11 +180,11 @@ func main() {
 	} else {
 		// Leader election was requested.
 		if leaderElectionNamespace == nil || *leaderElectionNamespace == "" {
-			glog.Error("-leader-election-namespace must not be empty")
+			klog.Error("-leader-election-namespace must not be empty")
 			os.Exit(1)
 		}
 		if leaderElectionIdentity == nil || *leaderElectionIdentity == "" {
-			glog.Error("-leader-election-identity must not be empty")
+			klog.Error("-leader-election-identity must not be empty")
 			os.Exit(1)
 		}
 		// Name of config map with leader election lock
@@ -208,10 +209,10 @@ func waitForDriverReady(csiConn connection.CSIConnection, timeout time.Duration)
 		defer cancel()
 		err = csiConn.Probe(ctx)
 		if err == nil {
-			glog.V(2).Infof("Probe succeeded")
+			klog.V(2).Infof("Probe succeeded")
 			return nil
 		}
-		glog.V(2).Infof("Probe failed with %s", err)
+		klog.V(2).Infof("Probe failed with %s", err)
 
 		now := time.Now()
 		if now.After(finish) {

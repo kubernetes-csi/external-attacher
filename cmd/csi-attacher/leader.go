@@ -22,7 +22,6 @@ import (
 	"os"
 	"time"
 
-	"github.com/golang/glog"
 	"github.com/kubernetes-csi/external-attacher/pkg/controller"
 	"k8s.io/api/core/v1"
 	"k8s.io/client-go/kubernetes"
@@ -31,6 +30,7 @@ import (
 	"k8s.io/client-go/tools/leaderelection"
 	"k8s.io/client-go/tools/leaderelection/resourcelock"
 	"k8s.io/client-go/tools/record"
+	"k8s.io/klog"
 )
 
 const (
@@ -51,7 +51,7 @@ func runAsLeader(clientset *kubernetes.Clientset, namespace string, identity str
 	}
 	lock, err := resourcelock.New(resourcelock.ConfigMapsResourceLock, namespace, controller.SanitizeDriverName(lockName), clientset.CoreV1(), rlConfig)
 	if err != nil {
-		glog.Error(err)
+		klog.Error(err)
 		os.Exit(1)
 	}
 
@@ -62,14 +62,14 @@ func runAsLeader(clientset *kubernetes.Clientset, namespace string, identity str
 		RetryPeriod:   retryPeriod,
 		Callbacks: leaderelection.LeaderCallbacks{
 			OnStartedLeading: func(ctx context.Context) {
-				glog.V(2).Info("Became leader, starting")
+				klog.V(2).Info("Became leader, starting")
 				startFunc(ctx)
 			},
 			OnStoppedLeading: func() {
-				glog.Fatal("Stopped leading")
+				klog.Fatal("Stopped leading")
 			},
 			OnNewLeader: func(identity string) {
-				glog.V(3).Infof("Current leader: %s", identity)
+				klog.V(3).Infof("Current leader: %s", identity)
 			},
 		},
 	}

@@ -17,11 +17,11 @@ limitations under the License.
 package controller
 
 import (
-	"github.com/golang/glog"
 	"k8s.io/api/core/v1"
 	storage "k8s.io/api/storage/v1beta1"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/util/workqueue"
+	"k8s.io/klog"
 )
 
 // trivialHandler is a handler that marks all VolumeAttachments as attached.
@@ -46,15 +46,15 @@ func (h *trivialHandler) Init(vaQueue workqueue.RateLimitingInterface, pvQueue w
 }
 
 func (h *trivialHandler) SyncNewOrUpdatedVolumeAttachment(va *storage.VolumeAttachment) {
-	glog.V(4).Infof("Trivial sync[%s] started", va.Name)
+	klog.V(4).Infof("Trivial sync[%s] started", va.Name)
 	if !va.Status.Attached {
 		// mark as attached
 		if _, err := markAsAttached(h.client, va, nil); err != nil {
-			glog.Warningf("Error saving VolumeAttachment %s as attached: %s", va.Name, err)
+			klog.Warningf("Error saving VolumeAttachment %s as attached: %s", va.Name, err)
 			h.vaQueue.AddRateLimited(va.Name)
 			return
 		}
-		glog.V(2).Infof("Marked VolumeAttachment %s as attached", va.Name)
+		klog.V(2).Infof("Marked VolumeAttachment %s as attached", va.Name)
 	}
 	h.vaQueue.Forget(va.Name)
 }

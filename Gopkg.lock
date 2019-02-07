@@ -38,14 +38,6 @@
 
 [[projects]]
   branch = "master"
-  digest = "1:e2b86e41f3d669fc36b50d31d32d22c8ac656c75aa5ea89717ce7177e134ff2a"
-  name = "github.com/golang/glog"
-  packages = ["."]
-  pruneopts = "NUT"
-  revision = "23def4e6c14b4da8ac2ed8007337bc5eb5007998"
-
-[[projects]]
-  branch = "master"
   digest = "1:3fb07f8e222402962fa190eb060608b34eddfb64562a18e2167df2de0ece85d8"
   name = "github.com/golang/groupcache"
   packages = ["lru"]
@@ -689,7 +681,6 @@
   input-imports = [
     "github.com/container-storage-interface/spec/lib/go/csi",
     "github.com/davecgh/go-spew/spew",
-    "github.com/golang/glog",
     "github.com/golang/mock/gomock",
     "github.com/golang/protobuf/proto",
     "github.com/kubernetes-csi/csi-lib-utils/protosanitizer",
@@ -731,6 +722,7 @@
     "k8s.io/csi-api/pkg/client/informers/externalversions",
     "k8s.io/csi-api/pkg/client/listers/csi/v1alpha1",
     "k8s.io/csi-translation-lib",
+    "k8s.io/klog",
   ]
   solver-name = "gps-cdcl"
   solver-version = 1
