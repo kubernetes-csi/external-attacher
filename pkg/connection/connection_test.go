@@ -19,6 +19,9 @@ package connection
 import (
 	"context"
 	"fmt"
+	"io/ioutil"
+	"os"
+	"path/filepath"
 	"reflect"
 	"testing"
 
@@ -52,7 +55,15 @@ func pbMatch(x interface{}) gomock.Matcher {
 	return &pbMatcher{v}
 }
 
-func createMockServer(t *testing.T) (*gomock.Controller, *driver.MockCSIDriver, *driver.MockIdentityServer, *driver.MockControllerServer, CSIConnection, error) {
+func tempDir(t *testing.T) string {
+	dir, err := ioutil.TempDir("", "external-attacher-test-")
+	if err != nil {
+		t.Fatalf("Cannot create temporary directory: %s", err)
+	}
+	return dir
+}
+
+func createMockServer(t *testing.T, tmpdir string) (*gomock.Controller, *driver.MockCSIDriver, *driver.MockIdentityServer, *driver.MockControllerServer, CSIConnection, error) {
 	// Start the mock server
 	mockController := gomock.NewController(t)
 	identityServer := driver.NewMockIdentityServer(mockController)
@@ -61,11 +72,12 @@ func createMockServer(t *testing.T) (*gomock.Controller, *driver.MockCSIDriver, 
 		Identity:   identityServer,
 		Controller: controllerServer,
 	})
-	drv.Start()
+	drv.StartOnAddress("unix", filepath.Join(tmpdir, "csi.sock"))
 
 	// Create a client connection to it
 	addr := drv.Address()
-	csiConn, err := New(addr, 10)
+	t.Logf("adds: %s", addr)
+	csiConn, err := New(addr)
 	if err != nil {
 		return nil, nil, nil, nil, nil, err
 	}
@@ -106,7 +118,9 @@ func TestGetPluginInfo(t *testing.T) {
 		},
 	}
 
-	mockController, driver, identityServer, _, csiConn, err := createMockServer(t)
+	tmpdir := tempDir(t)
+	defer os.RemoveAll(tmpdir)
+	mockController, driver, identityServer, _, csiConn, err := createMockServer(t, tmpdir)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -244,7 +258,9 @@ func TestSupportsControllerPublish(t *testing.T) {
 		},
 	}
 
-	mockController, driver, _, controllerServer, csiConn, err := createMockServer(t)
+	tmpdir := tempDir(t)
+	defer os.RemoveAll(tmpdir)
+	mockController, driver, _, controllerServer, csiConn, err := createMockServer(t, tmpdir)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -351,7 +367,9 @@ func TestSupportsPluginControllerService(t *testing.T) {
 		},
 	}
 
-	mockController, driver, identityServer, _, csiConn, err := createMockServer(t)
+	tmpdir := tempDir(t)
+	defer os.RemoveAll(tmpdir)
+	mockController, driver, identityServer, _, csiConn, err := createMockServer(t, tmpdir)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -530,7 +548,9 @@ func TestAttach(t *testing.T) {
 		},
 	}
 
-	mockController, driver, _, controllerServer, csiConn, err := createMockServer(t)
+	tmpdir := tempDir(t)
+	defer os.RemoveAll(tmpdir)
+	mockController, driver, _, controllerServer, csiConn, err := createMockServer(t, tmpdir)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -635,7 +655,9 @@ func TestDetachAttach(t *testing.T) {
 		},
 	}
 
-	mockController, driver, _, controllerServer, csiConn, err := createMockServer(t)
+	tmpdir := tempDir(t)
+	defer os.RemoveAll(tmpdir)
+	mockController, driver, _, controllerServer, csiConn, err := createMockServer(t, tmpdir)
 	if err != nil {
 		t.Fatal(err)
 	}

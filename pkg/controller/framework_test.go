@@ -452,6 +452,6 @@ func (f *fakeCSIConnection) Close() error {
 	return fmt.Errorf("Not implemented")
 }
 
-func (f *fakeCSIConnection) Probe(ctx context.Context) error {
+func (f *fakeCSIConnection) Probe(timeout time.Duration) error {
 	return nil
 }
