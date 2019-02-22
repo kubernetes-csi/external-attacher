@@ -20,6 +20,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"regexp"
+	"strings"
 
 	"github.com/container-storage-interface/spec/lib/go/csi"
 	"k8s.io/api/core/v1"
@@ -189,6 +190,9 @@ func GetVolumeCapabilities(pv *v1.PersistentVolume, csiSource *v1.CSIPersistentV
 func GetVolumeHandle(csiSource *v1.CSIPersistentVolumeSource) (string, bool, error) {
 	if csiSource == nil {
 		return "", false, fmt.Errorf("csi source was nil")
+	}
+	if len(strings.TrimSpace(csiSource.VolumeHandle)) == 0 {
+		return "", false, fmt.Errorf("volume handle was not set")
 	}
 	return csiSource.VolumeHandle, csiSource.ReadOnly, nil
 }
