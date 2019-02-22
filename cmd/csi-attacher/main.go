@@ -50,7 +50,7 @@ const (
 var (
 	kubeconfig        = flag.String("kubeconfig", "", "Absolute path to the kubeconfig file. Required only when running out of cluster.")
 	resync            = flag.Duration("resync", 10*time.Minute, "Resync interval of the controller.")
-	connectionTimeout = flag.Duration("connection-timeout", 1*time.Minute, "Timeout for waiting for CSI driver socket.")
+	connectionTimeout = flag.Duration("connection-timeout", 0, "This option is deprecated.")
 	csiAddress        = flag.String("csi-address", "/run/csi/socket", "Address of the CSI driver socket.")
 	dummy             = flag.Bool("dummy", false, "Run in dummy mode, i.e. not connecting to CSI driver and marking everything as attached. Expected CSI driver name is \"csi/dummy\".")
 	showVersion       = flag.Bool("version", false, "Show version.")
@@ -75,6 +75,10 @@ func main() {
 		return
 	}
 	klog.Infof("Version: %s", version)
+
+	if *connectionTimeout != 0 {
+		klog.Warningf("Warning: option -connection-timeout is deprecated and has no effect")
+	}
 
 	// Create the client config. Use kubeconfig if given, otherwise assume in-cluster.
 	config, err := buildConfig(*kubeconfig)
@@ -106,14 +110,14 @@ func main() {
 		attacher = dummyAttacherName
 	} else {
 		// Connect to CSI.
-		csiConn, err := connection.New(*csiAddress, *connectionTimeout)
+		csiConn, err := connection.New(*csiAddress)
 		if err != nil {
 			klog.Error(err.Error())
 			os.Exit(1)
 		}
 
-		// Check it's ready
-		if err = waitForDriverReady(csiConn, *connectionTimeout); err != nil {
+		err = csiConn.Probe(*timeout)
+		if err != nil {
 			klog.Error(err.Error())
 			os.Exit(1)
 		}
@@ -198,26 +202,4 @@ func buildConfig(kubeconfig string) (*rest.Config, error) {
 		return clientcmd.BuildConfigFromFlags("", kubeconfig)
 	}
 	return rest.InClusterConfig()
-}
-
-func waitForDriverReady(csiConn connection.CSIConnection, timeout time.Duration) error {
-	now := time.Now()
-	finish := now.Add(timeout)
-	var err error
-	for {
-		ctx, cancel := context.WithTimeout(context.Background(), timeout)
-		defer cancel()
-		err = csiConn.Probe(ctx)
-		if err == nil {
-			klog.V(2).Infof("Probe succeeded")
-			return nil
-		}
-		klog.V(2).Infof("Probe failed with %s", err)
-
-		now := time.Now()
-		if now.After(finish) {
-			return fmt.Errorf("Failed to probe the controller: %s", err)
-		}
-		time.Sleep(time.Second)
-	}
 }
