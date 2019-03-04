@@ -146,19 +146,30 @@ func GetVolumeCapabilities(pv *v1.PersistentVolume, csiSource *v1.CSIPersistentV
 		return nil, fmt.Errorf("CSI volume source was nil")
 	}
 
-	fsType := csiSource.FSType
-	if len(fsType) == 0 {
-		fsType = defaultFSType
-	}
-
-	cap := &csi.VolumeCapability{
-		AccessType: &csi.VolumeCapability_Mount{
-			Mount: &csi.VolumeCapability_MountVolume{
-				FsType:     fsType,
-				MountFlags: pv.Spec.MountOptions,
+	var cap *csi.VolumeCapability
+	if pv.Spec.VolumeMode != nil && *pv.Spec.VolumeMode == v1.PersistentVolumeBlock {
+		cap = &csi.VolumeCapability{
+			AccessType: &csi.VolumeCapability_Block{
+				Block: &csi.VolumeCapability_BlockVolume{},
 			},
-		},
-		AccessMode: &csi.VolumeCapability_AccessMode{},
+			AccessMode: &csi.VolumeCapability_AccessMode{},
+		}
+
+	} else {
+		fsType := csiSource.FSType
+		if len(fsType) == 0 {
+			fsType = defaultFSType
+		}
+
+		cap = &csi.VolumeCapability{
+			AccessType: &csi.VolumeCapability_Mount{
+				Mount: &csi.VolumeCapability_MountVolume{
+					FsType:     fsType,
+					MountFlags: pv.Spec.MountOptions,
+				},
+			},
+			AccessMode: &csi.VolumeCapability_AccessMode{},
+		}
 	}
 
 	// Translate array of modes into single VolumeCapability
