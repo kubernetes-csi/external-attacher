@@ -58,7 +58,7 @@ var (
 
 	enableLeaderElection    = flag.Bool("leader-election", false, "Enable leader election.")
 	leaderElectionNamespace = flag.String("leader-election-namespace", "", "Namespace where this attacher runs.")
-	leaderElectionIdentity  = flag.String("leader-election-identity", "", "Unique idenity of this attcher. Typically name of the pod where the attacher runs.")
+	leaderElectionIdentity  = flag.String("leader-election-identity", "", "Unique identity of this attacher. Typically name of the pod where the attacher runs.")
 )
 
 var (
