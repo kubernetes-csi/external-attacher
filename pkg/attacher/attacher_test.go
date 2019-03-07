@@ -1,5 +1,5 @@
 /*
-Copyright 2017 The Kubernetes Authors.
+Copyright 2019 The Kubernetes Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -14,7 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package connection
+package attacher
 
 import (
 	"context"
@@ -28,7 +28,9 @@ import (
 	"github.com/container-storage-interface/spec/lib/go/csi"
 	"github.com/golang/mock/gomock"
 	"github.com/golang/protobuf/proto"
+	"github.com/kubernetes-csi/csi-lib-utils/connection"
 	"github.com/kubernetes-csi/csi-test/driver"
+	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
@@ -63,7 +65,7 @@ func tempDir(t *testing.T) string {
 	return dir
 }
 
-func createMockServer(t *testing.T, tmpdir string) (*gomock.Controller, *driver.MockCSIDriver, *driver.MockIdentityServer, *driver.MockControllerServer, CSIConnection, error) {
+func createMockServer(t *testing.T, tmpdir string) (*gomock.Controller, *driver.MockCSIDriver, *driver.MockIdentityServer, *driver.MockControllerServer, *grpc.ClientConn, error) {
 	// Start the mock server
 	mockController := gomock.NewController(t)
 	identityServer := driver.NewMockIdentityServer(mockController)
@@ -77,327 +79,12 @@ func createMockServer(t *testing.T, tmpdir string) (*gomock.Controller, *driver.
 	// Create a client connection to it
 	addr := drv.Address()
 	t.Logf("adds: %s", addr)
-	csiConn, err := New(addr)
+	csiConn, err := connection.Connect(addr)
 	if err != nil {
 		return nil, nil, nil, nil, nil, err
 	}
 
 	return mockController, drv, identityServer, controllerServer, csiConn, nil
-}
-
-func TestGetPluginInfo(t *testing.T) {
-	tests := []struct {
-		name        string
-		output      *csi.GetPluginInfoResponse
-		injectError bool
-		expectError bool
-	}{
-		{
-			name: "success",
-			output: &csi.GetPluginInfoResponse{
-				Name:          "csi/example",
-				VendorVersion: "0.2.0",
-				Manifest: map[string]string{
-					"hello": "world",
-				},
-			},
-			expectError: false,
-		},
-		{
-			name:        "gRPC error",
-			output:      nil,
-			injectError: true,
-			expectError: true,
-		},
-		{
-			name: "empty name",
-			output: &csi.GetPluginInfoResponse{
-				Name: "",
-			},
-			expectError: true,
-		},
-	}
-
-	tmpdir := tempDir(t)
-	defer os.RemoveAll(tmpdir)
-	mockController, driver, identityServer, _, csiConn, err := createMockServer(t, tmpdir)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer mockController.Finish()
-	defer driver.Stop()
-	defer csiConn.Close()
-
-	for _, test := range tests {
-
-		in := &csi.GetPluginInfoRequest{}
-
-		out := test.output
-		var injectedErr error
-		if test.injectError {
-			injectedErr = fmt.Errorf("mock error")
-		}
-
-		// Setup expectation
-		identityServer.EXPECT().GetPluginInfo(gomock.Any(), pbMatch(in)).Return(out, injectedErr).Times(1)
-
-		name, err := csiConn.GetDriverName(context.Background())
-		if test.expectError && err == nil {
-			t.Errorf("test %q: Expected error, got none", test.name)
-		}
-		if !test.expectError && err != nil {
-			t.Errorf("test %q: got error: %v", test.name, err)
-		}
-		if err == nil && name != "csi/example" {
-			t.Errorf("got unexpected name: %q", name)
-		}
-	}
-}
-
-func TestSupportsControllerPublish(t *testing.T) {
-	tests := []struct {
-		name                   string
-		output                 *csi.ControllerGetCapabilitiesResponse
-		injectError            bool
-		expectSupportsPublish  bool
-		expectSupportsReadOnly bool
-		expectError            bool
-	}{
-		{
-			name: "success",
-			output: &csi.ControllerGetCapabilitiesResponse{
-				Capabilities: []*csi.ControllerServiceCapability{
-					{
-						Type: &csi.ControllerServiceCapability_Rpc{
-							Rpc: &csi.ControllerServiceCapability_RPC{
-								Type: csi.ControllerServiceCapability_RPC_CREATE_DELETE_VOLUME,
-							},
-						},
-					},
-					{
-						Type: &csi.ControllerServiceCapability_Rpc{
-							Rpc: &csi.ControllerServiceCapability_RPC{
-								Type: csi.ControllerServiceCapability_RPC_PUBLISH_UNPUBLISH_VOLUME,
-							},
-						},
-					},
-				},
-			},
-			expectSupportsPublish:  true,
-			expectSupportsReadOnly: false,
-			expectError:            false,
-		},
-		{
-			name: "supports read only",
-			output: &csi.ControllerGetCapabilitiesResponse{
-				Capabilities: []*csi.ControllerServiceCapability{
-					{
-						Type: &csi.ControllerServiceCapability_Rpc{
-							Rpc: &csi.ControllerServiceCapability_RPC{
-								Type: csi.ControllerServiceCapability_RPC_PUBLISH_READONLY,
-							},
-						},
-					},
-					{
-						Type: &csi.ControllerServiceCapability_Rpc{
-							Rpc: &csi.ControllerServiceCapability_RPC{
-								Type: csi.ControllerServiceCapability_RPC_PUBLISH_UNPUBLISH_VOLUME,
-							},
-						},
-					},
-				},
-			},
-			expectSupportsPublish:  true,
-			expectSupportsReadOnly: true,
-			expectError:            false,
-		},
-		{
-			name:        "gRPC error",
-			output:      nil,
-			injectError: true,
-			expectError: true,
-		},
-		{
-			name: "no publish",
-			output: &csi.ControllerGetCapabilitiesResponse{
-				Capabilities: []*csi.ControllerServiceCapability{
-					{
-						Type: &csi.ControllerServiceCapability_Rpc{
-							Rpc: &csi.ControllerServiceCapability_RPC{
-								Type: csi.ControllerServiceCapability_RPC_CREATE_DELETE_VOLUME,
-							},
-						},
-					},
-				},
-			},
-			expectSupportsPublish:  false,
-			expectSupportsReadOnly: false,
-			expectError:            false,
-		},
-		{
-			name: "empty capability",
-			output: &csi.ControllerGetCapabilitiesResponse{
-				Capabilities: []*csi.ControllerServiceCapability{
-					{
-						Type: nil,
-					},
-				},
-			},
-			expectSupportsPublish:  false,
-			expectSupportsReadOnly: false,
-			expectError:            false,
-		},
-		{
-			name: "no capabilities",
-			output: &csi.ControllerGetCapabilitiesResponse{
-				Capabilities: []*csi.ControllerServiceCapability{},
-			},
-			expectSupportsPublish:  false,
-			expectSupportsReadOnly: false,
-			expectError:            false,
-		},
-	}
-
-	tmpdir := tempDir(t)
-	defer os.RemoveAll(tmpdir)
-	mockController, driver, _, controllerServer, csiConn, err := createMockServer(t, tmpdir)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer mockController.Finish()
-	defer driver.Stop()
-	defer csiConn.Close()
-
-	for _, test := range tests {
-
-		in := &csi.ControllerGetCapabilitiesRequest{}
-
-		out := test.output
-		var injectedErr error
-		if test.injectError {
-			injectedErr = fmt.Errorf("mock error")
-		}
-
-		// Setup expectation
-		controllerServer.EXPECT().ControllerGetCapabilities(gomock.Any(), pbMatch(in)).Return(out, injectedErr).Times(1)
-
-		supportsPublish, supportsReadOnly, err := csiConn.SupportsControllerPublish(context.Background())
-		if test.expectError && err == nil {
-			t.Errorf("test %q: Expected error, got none", test.name)
-		}
-		if !test.expectError && err != nil {
-			t.Errorf("test %q: got error: %v", test.name, err)
-		}
-		if test.expectSupportsPublish != supportsPublish {
-			t.Errorf("test %q: expected PUBLISH_UNPUBLISH_VOLUME %t, got %t", test.name, test.expectSupportsPublish, supportsPublish)
-		}
-		if test.expectSupportsReadOnly != supportsReadOnly {
-			t.Errorf("test %q: expected PUBLISH_READONLY %t, got %t", test.name, test.expectSupportsReadOnly, supportsReadOnly)
-		}
-	}
-}
-
-func TestSupportsPluginControllerService(t *testing.T) {
-	tests := []struct {
-		name        string
-		output      *csi.GetPluginCapabilitiesResponse
-		injectError bool
-		expectError bool
-	}{
-		{
-			name: "success",
-			output: &csi.GetPluginCapabilitiesResponse{
-				Capabilities: []*csi.PluginCapability{
-					{
-						Type: &csi.PluginCapability_Service_{
-							Service: &csi.PluginCapability_Service{
-								Type: csi.PluginCapability_Service_CONTROLLER_SERVICE,
-							},
-						},
-					},
-					{
-						Type: &csi.PluginCapability_Service_{
-							Service: &csi.PluginCapability_Service{
-								Type: csi.PluginCapability_Service_UNKNOWN,
-							},
-						},
-					},
-				},
-			},
-			expectError: false,
-		},
-		{
-			name:        "gRPC error",
-			output:      nil,
-			injectError: true,
-			expectError: true,
-		},
-		{
-			name: "no controller service",
-			output: &csi.GetPluginCapabilitiesResponse{
-				Capabilities: []*csi.PluginCapability{
-					{
-						Type: &csi.PluginCapability_Service_{
-							Service: &csi.PluginCapability_Service{
-								Type: csi.PluginCapability_Service_UNKNOWN,
-							},
-						},
-					},
-				},
-			},
-			expectError: false,
-		},
-		{
-			name: "empty capability",
-			output: &csi.GetPluginCapabilitiesResponse{
-				Capabilities: []*csi.PluginCapability{
-					{
-						Type: nil,
-					},
-				},
-			},
-			expectError: false,
-		},
-		{
-			name: "no capabilities",
-			output: &csi.GetPluginCapabilitiesResponse{
-				Capabilities: []*csi.PluginCapability{},
-			},
-			expectError: false,
-		},
-	}
-
-	tmpdir := tempDir(t)
-	defer os.RemoveAll(tmpdir)
-	mockController, driver, identityServer, _, csiConn, err := createMockServer(t, tmpdir)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer mockController.Finish()
-	defer driver.Stop()
-	defer csiConn.Close()
-
-	for _, test := range tests {
-
-		in := &csi.GetPluginCapabilitiesRequest{}
-
-		out := test.output
-		var injectedErr error
-		if test.injectError {
-			injectedErr = fmt.Errorf("mock error")
-		}
-
-		// Setup expectation
-		identityServer.EXPECT().GetPluginCapabilities(gomock.Any(), pbMatch(in)).Return(out, injectedErr).Times(1)
-
-		_, err = csiConn.SupportsPluginControllerService(context.Background())
-		if test.expectError && err == nil {
-			t.Errorf("test %q: Expected error, got none", test.name)
-		}
-		if !test.expectError && err != nil {
-			t.Errorf("test %q: got error: %v", test.name, err)
-		}
-	}
 }
 
 func TestAttach(t *testing.T) {
@@ -556,7 +243,6 @@ func TestAttach(t *testing.T) {
 	}
 	defer mockController.Finish()
 	defer driver.Stop()
-	defer csiConn.Close()
 
 	for _, test := range tests {
 		in := test.input
@@ -571,7 +257,8 @@ func TestAttach(t *testing.T) {
 			controllerServer.EXPECT().ControllerPublishVolume(gomock.Any(), pbMatch(in)).Return(out, injectedErr).Times(1)
 		}
 
-		publishInfo, detached, err := csiConn.Attach(context.Background(), test.volumeID, test.readonly, test.nodeID, test.caps, test.attributes, test.secrets)
+		a := NewAttacher(csiConn)
+		publishInfo, detached, err := a.Attach(context.Background(), test.volumeID, test.readonly, test.nodeID, test.caps, test.attributes, test.secrets)
 		if test.expectError && err == nil {
 			t.Errorf("test %q: Expected error, got none", test.name)
 		}
@@ -663,7 +350,6 @@ func TestDetachAttach(t *testing.T) {
 	}
 	defer mockController.Finish()
 	defer driver.Stop()
-	defer csiConn.Close()
 
 	for _, test := range tests {
 		in := test.input
@@ -678,7 +364,8 @@ func TestDetachAttach(t *testing.T) {
 			controllerServer.EXPECT().ControllerUnpublishVolume(gomock.Any(), pbMatch(in)).Return(out, injectedErr).Times(1)
 		}
 
-		detached, err := csiConn.Detach(context.Background(), test.volumeID, test.nodeID, test.secrets)
+		a := NewAttacher(csiConn)
+		detached, err := a.Detach(context.Background(), test.volumeID, test.nodeID, test.secrets)
 		if test.expectError && err == nil {
 			t.Errorf("test %q: Expected error, got none", test.name)
 		}

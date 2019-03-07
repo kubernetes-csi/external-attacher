@@ -22,7 +22,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/kubernetes-csi/external-attacher/pkg/connection"
+	"github.com/kubernetes-csi/external-attacher/pkg/attacher"
 
 	"k8s.io/api/core/v1"
 	storage "k8s.io/api/storage/v1beta1"
@@ -51,7 +51,7 @@ var (
 
 var timeout = 10 * time.Millisecond
 
-func csiHandlerFactory(client kubernetes.Interface, csiClient csiclient.Interface, informerFactory informers.SharedInformerFactory, csiInformerFactory csiinformers.SharedInformerFactory, csi connection.CSIConnection) Handler {
+func csiHandlerFactory(client kubernetes.Interface, csiClient csiclient.Interface, informerFactory informers.SharedInformerFactory, csiInformerFactory csiinformers.SharedInformerFactory, csi attacher.Attacher) Handler {
 	return NewCSIHandler(
 		client,
 		csiClient,
@@ -66,7 +66,7 @@ func csiHandlerFactory(client kubernetes.Interface, csiClient csiclient.Interfac
 	)
 }
 
-func csiHandlerFactoryNoReadOnly(client kubernetes.Interface, csiClient csiclient.Interface, informerFactory informers.SharedInformerFactory, csiInformerFactory csiinformers.SharedInformerFactory, csi connection.CSIConnection) Handler {
+func csiHandlerFactoryNoReadOnly(client kubernetes.Interface, csiClient csiclient.Interface, informerFactory informers.SharedInformerFactory, csiInformerFactory csiinformers.SharedInformerFactory, csi attacher.Attacher) Handler {
 	return NewCSIHandler(
 		client,
 		csiClient,

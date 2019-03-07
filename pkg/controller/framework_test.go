@@ -26,7 +26,7 @@ import (
 
 	"github.com/container-storage-interface/spec/lib/go/csi"
 	"github.com/davecgh/go-spew/spew"
-	"github.com/kubernetes-csi/external-attacher/pkg/connection"
+	"github.com/kubernetes-csi/external-attacher/pkg/attacher"
 	"k8s.io/klog"
 
 	"k8s.io/api/core/v1"
@@ -102,7 +102,7 @@ type csiCall struct {
 	delay time.Duration
 }
 
-type handlerFactory func(client kubernetes.Interface, csiClient csiclient.Interface, informerFactory informers.SharedInformerFactory, csiInformerFactory csiinformers.SharedInformerFactory, csi connection.CSIConnection) Handler
+type handlerFactory func(client kubernetes.Interface, csiClient csiclient.Interface, informerFactory informers.SharedInformerFactory, csiInformerFactory csiinformers.SharedInformerFactory, csi attacher.Attacher) Handler
 
 func runTests(t *testing.T, handlerFactory handlerFactory, tests []testCase) {
 	for _, test := range tests {

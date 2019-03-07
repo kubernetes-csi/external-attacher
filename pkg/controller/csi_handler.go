@@ -23,8 +23,7 @@ import (
 
 	"k8s.io/klog"
 
-	"github.com/kubernetes-csi/external-attacher/pkg/connection"
-
+	"github.com/kubernetes-csi/external-attacher/pkg/attacher"
 	"k8s.io/api/core/v1"
 	storage "k8s.io/api/storage/v1beta1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -45,7 +44,7 @@ type csiHandler struct {
 	client                  kubernetes.Interface
 	csiClientSet            csiclient.Interface
 	attacherName            string
-	csiConnection           connection.CSIConnection
+	attacher                attacher.Attacher
 	pvLister                corelisters.PersistentVolumeLister
 	nodeLister              corelisters.NodeLister
 	nodeInfoLister          csilisters.CSINodeInfoLister
@@ -62,7 +61,7 @@ func NewCSIHandler(
 	client kubernetes.Interface,
 	csiClientSet csiclient.Interface,
 	attacherName string,
-	csiConnection connection.CSIConnection,
+	attacher attacher.Attacher,
 	pvLister corelisters.PersistentVolumeLister,
 	nodeLister corelisters.NodeLister,
 	nodeInfoLister csilisters.CSINodeInfoLister,
@@ -74,7 +73,7 @@ func NewCSIHandler(
 		client:                  client,
 		csiClientSet:            csiClientSet,
 		attacherName:            attacherName,
-		csiConnection:           csiConnection,
+		attacher:                attacher,
 		pvLister:                pvLister,
 		nodeLister:              nodeLister,
 		nodeInfoLister:          nodeInfoLister,
@@ -326,7 +325,7 @@ func (h *csiHandler) csiAttach(va *storage.VolumeAttachment) (*storage.VolumeAtt
 	defer cancel()
 	// We're not interested in `detached` return value, the controller will
 	// issue Detach to be sure the volume is really detached.
-	publishInfo, _, err := h.csiConnection.Attach(ctx, volumeHandle, readOnly, nodeID, volumeCapabilities, attributes, secrets)
+	publishInfo, _, err := h.attacher.Attach(ctx, volumeHandle, readOnly, nodeID, volumeCapabilities, attributes, secrets)
 	if err != nil {
 		return va, nil, err
 	}
@@ -365,7 +364,7 @@ func (h *csiHandler) csiDetach(va *storage.VolumeAttachment) (*storage.VolumeAtt
 
 	ctx, cancel := context.WithTimeout(context.Background(), h.timeout)
 	defer cancel()
-	detached, err := h.csiConnection.Detach(ctx, volumeHandle, nodeID, secrets)
+	detached, err := h.attacher.Detach(ctx, volumeHandle, nodeID, secrets)
 	if err != nil && !detached {
 		// The volume may not be fully detached. Save the error and try again
 		// after backoff.
