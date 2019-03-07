@@ -31,8 +31,12 @@ import (
 	csiinformers "k8s.io/csi-api/pkg/client/informers/externalversions"
 	"k8s.io/klog"
 
-	"github.com/kubernetes-csi/external-attacher/pkg/connection"
+	"github.com/container-storage-interface/spec/lib/go/csi"
+	"github.com/kubernetes-csi/csi-lib-utils/connection"
+	"github.com/kubernetes-csi/csi-lib-utils/rpc"
+	"github.com/kubernetes-csi/external-attacher/pkg/attacher"
 	"github.com/kubernetes-csi/external-attacher/pkg/controller"
+	"google.golang.org/grpc"
 )
 
 const (
@@ -103,20 +107,20 @@ func main() {
 	var csiFactory csiinformers.SharedInformerFactory
 	var handler controller.Handler
 
-	var attacher string
+	var csiAttacher string
 	if *dummy {
 		// Do not connect to any CSI, mark everything as attached.
 		handler = controller.NewTrivialHandler(clientset)
-		attacher = dummyAttacherName
+		csiAttacher = dummyAttacherName
 	} else {
 		// Connect to CSI.
-		csiConn, err := connection.New(*csiAddress)
+		csiConn, err := connection.Connect(*csiAddress)
 		if err != nil {
 			klog.Error(err.Error())
 			os.Exit(1)
 		}
 
-		err = csiConn.Probe(*timeout)
+		err = rpc.ProbeForever(csiConn, *timeout)
 		if err != nil {
 			klog.Error(err.Error())
 			os.Exit(1)
@@ -125,14 +129,14 @@ func main() {
 		// Find driver name.
 		ctx, cancel := context.WithTimeout(context.Background(), csiTimeout)
 		defer cancel()
-		attacher, err = csiConn.GetDriverName(ctx)
+		csiAttacher, err = rpc.GetDriverName(ctx, csiConn)
 		if err != nil {
 			klog.Error(err.Error())
 			os.Exit(1)
 		}
-		klog.V(2).Infof("CSI driver name: %q", attacher)
+		klog.V(2).Infof("CSI driver name: %q", csiAttacher)
 
-		supportsService, err := csiConn.SupportsPluginControllerService(ctx)
+		supportsService, err := supportsPluginControllerService(ctx, csiConn)
 		if err != nil {
 			klog.Error(err.Error())
 			os.Exit(1)
@@ -142,7 +146,7 @@ func main() {
 			klog.V(2).Infof("CSI driver does not support Plugin Controller Service, using trivial handler")
 		} else {
 			// Find out if the driver supports attach/detach.
-			supportsAttach, supportsReadOnly, err := csiConn.SupportsControllerPublish(ctx)
+			supportsAttach, supportsReadOnly, err := supportsControllerPublish(ctx, csiConn)
 			if err != nil {
 				klog.Error(err.Error())
 				os.Exit(1)
@@ -153,7 +157,8 @@ func main() {
 				vaLister := factory.Storage().V1beta1().VolumeAttachments().Lister()
 				csiFactory := csiinformers.NewSharedInformerFactory(csiClientset, *resync)
 				nodeInfoLister := csiFactory.Csi().V1alpha1().CSINodeInfos().Lister()
-				handler = controller.NewCSIHandler(clientset, csiClientset, attacher, csiConn, pvLister, nodeLister, nodeInfoLister, vaLister, timeout, supportsReadOnly)
+				attacher := attacher.NewAttacher(csiConn)
+				handler = controller.NewCSIHandler(clientset, csiClientset, csiAttacher, attacher, pvLister, nodeLister, nodeInfoLister, vaLister, timeout, supportsReadOnly)
 				klog.V(2).Infof("CSI driver supports ControllerPublishUnpublish, using real CSI handler")
 			} else {
 				handler = controller.NewTrivialHandler(clientset)
@@ -164,7 +169,7 @@ func main() {
 
 	ctrl := controller.NewCSIAttachController(
 		clientset,
-		attacher,
+		csiAttacher,
 		handler,
 		factory.Storage().V1beta1().VolumeAttachments(),
 		factory.Core().V1().PersistentVolumes(),
@@ -192,7 +197,7 @@ func main() {
 			os.Exit(1)
 		}
 		// Name of config map with leader election lock
-		lockName := "external-attacher-leader-" + attacher
+		lockName := "external-attacher-leader-" + csiAttacher
 		runAsLeader(clientset, *leaderElectionNamespace, *leaderElectionIdentity, lockName, run)
 	}
 }
@@ -202,4 +207,24 @@ func buildConfig(kubeconfig string) (*rest.Config, error) {
 		return clientcmd.BuildConfigFromFlags("", kubeconfig)
 	}
 	return rest.InClusterConfig()
+}
+
+func supportsControllerPublish(ctx context.Context, csiConn *grpc.ClientConn) (supportsControllerPublish bool, supportsPublishReadOnly bool, err error) {
+	caps, err := rpc.GetControllerCapabilities(ctx, csiConn)
+	if err != nil {
+		return false, false, err
+	}
+
+	supportsControllerPublish = caps[csi.ControllerServiceCapability_RPC_PUBLISH_UNPUBLISH_VOLUME]
+	supportsPublishReadOnly = caps[csi.ControllerServiceCapability_RPC_PUBLISH_READONLY]
+	return supportsControllerPublish, supportsPublishReadOnly, nil
+}
+
+func supportsPluginControllerService(ctx context.Context, csiConn *grpc.ClientConn) (bool, error) {
+	caps, err := rpc.GetPluginCapabilities(ctx, csiConn)
+	if err != nil {
+		return false, err
+	}
+
+	return caps[csi.PluginCapability_Service_CONTROLLER_SERVICE], nil
 }

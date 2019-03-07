@@ -14,36 +14,22 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package connection
+package attacher
 
 import (
 	"context"
-	"time"
 
 	"github.com/container-storage-interface/spec/lib/go/csi"
-	"github.com/kubernetes-csi/csi-lib-utils/connection"
 	"github.com/kubernetes-csi/csi-lib-utils/protosanitizer"
+
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"k8s.io/klog"
 )
 
-// CSIConnection is gRPC connection to a remote CSI driver and abstracts all
-// CSI calls.
-type CSIConnection interface {
-	// GetDriverName returns driver name as discovered by GetPluginInfo()
-	// gRPC call.
-	GetDriverName(ctx context.Context) (string, error)
-
-	// SupportsControllerPublish returns true if the CSI driver reports
-	// PUBLISH_UNPUBLISH_VOLUME in ControllerGetCapabilities() gRPC call.
-	SupportsControllerPublish(ctx context.Context) (supportsControllerPublish bool, supportsPublishReadOnly bool, err error)
-
-	// SupportsPluginControllerService return true if the CSI driver reports
-	// CONTROLLER_SERVICE in GetPluginCapabilities() gRPC call.
-	SupportsPluginControllerService(ctx context.Context) (bool, error)
-
+// Attacher implements attach/detach operations against a remote CSI driver.
+type Attacher interface {
 	// Attach given volume to given node. Returns PublishVolumeInfo. Note that
 	// "detached" is returned on error and means that the volume is for sure
 	// detached from the node. "false" means that the volume may be either
@@ -56,64 +42,26 @@ type CSIConnection interface {
 	// "false" means that the volume may or may not be detached and caller
 	// should retry.
 	Detach(ctx context.Context, volumeID string, nodeID string, secrets map[string]string) (detached bool, err error)
-
-	// Probe checks that the CSI driver is ready to process requests
-	Probe(singleProbeTimeout time.Duration) error
-
-	// Close the connection
-	Close() error
 }
 
-type csiConnection struct {
+type attacher struct {
 	conn         *grpc.ClientConn
 	capabilities []csi.ControllerServiceCapability
 }
 
 var (
-	_ CSIConnection = &csiConnection{}
+	_ Attacher = &attacher{}
 )
 
-// New provides a new CSI connection object.
-func New(address string) (CSIConnection, error) {
-	conn, err := connection.Connect(address, connection.OnConnectionLoss(connection.ExitOnConnectionLoss()))
-	if err != nil {
-		return nil, err
-	}
-	return &csiConnection{
+// NewAttacher provides a new Attacher object.
+func NewAttacher(conn *grpc.ClientConn) Attacher {
+	return &attacher{
 		conn: conn,
-	}, nil
-}
-
-func (c *csiConnection) GetDriverName(ctx context.Context) (string, error) {
-	return connection.GetDriverName(ctx, c.conn)
-}
-
-func (c *csiConnection) Probe(singleProbeTimeout time.Duration) error {
-	return connection.ProbeForever(c.conn, singleProbeTimeout)
-}
-
-func (c *csiConnection) SupportsControllerPublish(ctx context.Context) (supportsControllerPublish bool, supportsPublishReadOnly bool, err error) {
-	caps, err := connection.GetControllerCapabilities(ctx, c.conn)
-	if err != nil {
-		return false, false, err
 	}
-
-	supportsControllerPublish = caps[csi.ControllerServiceCapability_RPC_PUBLISH_UNPUBLISH_VOLUME]
-	supportsPublishReadOnly = caps[csi.ControllerServiceCapability_RPC_PUBLISH_READONLY]
-	return supportsControllerPublish, supportsPublishReadOnly, nil
 }
 
-func (c *csiConnection) SupportsPluginControllerService(ctx context.Context) (bool, error) {
-	caps, err := connection.GetPluginCapabilities(ctx, c.conn)
-	if err != nil {
-		return false, err
-	}
-
-	return caps[csi.PluginCapability_Service_CONTROLLER_SERVICE], nil
-}
-
-func (c *csiConnection) Attach(ctx context.Context, volumeID string, readOnly bool, nodeID string, caps *csi.VolumeCapability, context, secrets map[string]string) (metadata map[string]string, detached bool, err error) {
-	client := csi.NewControllerClient(c.conn)
+func (a *attacher) Attach(ctx context.Context, volumeID string, readOnly bool, nodeID string, caps *csi.VolumeCapability, context, secrets map[string]string) (metadata map[string]string, detached bool, err error) {
+	client := csi.NewControllerClient(a.conn)
 
 	req := csi.ControllerPublishVolumeRequest{
 		VolumeId:         volumeID,
@@ -131,8 +79,8 @@ func (c *csiConnection) Attach(ctx context.Context, volumeID string, readOnly bo
 	return rsp.PublishContext, false, nil
 }
 
-func (c *csiConnection) Detach(ctx context.Context, volumeID string, nodeID string, secrets map[string]string) (detached bool, err error) {
-	client := csi.NewControllerClient(c.conn)
+func (a *attacher) Detach(ctx context.Context, volumeID string, nodeID string, secrets map[string]string) (detached bool, err error) {
+	client := csi.NewControllerClient(a.conn)
 
 	req := csi.ControllerUnpublishVolumeRequest{
 		VolumeId: volumeID,
@@ -145,10 +93,6 @@ func (c *csiConnection) Detach(ctx context.Context, volumeID string, nodeID stri
 		return isFinalError(err), err
 	}
 	return true, nil
-}
-
-func (c *csiConnection) Close() error {
-	return c.conn.Close()
 }
 
 func logGRPC(ctx context.Context, method string, req, reply interface{}, cc *grpc.ClientConn, invoker grpc.UnaryInvoker, opts ...grpc.CallOption) error {
