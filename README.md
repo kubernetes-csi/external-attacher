@@ -2,102 +2,77 @@
 
 # CSI attacher
 
-The csi-attacher is part of Kubernetes implementation of [Container Storage Interface (CSI)](https://github.com/container-storage-interface/spec).
+The external-attacher is a sidecar container that attaches volumes to nodes by calling `ControllerPublish` and `ControlerUnpublish` functions of CSI drivers. It is necessary because internal Attach/Detach controller running in Kubernetes controller-manager does not have any direct interfaces to CSI drivers.
+
+## Terminology
+
+In Kubernetes, the term *attach* means 3rd party volume attachment to a node. This is common in cloud environments, where the cloud API is able to attach a volume to a node without any code running on the node. In CSI terminology, this corresponds to the `ControllerPublish` call.
+
+*Detach* is the reverse operation, 3rd party volume detachment from a node, `ControllerUnpublish` in CSI terminology.
+
+It is **not** an attach/detach operation performed by a code running on a node, such as an attachment of iSCSI or Fibre Channel volumes. These are typically performed during `NodeStage` and `NodeUnstage` CSI calls and are not done by the external-attacher.
 
 ## Overview
+The external-attacher is an external controller that monitors `VolumeAttachment` objects created by controller-manager and attaches/detaches volumes to/from nodes (i.e. calls `ControllerPublish`/`ControllerUnpublish`. Full design can be found at Kubernetes proposal at [container-storage-interface.md](https://github.com/kubernetes/community/blob/master/contributors/design-proposals/storage/container-storage-interface.md)
 
-In short, it's an external controller that monitors `VolumeAttachment` objects and attaches/detaches volumes to/from nodes. Full design can be found at Kubernetes proposal at [container-storage-interface.md](https://github.com/kubernetes/community/blob/master/contributors/design-proposals/storage/container-storage-interface.md)
-There is no plan to implement a generic external attacher library, csi-attacher is the only external attacher that exists. If this proves false in future, splitting a generic external-attacher library should be possible with some effort.
+## Compatibility
 
-## Design
+This information reflects the head of this branch.
 
-External attacher follows [controller](https://github.com/kubernetes/community/blob/master/contributors/devel/controllers.md) pattern and uses informers to watch for `VolumeAttachment` and `PersistentVolume` create/update/delete events. It filters out `VolumeAttachment` instances with `Attacher==<CSI driver name>` and processes these events in workqueues with exponential backoff. Real handling is deferred to `Handler` interface.
-
-`Handler` interface has two implementations, trivial and real one.
-
-### Trivial handler
-
-Trivial handler will be used for CSI drivers that don't support `ControllerPublish` calls and marks all `VolumeAttachment` as attached. It does not use any finalizers. This attacher can also be used for testing.
-
-### Real attacher
-
-"Real" attacher talks to CSI over socket (`/run/csi/socket` by default, configurable by `-csi-address`). The attacher tries to connect for `-connection-timeout` (1 minute by default), allowing CSI driver to start and create its server socket a bit later.
-
-The attacher then:
-
-* Discovers the supported attacher name by `GetPluginInfo` calls. The attacher only processes `VolumeAttachment` instances that have `Attacher==GetPluginInfoResponse.Name`.
-* Uses `ControllerGetCapabilities` to find out if CSI driver supports `ControllerPublish` calls. It degrades to trivial mode if not.
-* Processes new/updated `VolumeAttachment` instances and attaches/detaches volumes:
-  * `VolumeAttachment` without `DeletionTimestamp`:
-    * Ignore `VolumeAttachment` that wants to attach PV with `DeletionTimestamp`.
-    * A finalizer is added to `VolumeAttachment` instance to preserve the object after deletion so we can detach the volume.
-    * A finalizer is added to referenced PV instance to preserve the PV. Attacher needs information from the PV to detach the volume.
-    * CSI `ControllerPublishVolume` is called.
-    * `AttachmentMetadata` is saved to `VolumeAttachment`.
-    * On any error, the `VolumeAttachment` is re-queued with exponential backoff.
-  * `VolumeAttachment` with `DeletionTimestamp`:
-    * CSI `ControllerUnpublishVolume` is called.
-    * A finalizer is removed from `VolumeAttachment`. At this point, the API server is going to delete this instance and "deleted `VolumeAttachment`" event will be received.
-
-* Processes deleted `VolumeAttachment` instances:
-  * Pokes PV queue with name of the detached PV. This triggers removal of finalizer on PV, if needed.
-
-* Processes added/updated PV to remove finalizer on PVs:
-  * Ignore PVs that don't have DeletionTimestamp.
-  * Checks that the PV is not used by any `VolumeAttachment` instance.
-  * Removes Attacher's finalizer on the PV if so.
-  * On any error, the PV is re-queued with exponential backoff.
-
-#### Concurrency
-
-Both PV queue and `VolumeAttachment` queue run in parallel. To ensure that removal of PV finalizers work without races:
-
-* The controller attaches PVs only when the PV has no DeletionTimestamp and has attacher's finalizer.
-* The controller removes finalizer only from PVs that have DeletionTimestamp.
-
-As consequence, the attacher must be available until all PVs that refer to the CSI driver *are removed*. Even fully detached PVs have attacher's finalizer that is removed only after the PV is marked for deletion.
-
-#### Alternatives considered
-
-Secondary cache and locks was considered to keep a map PV -> list of VolumeAttachments that use the PV. Attacher's finalizer could be removed from a PV immediately after the last VolumeAttachment was deleted. Keeping this map is either racy or requires long critical sections with complicated error recovery.
+| Compatible with CSI Version                                                                | Container Image                     | Min K8s Version |
+| ------------------------------------------------------------------------------------------ | ------------------------------------| --------------- |
+| [CSI Spec v1.0.0](https://github.com/container-storage-interface/spec/releases/tag/v1.0.0) | quay.io/k8scsi/csi-attacher:v1.0.1  | 1.13            |
 
 ## Usage
 
-### Dummy mode
-
-Dummy attacher watches for `VolumeAttachment` instances with `Attacher=="csi/dummy"` and marks them attached. It does not use any finalizers and is useful for testing.
-
-To run dummy attacher in `hack/local-up-cluster.sh` environment:
-
-```sh
-csi-attacher -dummy -kubeconfig ~/.kube/config -v 5
-```
-
-### Real attacher
-
-#### Running on command line
-
-For debugging, it's possible to run the attacher on command line:
-
-```sh
-csi-attacher -kubeconfig ~/.kube/config -v 5 -csi-address /run/csi/socket
-```
-
-#### Running in a deployment
-
-It is necessary to create a new service account and give it enough privileges to run the attacher. We provide one omnipotent yaml file that creates everything that's necessary, however it should be split into multiple files in production.
+It is necessary to create a new service account and give it enough privileges to run the external-attacher, see `deploy/kubernetes/rbac.yaml`. The attacher is then deployed as single Deployment as illustrated below: 
 
 ```sh
 kubectl create deploy/kubernetes/deployment.yaml
 ```
 
-Note that the attacher does not scale with more replicas. Only one attacher is elected as leader and running. The others are waiting for the leader to die. They re-elect a new active leader in ~15 seconds after death of the old leader.
+The external-attacher may run in the same pod with other external CSI controllers such as the external-provisioner, external-snapshotter and/or external-resizer. 
 
-## Vendoring
+Note that the external-attacher does not scale with more replicas. Only one external-attacher is elected as leader and running. The others are waiting for the leader to die. They re-elect a new active leader in ~15 seconds after death of the old leader.
 
-We use [dep](https://github.com/golang/dep) for management of `vendor/`.
+### Command line options
 
-`vendor/k8s.io` is manually copied from `staging/` directory of work-in-progress API for CSI, namely <https://github.com/kubernetes/kubernetes/pull/54463>.
+#### Important optional arguments that are highly recommended to be used
+* `--csi-address <path to CSI socket>`: This is the path to the CSI driver socket inside the pod that the external-attacher container will use to issue CSI operations (`/run/csi/socket` is used by default).
+
+* `--leader-election`: Enables leader election. This is useful when there are multiple replicas of the same external-attacher running for one CSI driver. Only one of them may be active (=leader). A new leader will be re-elected when current leader dies or becomes unresponsive for ~15 seconds.
+
+* `--leader-election-namespace <namespace>`: Namespace where the external-attacher runs and where leader election object will be created. It is recommended that this parameter is populated from Kubernetes DownwardAPI.
+
+* `--leader-election-identity <id>`: Unique identity of this replica of external-attacher container. It must be unique among all running replicas of the external-attacher. Pod name populated from Kubernetes DownwardAPI is recommended.
+
+* `--timeout <duration>`: Timeout of all calls to CSI driver. It should be set to value that accommodates majority of `ControllerPublish` and `ControllerUnpublish` calls. See [CSI error and timeout handling](#csi-error-and-timeout-handling) for details. 15 seconds is used by default.
+
+#### Other recognized arguments
+
+* `--dummy`: Runs the external-attacher in dummy mode, i.e. without any CSI driver. All volumes are immediately reported as attached / detached as controller-manager requires. This option can be used for debugging of other CSI components such as Kubernetes Attach / Detach controller.
+
+* `--kubeconfig <path>`: Path to Kubernetes client configuration that the external-attacher uses to connect to Kubernetes API server. When omitted, default token provided by Kubernetes will be used. This option is useful only when the external-attacher does not run as a Kubernetes pod, e.g. for debugging.
+
+* `--resync <duration>`: Internal resync interval when the external-attacher re-evaluates all existing `VolumeAttachment` instances and tries to fulfill them, i.e. attach / detach corresponding volumes. It does not affect re-tries of failed CSI calls! It should be used only when there is a bug in Kubernetes watch logic.
+
+* `--version`: Prints current external-attacher version and quits.
+
+* All glog / klog arguments are supported, such as `-v <log level>` or `-alsologtostderr`.
+
+#### Deprecated arguments
+* `--connection-timeout <duration>`: This option was used to limit establishing connection to CSI driver. Currently, the option does not have any effect and the external-attacher tries to connect to CSI driver socket indefinitely. It is recommended to run ReadinessProbe on the driver to ensure that the driver comes up in reasonable time.
+
+
+### CSI error and timeout handling
+The external-attacher invokes all gRPC calls to CSI driver with timeout provided by `--timeout` command line argument (15 seconds by default).
+
+* `ControllerPublish`: The call might have timed out just before the driver attached a volume and was sending a response. From that reason, timeouts from `ControllerPublish` is considered as "*volume may be attached*" or "*volume is being attached in the background*." The external-attacher will re-try calling `ControllerPublish` after exponential backoff until it gets either successful response or final (non-timeout) error that the volume cannot be attached.
+* `ControllerUnpublish`: This is similar to `ControllerPublish`, The external-attacher will re-try calling `ControllerUnpublish` with exponential backoff after timeout until it gets either successful response or a final error that the volume cannot be detached.
+* `Probe`: The external-attacher re-tries calling Probe until the driver reports it's ready. It re-tries also when it receives timeout from `Probe` call. The external-attacher has no limit of retries. It is expected that ReadinessProbe on the driver container will catch case when the driver takes too long time to get ready.
+* `GetPluginInfo`, `GetPluginCapabilitiesRequest`, `ControllerGetCapabilities`: The external-attacher expects that these calls are quick and does not retry them on any error, including timeout. Instead, it assumes that the driver is faulty and exits. Note that Kubernetes will likely start a new attacher container and it will start with `Probe` call.
+
+Correct timeout value depends on the storage backend and how quickly it is able to processes `ControllerPublish` and `ControllerUnpublish` calls. The value should be set to accommodate majority of them. It is fine if some calls time out - such calls will be re-tried after exponential backoff (starting with 5ms), however, this backoff will introduce delay when the call times out several times for a single volume.
 
 ## Community, discussion, contribution, and support
 
