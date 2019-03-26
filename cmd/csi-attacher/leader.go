@@ -49,7 +49,7 @@ func runAsLeader(clientset *kubernetes.Clientset, namespace string, identity str
 		Identity:      identity,
 		EventRecorder: eventRecorder,
 	}
-	lock, err := resourcelock.New(resourcelock.ConfigMapsResourceLock, namespace, controller.SanitizeDriverName(lockName), clientset.CoreV1(), rlConfig)
+	lock, err := resourcelock.New(resourcelock.ConfigMapsResourceLock, namespace, controller.SanitizeDriverName(lockName), clientset.CoreV1(), clientset.CoordinationV1(), rlConfig)
 	if err != nil {
 		klog.Error(err)
 		os.Exit(1)

@@ -22,24 +22,23 @@
 
 [[constraint]]
   name = "k8s.io/api"
-  version = "kubernetes-1.13.2"
+  version = "kubernetes-1.14.0"
 
 [[constraint]]
   name = "k8s.io/csi-translation-lib"
-  branch = "master"
+  version = "kubernetes-1.14.0"
 
 [[constraint]]
   name = "k8s.io/apimachinery"
-  version = "kubernetes-1.13.2"
+  version = "kubernetes-1.14.0"
 
 [[constraint]]
   name = "k8s.io/client-go"
-  version = "kubernetes-1.13.2"
-
+  version = "kubernetes-1.14.0"
 
 [[constraint]]
   name = "k8s.io/csi-api"
-  version = "kubernetes-1.13.2"
+  version = "kubernetes-1.14.0"
 
 [[constraint]]
   name = "github.com/kubernetes-csi/csi-lib-utils"
