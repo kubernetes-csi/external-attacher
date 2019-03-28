@@ -624,7 +624,7 @@ func TestCSIHandler(t *testing.T) {
 			},
 			expectedCSICalls: []csiCall{
 				{"attach", "projects/UNSPECIFIED/zones/testZone/disks/testpd", testNodeID,
-					map[string]string{"partition": "0"}, noSecrets, readWrite, success, notDetached, noMetadata, 0},
+					map[string]string{"partition": ""}, noSecrets, readWrite, success, notDetached, noMetadata, 0},
 			},
 		},
 		//
