@@ -27,7 +27,6 @@ import (
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
-	csiclient "k8s.io/csi-api/pkg/client/clientset/versioned"
 	csiinformers "k8s.io/csi-api/pkg/client/informers/externalversions"
 	"k8s.io/klog"
 
@@ -97,12 +96,6 @@ func main() {
 		os.Exit(1)
 	}
 
-	csiClientset, err := csiclient.NewForConfig(config)
-	if err != nil {
-		klog.Error(err.Error())
-		os.Exit(1)
-	}
-
 	factory := informers.NewSharedInformerFactory(clientset, *resync)
 	var csiFactory csiinformers.SharedInformerFactory
 	var handler controller.Handler
@@ -155,10 +148,9 @@ func main() {
 				pvLister := factory.Core().V1().PersistentVolumes().Lister()
 				nodeLister := factory.Core().V1().Nodes().Lister()
 				vaLister := factory.Storage().V1beta1().VolumeAttachments().Lister()
-				csiFactory := csiinformers.NewSharedInformerFactory(csiClientset, *resync)
-				nodeInfoLister := csiFactory.Csi().V1alpha1().CSINodeInfos().Lister()
+				csiNodeLister := factory.Storage().V1beta1().CSINodes().Lister()
 				attacher := attacher.NewAttacher(csiConn)
-				handler = controller.NewCSIHandler(clientset, csiClientset, csiAttacher, attacher, pvLister, nodeLister, nodeInfoLister, vaLister, timeout, supportsReadOnly)
+				handler = controller.NewCSIHandler(clientset, csiAttacher, attacher, pvLister, nodeLister, csiNodeLister, vaLister, timeout, supportsReadOnly)
 				klog.V(2).Infof("CSI driver supports ControllerPublishUnpublish, using real CSI handler")
 			} else {
 				handler = controller.NewTrivialHandler(clientset)

@@ -25,7 +25,6 @@ import (
 	"k8s.io/api/core/v1"
 	storage "k8s.io/api/storage/v1beta1"
 	"k8s.io/client-go/kubernetes"
-	csiapi "k8s.io/csi-api/pkg/apis/csi/v1alpha1"
 	"k8s.io/klog"
 )
 
@@ -125,9 +124,9 @@ func GetNodeIDFromNode(driver string, node *v1.Node) (string, error) {
 	return nodeID, nil
 }
 
-// GetNodeIDFromNodeInfo returns nodeID from CSIDriverInfoSpec
-func GetNodeIDFromNodeInfo(driver string, nodeInfo *csiapi.CSINodeInfo) (string, bool) {
-	for _, d := range nodeInfo.Spec.Drivers {
+// GetNodeIDFromCSINode returns nodeID from CSIDriverInfoSpec
+func GetNodeIDFromCSINode(driver string, csiNode *storage.CSINode) (string, bool) {
+	for _, d := range csiNode.Spec.Drivers {
 		if d.Name == driver {
 			return d.NodeID, true
 		}

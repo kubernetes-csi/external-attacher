@@ -37,10 +37,6 @@
   version = "kubernetes-1.14.0"
 
 [[constraint]]
-  name = "k8s.io/csi-api"
-  version = "kubernetes-1.14.0"
-
-[[constraint]]
   name = "github.com/kubernetes-csi/csi-lib-utils"
   version = ">=0.4.0-rc1"
 
