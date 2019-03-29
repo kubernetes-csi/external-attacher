@@ -619,15 +619,13 @@
   revision = "9c9d72d1bf90eb62005f5112f3eea019b272c44b"
 
 [[projects]]
-  digest = "1:d4aabced4b804126c3e09a58c01dff440b48644de42b30cf8a70878458b93f92"
+  digest = "1:53b7e3883e80297c18e07558404edadf3f9b7e07ffd4e0b114673ad176723d97"
   name = "k8s.io/csi-api"
   packages = [
     "pkg/apis/csi/v1alpha1",
     "pkg/client/clientset/versioned",
-    "pkg/client/clientset/versioned/fake",
     "pkg/client/clientset/versioned/scheme",
     "pkg/client/clientset/versioned/typed/csi/v1alpha1",
-    "pkg/client/clientset/versioned/typed/csi/v1alpha1/fake",
     "pkg/client/informers/externalversions",
     "pkg/client/informers/externalversions/csi",
     "pkg/client/informers/externalversions/csi/v1alpha1",
@@ -727,11 +725,7 @@
     "k8s.io/client-go/tools/leaderelection/resourcelock",
     "k8s.io/client-go/tools/record",
     "k8s.io/client-go/util/workqueue",
-    "k8s.io/csi-api/pkg/apis/csi/v1alpha1",
-    "k8s.io/csi-api/pkg/client/clientset/versioned",
-    "k8s.io/csi-api/pkg/client/clientset/versioned/fake",
     "k8s.io/csi-api/pkg/client/informers/externalversions",
-    "k8s.io/csi-api/pkg/client/listers/csi/v1alpha1",
     "k8s.io/csi-translation-lib",
     "k8s.io/klog",
   ]

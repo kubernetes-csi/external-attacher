@@ -32,8 +32,6 @@ import (
 	corelisters "k8s.io/client-go/listers/core/v1"
 	storagelisters "k8s.io/client-go/listers/storage/v1beta1"
 	"k8s.io/client-go/util/workqueue"
-	csiclient "k8s.io/csi-api/pkg/client/clientset/versioned"
-	csilisters "k8s.io/csi-api/pkg/client/listers/csi/v1alpha1"
 	csitranslationlib "k8s.io/csi-translation-lib"
 )
 
@@ -42,12 +40,11 @@ import (
 // before deletion.
 type csiHandler struct {
 	client                  kubernetes.Interface
-	csiClientSet            csiclient.Interface
 	attacherName            string
 	attacher                attacher.Attacher
 	pvLister                corelisters.PersistentVolumeLister
 	nodeLister              corelisters.NodeLister
-	nodeInfoLister          csilisters.CSINodeInfoLister
+	csiNodeLister           storagelisters.CSINodeLister
 	vaLister                storagelisters.VolumeAttachmentLister
 	vaQueue, pvQueue        workqueue.RateLimitingInterface
 	timeout                 time.Duration
@@ -59,24 +56,22 @@ var _ Handler = &csiHandler{}
 // NewCSIHandler creates a new CSIHandler.
 func NewCSIHandler(
 	client kubernetes.Interface,
-	csiClientSet csiclient.Interface,
 	attacherName string,
 	attacher attacher.Attacher,
 	pvLister corelisters.PersistentVolumeLister,
 	nodeLister corelisters.NodeLister,
-	nodeInfoLister csilisters.CSINodeInfoLister,
+	csiNodeLister storagelisters.CSINodeLister,
 	vaLister storagelisters.VolumeAttachmentLister,
 	timeout *time.Duration,
 	supportsPublishReadOnly bool) Handler {
 
 	return &csiHandler{
 		client:                  client,
-		csiClientSet:            csiClientSet,
 		attacherName:            attacherName,
 		attacher:                attacher,
 		pvLister:                pvLister,
 		nodeLister:              nodeLister,
-		nodeInfoLister:          nodeInfoLister,
+		csiNodeLister:           csiNodeLister,
 		vaLister:                vaLister,
 		timeout:                 *timeout,
 		supportsPublishReadOnly: supportsPublishReadOnly,
@@ -507,20 +502,19 @@ func (h *csiHandler) getCredentialsFromPV(csiSource *v1.CSIPersistentVolumeSourc
 // getNodeID finds node ID from Node API object. If caller wants, it can find
 // node ID stored in VolumeAttachment annotation.
 func (h *csiHandler) getNodeID(driver string, nodeName string, va *storage.VolumeAttachment) (string, error) {
-	// Try to find CSINodeInfo first.
-	// nodeInfo, err := h.nodeInfoLister.Get(nodeName) // TODO (kubernetes/kubernetes #71052) use the lister once it syncs existing CSINodeInfo objects properly.
-	nodeInfo, err := h.csiClientSet.CsiV1alpha1().CSINodeInfos().Get(nodeName, metav1.GetOptions{})
+	// Try to find CSINode first.
+	csiNode, err := h.csiNodeLister.Get(nodeName)
 	if err == nil {
-		if nodeID, found := GetNodeIDFromNodeInfo(driver, nodeInfo); found {
-			klog.V(4).Infof("Found NodeID %s in CSINodeInfo %s", nodeID, nodeName)
+		if nodeID, found := GetNodeIDFromCSINode(driver, csiNode); found {
+			klog.V(4).Infof("Found NodeID %s in CSINode %s", nodeID, nodeName)
 			return nodeID, nil
 		}
-		klog.V(4).Infof("CSINodeInfo %s does not contain driver %s", nodeName, driver)
-		// CSINodeInfo exists, but does not have the requested driver.
+		klog.V(4).Infof("CSINode %s does not contain driver %s", nodeName, driver)
+		// CSINode exists, but does not have the requested driver.
 		// Fall through to Node annotation.
 	} else {
-		// Can't get CSINodeInfo, fall through to Node annotation.
-		klog.V(4).Infof("Can't get CSINodeInfo %s: %s", nodeName, err)
+		// Can't get CSINode, fall through to Node annotation.
+		klog.V(4).Infof("Can't get CSINode %s: %s", nodeName, err)
 	}
 
 	// Check Node annotation.

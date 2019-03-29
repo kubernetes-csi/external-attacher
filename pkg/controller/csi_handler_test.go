@@ -33,9 +33,6 @@ import (
 	"k8s.io/client-go/informers"
 	"k8s.io/client-go/kubernetes"
 	core "k8s.io/client-go/testing"
-	csiapi "k8s.io/csi-api/pkg/apis/csi/v1alpha1"
-	csiclient "k8s.io/csi-api/pkg/client/clientset/versioned"
-	csiinformers "k8s.io/csi-api/pkg/client/informers/externalversions"
 )
 
 const (
@@ -51,30 +48,28 @@ var (
 
 var timeout = 10 * time.Millisecond
 
-func csiHandlerFactory(client kubernetes.Interface, csiClient csiclient.Interface, informerFactory informers.SharedInformerFactory, csiInformerFactory csiinformers.SharedInformerFactory, csi attacher.Attacher) Handler {
+func csiHandlerFactory(client kubernetes.Interface, informerFactory informers.SharedInformerFactory, csi attacher.Attacher) Handler {
 	return NewCSIHandler(
 		client,
-		csiClient,
 		testAttacherName,
 		csi,
 		informerFactory.Core().V1().PersistentVolumes().Lister(),
 		informerFactory.Core().V1().Nodes().Lister(),
-		csiInformerFactory.Csi().V1alpha1().CSINodeInfos().Lister(),
+		informerFactory.Storage().V1beta1().CSINodes().Lister(),
 		informerFactory.Storage().V1beta1().VolumeAttachments().Lister(),
 		&timeout,
 		true, /* supports PUBLISH_READONLY */
 	)
 }
 
-func csiHandlerFactoryNoReadOnly(client kubernetes.Interface, csiClient csiclient.Interface, informerFactory informers.SharedInformerFactory, csiInformerFactory csiinformers.SharedInformerFactory, csi attacher.Attacher) Handler {
+func csiHandlerFactoryNoReadOnly(client kubernetes.Interface, informerFactory informers.SharedInformerFactory, csi attacher.Attacher) Handler {
 	return NewCSIHandler(
 		client,
-		csiClient,
 		testAttacherName,
 		csi,
 		informerFactory.Core().V1().PersistentVolumes().Lister(),
 		informerFactory.Core().V1().Nodes().Lister(),
-		csiInformerFactory.Csi().V1alpha1().CSINodeInfos().Lister(),
+		informerFactory.Storage().V1beta1().CSINodes().Lister(),
 		informerFactory.Storage().V1beta1().VolumeAttachments().Lister(),
 		&timeout,
 		false, /* does not support PUBLISH_READONLY */
@@ -182,13 +177,13 @@ func nodeWithoutAnnotations() *v1.Node {
 	return n
 }
 
-func csiNodeInfo() *csiapi.CSINodeInfo {
-	return &csiapi.CSINodeInfo{
+func csiNode() *storage.CSINode {
+	return &storage.CSINode{
 		ObjectMeta: metav1.ObjectMeta{
 			Name: testNodeName,
 		},
-		Spec: csiapi.CSINodeInfoSpec{
-			Drivers: []csiapi.CSIDriverInfoSpec{
+		Spec: storage.CSINodeSpec{
+			Drivers: []storage.CSINodeDriver{
 				{
 					Name:   testAttacherName,
 					NodeID: testNodeID,
@@ -198,12 +193,12 @@ func csiNodeInfo() *csiapi.CSINodeInfo {
 	}
 }
 
-func csiNodeInfoEmpty() *csiapi.CSINodeInfo {
-	return &csiapi.CSINodeInfo{
+func csiNodeEmpty() *storage.CSINode {
+	return &storage.CSINode{
 		ObjectMeta: metav1.ObjectMeta{
 			Name: testNodeName,
 		},
-		Spec: csiapi.CSINodeInfoSpec{Drivers: []csiapi.CSIDriverInfoSpec{}},
+		Spec: storage.CSINodeSpec{Drivers: []storage.CSINodeDriver{}},
 	}
 }
 
@@ -593,16 +588,16 @@ func TestCSIHandler(t *testing.T) {
 			},
 		},
 		{
-			name:           "CSINodeInfo exists without the driver, Node without annotations -> error",
-			initialObjects: []runtime.Object{pvWithFinalizer(), nodeWithoutAnnotations(), csiNodeInfoEmpty()},
+			name:           "CSINode exists without the driver, Node without annotations -> error",
+			initialObjects: []runtime.Object{pvWithFinalizer(), nodeWithoutAnnotations(), csiNodeEmpty()},
 			addedVA:        va(false, fin, ann),
 			expectedActions: []core.Action{
 				core.NewUpdateAction(vaGroupResourceVersion, metav1.NamespaceNone, vaWithAttachError(va(false, fin, ann), "node \"node1\" has no NodeID annotation")),
 			},
 		},
 		{
-			name:           "CSINodeInfo exists with the driver, Node without annotations -> success",
-			initialObjects: []runtime.Object{pvWithFinalizer(), nodeWithoutAnnotations(), csiNodeInfo()},
+			name:           "CSINode exists with the driver, Node without annotations -> success",
+			initialObjects: []runtime.Object{pvWithFinalizer(), nodeWithoutAnnotations(), csiNode()},
 			addedVA:        va(false /*attached*/, "" /*finalizer*/, nil),
 			expectedActions: []core.Action{
 				// Finalizer is saved first

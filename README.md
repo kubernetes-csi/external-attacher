@@ -21,7 +21,7 @@ This information reflects the head of this branch.
 
 | Compatible with CSI Version                                                                | Container Image                     | Min K8s Version |
 | ------------------------------------------------------------------------------------------ | ------------------------------------| --------------- |
-| [CSI Spec v1.0.0](https://github.com/container-storage-interface/spec/releases/tag/v1.0.0) | quay.io/k8scsi/csi-attacher:v1.0.1  | 1.13            |
+| [CSI Spec v1.0.0](https://github.com/container-storage-interface/spec/releases/tag/v1.0.0) | quay.io/k8scsi/csi-attacher:v1.0.1  | 1.14            |
 
 ## Usage
 
