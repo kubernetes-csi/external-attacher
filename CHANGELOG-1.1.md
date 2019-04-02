@@ -3,6 +3,10 @@
 ## Deprecations
 
 * Command line flag `-connection-timeout` is deprecated and has no effect.
+* Command line flag `--leader-election-identity` is deprecated and has no effect.
+* Command line flag `--leader-election-type` is deprecated. Support for Configmaps-based
+  leader election will be removed in the future in favor of Lease-based leader election.
+  The default currently remains as `configmaps` for backwards compatibility.
 
 ## Notable Features
 
@@ -13,6 +17,8 @@
 * [In-tree storage plugin to CSI Driver Migration](https://github.com/kubernetes/enhancements/blob/master/keps/sig-storage/20190129-csi-migration.md) is now alpha. ([#117](https://github.com/kubernetes-csi/external-attacher/pull/117))
 
 * README.md has been significantly enhanced. ([#130](https://github.com/kubernetes-csi/external-attacher/pull/130))
+
+* Add support for Lease based leader election. Enable this by setting `--leader-election-type=leases` ([#135](https://github.com/kubernetes-csi/external-attacher/pull/135))
 
 ## Other notable changes
 
