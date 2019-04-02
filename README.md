@@ -40,13 +40,13 @@ All other external-attacher features and the external-attacher itself is conside
 
 ## Usage
 
-It is necessary to create a new service account and give it enough privileges to run the external-attacher, see `deploy/kubernetes/rbac.yaml`. The attacher is then deployed as single Deployment as illustrated below: 
+It is necessary to create a new service account and give it enough privileges to run the external-attacher, see `deploy/kubernetes/rbac.yaml`. The attacher is then deployed as single Deployment as illustrated below:
 
 ```sh
 kubectl create deploy/kubernetes/deployment.yaml
 ```
 
-The external-attacher may run in the same pod with other external CSI controllers such as the external-provisioner, external-snapshotter and/or external-resizer. 
+The external-attacher may run in the same pod with other external CSI controllers such as the external-provisioner, external-snapshotter and/or external-resizer.
 
 Note that the external-attacher does not scale with more replicas. Only one external-attacher is elected as leader and running. The others are waiting for the leader to die. They re-elect a new active leader in ~15 seconds after death of the old leader.
 
@@ -58,8 +58,6 @@ Note that the external-attacher does not scale with more replicas. Only one exte
 * `--leader-election`: Enables leader election. This is useful when there are multiple replicas of the same external-attacher running for one CSI driver. Only one of them may be active (=leader). A new leader will be re-elected when current leader dies or becomes unresponsive for ~15 seconds.
 
 * `--leader-election-namespace <namespace>`: Namespace where the external-attacher runs and where leader election object will be created. It is recommended that this parameter is populated from Kubernetes DownwardAPI.
-
-* `--leader-election-identity <id>`: Unique identity of this replica of external-attacher container. It must be unique among all running replicas of the external-attacher. Pod name populated from Kubernetes DownwardAPI is recommended.
 
 * `--timeout <duration>`: Timeout of all calls to CSI driver. It should be set to value that accommodates majority of `ControllerPublish` and `ControllerUnpublish` calls. See [CSI error and timeout handling](#csi-error-and-timeout-handling) for details. 15 seconds is used by default.
 
@@ -78,6 +76,9 @@ Note that the external-attacher does not scale with more replicas. Only one exte
 #### Deprecated arguments
 * `--connection-timeout <duration>`: This option was used to limit establishing connection to CSI driver. Currently, the option does not have any effect and the external-attacher tries to connect to CSI driver socket indefinitely. It is recommended to run ReadinessProbe on the driver to ensure that the driver comes up in reasonable time.
 
+* `--leader-election-type`: This option was used to choose which leader election resource type to use. Currently, the option defaults to `configmaps`, but will be removed in the future to only support `leases` based leader election.
+
+* `--leader-election-identity <id>`: This option is deprecated and has no effect since external-attacher will now use the pod hostname as the leader election identity
 
 ### CSI error and timeout handling
 The external-attacher invokes all gRPC calls to CSI driver with timeout provided by `--timeout` command line argument (15 seconds by default).
