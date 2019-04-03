@@ -19,9 +19,24 @@ The external-attacher is an external controller that monitors `VolumeAttachment`
 
 This information reflects the head of this branch.
 
-| Compatible with CSI Version                                                                | Container Image                     | Min K8s Version |
-| ------------------------------------------------------------------------------------------ | ------------------------------------| --------------- |
-| [CSI Spec v1.0.0](https://github.com/container-storage-interface/spec/releases/tag/v1.0.0) | quay.io/k8scsi/csi-attacher:v1.0.1  | 1.14            |
+| Compatible with CSI Version                                                                | Container Image             | Min K8s Version |
+| ------------------------------------------------------------------------------------------ | ----------------------------| --------------- |
+| [CSI Spec v1.0.0](https://github.com/container-storage-interface/spec/releases/tag/v1.0.0) | quay.io/k8scsi/csi-attacher | 1.14            |
+
+## Feature Status
+
+Various external-attacher releases come with different alpha / beta features.
+
+The following table reflects the head of this branch.
+
+| Feature       | Status  | Default | Description                                                                                   |
+| ------------- | ------- | ------- | --------------------------------------------------------------------------------------------- |
+| CSINode*      | Beta    | On      | external-attacher uses the CSINode object to get the driver's node name instead of the Node annotation. |
+| CSIMigration* | Alpha   | On      | [Migrating in-tree volume plugins to CSI](https://kubernetes.io/docs/concepts/storage/volumes/#csi-migration). |
+
+*) There are no special feature gates for these features. They are enabled by turning on the corresponding features in Kubernetes.
+
+All other external-attacher features and the external-attacher itself is considered GA and fully supported.
 
 ## Usage
 
