@@ -1,10 +1,10 @@
-# Changelog since v1.0.0
+# Changelog since v1.0.1
 
-# Deprecations
+## Deprecations
 
 * Command line flag `-connection-timeout` is deprecated and has no effect.
 
-# Notable Features
+## Notable Features
 
 * The external attacher now tries to connect to CSI driver indefinitely. ([#123](https://github.com/kubernetes-csi/external-attacher/pull/123))
 
