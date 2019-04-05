@@ -32,6 +32,8 @@ import (
 
 	"github.com/container-storage-interface/spec/lib/go/csi"
 	"github.com/kubernetes-csi/csi-lib-utils/connection"
+	"github.com/kubernetes-csi/csi-lib-utils/deprecatedflags"
+	"github.com/kubernetes-csi/csi-lib-utils/leaderelection"
 	"github.com/kubernetes-csi/csi-lib-utils/rpc"
 	"github.com/kubernetes-csi/external-attacher/pkg/attacher"
 	"github.com/kubernetes-csi/external-attacher/pkg/controller"
@@ -60,13 +62,19 @@ var (
 	timeout           = flag.Duration("timeout", 15*time.Second, "Timeout for waiting for attaching or detaching the volume.")
 
 	enableLeaderElection    = flag.Bool("leader-election", false, "Enable leader election.")
-	leaderElectionNamespace = flag.String("leader-election-namespace", "", "Namespace where this attacher runs.")
-	leaderElectionIdentity  = flag.String("leader-election-identity", "", "Unique identity of this attacher. Typically name of the pod where the attacher runs.")
+	leaderElectionType      = flag.String("leader-election-type", "configmap", "the type of leader election, options are 'configmaps' (default) or 'leases' (recommended). The 'configmaps' option is deprecated in favor of 'leases'.")
+	leaderElectionNamespace = flag.String("leader-election-namespace", "", "Namespace where the leader election resource lives. Defaults to the pod namespace if not set.")
+	_                       = deprecatedflags.Add("leader-election-identity")
 )
 
 var (
 	version = "unknown"
 )
+
+type leaderElection interface {
+	Run() error
+	WithNamespace(namespace string)
+}
 
 func main() {
 	klog.InitFlags(nil)
@@ -179,18 +187,27 @@ func main() {
 	if !*enableLeaderElection {
 		run(context.TODO())
 	} else {
-		// Leader election was requested.
-		if leaderElectionNamespace == nil || *leaderElectionNamespace == "" {
-			klog.Error("-leader-election-namespace must not be empty")
-			os.Exit(1)
-		}
-		if leaderElectionIdentity == nil || *leaderElectionIdentity == "" {
-			klog.Error("-leader-election-identity must not be empty")
-			os.Exit(1)
-		}
+		var le leaderElection
+
 		// Name of config map with leader election lock
 		lockName := "external-attacher-leader-" + csiAttacher
-		runAsLeader(clientset, *leaderElectionNamespace, *leaderElectionIdentity, lockName, run)
+		if *leaderElectionType == "configmaps" {
+			klog.Warning("The 'configmaps' leader election type is deprecated and will be removed in a future release. Use '--leader-election-type=leases' instead.")
+			le = leaderelection.NewLeaderElectionWithConfigMaps(clientset, lockName, run)
+		} else if *leaderElectionType == "leases" {
+			le = leaderelection.NewLeaderElection(clientset, lockName, run)
+		} else {
+			klog.Error("--leader-election-type must be either 'configmap' or 'lease'")
+			os.Exit(1)
+		}
+
+		if *leaderElectionNamespace != "" {
+			le.WithNamespace(*leaderElectionNamespace)
+		}
+
+		if err := le.Run(); err != nil {
+			klog.Fatalf("failed to initialize leader election: %v", err)
+		}
 	}
 }
 
