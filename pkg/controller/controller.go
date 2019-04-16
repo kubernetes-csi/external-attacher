@@ -21,7 +21,7 @@ import (
 
 	"k8s.io/klog"
 
-	"k8s.io/api/core/v1"
+	v1 "k8s.io/api/core/v1"
 	storage "k8s.io/api/storage/v1beta1"
 	"k8s.io/apimachinery/pkg/api/equality"
 	apierrs "k8s.io/apimachinery/pkg/api/errors"
@@ -70,7 +70,7 @@ type Handler interface {
 }
 
 // NewCSIAttachController returns a new *CSIAttachController
-func NewCSIAttachController(client kubernetes.Interface, attacherName string, handler Handler, volumeAttachmentInformer storageinformers.VolumeAttachmentInformer, pvInformer coreinformers.PersistentVolumeInformer) *CSIAttachController {
+func NewCSIAttachController(client kubernetes.Interface, attacherName string, handler Handler, volumeAttachmentInformer storageinformers.VolumeAttachmentInformer, pvInformer coreinformers.PersistentVolumeInformer, vaRateLimiter, paRateLimiter workqueue.RateLimiter) *CSIAttachController {
 	broadcaster := record.NewBroadcaster()
 	broadcaster.StartRecordingToSink(&corev1.EventSinkImpl{Interface: client.CoreV1().Events(v1.NamespaceAll)})
 	var eventRecorder record.EventRecorder
@@ -81,8 +81,8 @@ func NewCSIAttachController(client kubernetes.Interface, attacherName string, ha
 		attacherName:  attacherName,
 		handler:       handler,
 		eventRecorder: eventRecorder,
-		vaQueue:       workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), "csi-attacher-va"),
-		pvQueue:       workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), "csi-attacher-pv"),
+		vaQueue:       workqueue.NewNamedRateLimitingQueue(vaRateLimiter, "csi-attacher-va"),
+		pvQueue:       workqueue.NewNamedRateLimitingQueue(paRateLimiter, "csi-attacher-pv"),
 	}
 
 	volumeAttachmentInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{

@@ -27,6 +27,7 @@ import (
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
+	"k8s.io/client-go/util/workqueue"
 	csiinformers "k8s.io/csi-api/pkg/client/informers/externalversions"
 	"k8s.io/klog"
 
@@ -60,6 +61,9 @@ var (
 	dummy             = flag.Bool("dummy", false, "Run in dummy mode, i.e. not connecting to CSI driver and marking everything as attached. Expected CSI driver name is \"csi/dummy\".")
 	showVersion       = flag.Bool("version", false, "Show version.")
 	timeout           = flag.Duration("timeout", 15*time.Second, "Timeout for waiting for attaching or detaching the volume.")
+
+	retryIntervalStart = flag.Duration("retry-interval-start", time.Second, "Initial retry interval of failed create volume or deletion. It doubles with each failure, up to retry-interval-max.")
+	retryIntervalMax   = flag.Duration("retry-interval-max", 5*time.Minute, "Maximum retry interval of failed create volume or deletion.")
 
 	enableLeaderElection    = flag.Bool("leader-election", false, "Enable leader election.")
 	leaderElectionType      = flag.String("leader-election-type", "configmap", "the type of leader election, options are 'configmaps' (default) or 'leases' (recommended). The 'configmaps' option is deprecated in favor of 'leases'.")
@@ -173,6 +177,8 @@ func main() {
 		handler,
 		factory.Storage().V1beta1().VolumeAttachments(),
 		factory.Core().V1().PersistentVolumes(),
+		workqueue.NewItemExponentialFailureRateLimiter(*retryIntervalStart, *retryIntervalMax),
+		workqueue.NewItemExponentialFailureRateLimiter(*retryIntervalStart, *retryIntervalMax),
 	)
 
 	run := func(ctx context.Context) {
