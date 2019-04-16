@@ -29,7 +29,7 @@ import (
 	"github.com/kubernetes-csi/external-attacher/pkg/attacher"
 	"k8s.io/klog"
 
-	"k8s.io/api/core/v1"
+	v1 "k8s.io/api/core/v1"
 	storage "k8s.io/api/storage/v1beta1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -37,6 +37,7 @@ import (
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/kubernetes/fake"
 	core "k8s.io/client-go/testing"
+	"k8s.io/client-go/util/workqueue"
 )
 
 // This is an unit test framework. It is heavily inspired by serviceaccount
@@ -175,7 +176,7 @@ func runTests(t *testing.T, handlerFactory handlerFactory, tests []testCase) {
 		// Construct controller
 		csiConnection := &fakeCSIConnection{t: t, calls: test.expectedCSICalls}
 		handler := handlerFactory(client, informers, csiConnection)
-		ctrl := NewCSIAttachController(client, testAttacherName, handler, vaInformer, pvInformer)
+		ctrl := NewCSIAttachController(client, testAttacherName, handler, vaInformer, pvInformer, workqueue.DefaultControllerRateLimiter(), workqueue.DefaultControllerRateLimiter())
 
 		// Start the test by enqueueing the right event
 		if test.addedVA != nil {
