@@ -61,6 +61,10 @@ Note that the external-attacher does not scale with more replicas. Only one exte
 
 * `--timeout <duration>`: Timeout of all calls to CSI driver. It should be set to value that accommodates majority of `ControllerPublish` and `ControllerUnpublish` calls. See [CSI error and timeout handling](#csi-error-and-timeout-handling) for details. 15 seconds is used by default.
 
+* `--retry-interval-start`: The exponential backoff for failures. See [CSI error and timeout handling](#csi-error-and-timeout-handling) for details. 1 second is used by default.
+
+* `--retry-interval-end`: The exponential backoff maximum value. See [CSI error and timeout handling](#csi-error-and-timeout-handling) for details. 5 minutes is used by default.
+
 #### Other recognized arguments
 
 * `--dummy`: Runs the external-attacher in dummy mode, i.e. without any CSI driver. All volumes are immediately reported as attached / detached as controller-manager requires. This option can be used for debugging of other CSI components such as Kubernetes Attach / Detach controller.
@@ -88,7 +92,7 @@ The external-attacher invokes all gRPC calls to CSI driver with timeout provided
 * `Probe`: The external-attacher re-tries calling Probe until the driver reports it's ready. It re-tries also when it receives timeout from `Probe` call. The external-attacher has no limit of retries. It is expected that ReadinessProbe on the driver container will catch case when the driver takes too long time to get ready.
 * `GetPluginInfo`, `GetPluginCapabilitiesRequest`, `ControllerGetCapabilities`: The external-attacher expects that these calls are quick and does not retry them on any error, including timeout. Instead, it assumes that the driver is faulty and exits. Note that Kubernetes will likely start a new attacher container and it will start with `Probe` call.
 
-Correct timeout value depends on the storage backend and how quickly it is able to processes `ControllerPublish` and `ControllerUnpublish` calls. The value should be set to accommodate majority of them. It is fine if some calls time out - such calls will be re-tried after exponential backoff (starting with 5ms), however, this backoff will introduce delay when the call times out several times for a single volume.
+Correct timeout value depends on the storage backend and how quickly it is able to processes `ControllerPublish` and `ControllerUnpublish` calls. The value should be set to accommodate majority of them. It is fine if some calls time out - such calls will be re-tried after exponential backoff (starting with `--retry-interval-start`), however, this backoff will introduce delay when the call times out several times for a single volume (up to `--retry-interval-max`).
 
 ## Community, discussion, contribution, and support
 
