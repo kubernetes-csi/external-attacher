@@ -50,6 +50,9 @@ const (
 
 	// Name of CSI plugin for dummy operation
 	dummyAttacherName = "csi/dummy"
+
+	leaderElectionTypeLeases     = "leases"
+	leaderElectionTypeConfigMaps = "configmaps"
 )
 
 // Command line flags
@@ -66,7 +69,7 @@ var (
 	retryIntervalMax   = flag.Duration("retry-interval-max", 5*time.Minute, "Maximum retry interval of failed create volume or deletion.")
 
 	enableLeaderElection    = flag.Bool("leader-election", false, "Enable leader election.")
-	leaderElectionType      = flag.String("leader-election-type", "configmap", "the type of leader election, options are 'configmaps' (default) or 'leases' (recommended). The 'configmaps' option is deprecated in favor of 'leases'.")
+	leaderElectionType      = flag.String("leader-election-type", leaderElectionTypeConfigMaps, "the type of leader election, options are 'configmaps' (default) or 'leases' (recommended). The 'configmaps' option is deprecated in favor of 'leases'.")
 	leaderElectionNamespace = flag.String("leader-election-namespace", "", "Namespace where the leader election resource lives. Defaults to the pod namespace if not set.")
 	_                       = deprecatedflags.Add("leader-election-identity")
 )
@@ -197,13 +200,13 @@ func main() {
 
 		// Name of config map with leader election lock
 		lockName := "external-attacher-leader-" + csiAttacher
-		if *leaderElectionType == "configmaps" {
-			klog.Warning("The 'configmaps' leader election type is deprecated and will be removed in a future release. Use '--leader-election-type=leases' instead.")
+		if *leaderElectionType == leaderElectionTypeConfigMaps {
+			klog.Warningf("The '%s' leader election type is deprecated and will be removed in a future release. Use '--leader-election-type=%s' instead.", leaderElectionTypeConfigMaps, leaderElectionTypeLeases)
 			le = leaderelection.NewLeaderElectionWithConfigMaps(clientset, lockName, run)
-		} else if *leaderElectionType == "leases" {
+		} else if *leaderElectionType == leaderElectionTypeLeases {
 			le = leaderelection.NewLeaderElection(clientset, lockName, run)
 		} else {
-			klog.Error("--leader-election-type must be either 'configmap' or 'lease'")
+			klog.Errorf("--leader-election-type must be either '%s' or '%s'", leaderElectionTypeConfigMaps, leaderElectionTypeLeases)
 			os.Exit(1)
 		}
 
