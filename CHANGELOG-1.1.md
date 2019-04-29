@@ -1,3 +1,10 @@
+# Changelog since v1.1.0
+
+## Other notable changes
+
+* Fix RBAC rule for CSINode ([#147](https://github.com/kubernetes-csi/external-attacher/pull/147))
+* Fix default leader election type ([#145](https://github.com/kubernetes-csi/external-attacher/pull/145))
+
 # Changelog since v1.0.1
 
 ## Deprecations
