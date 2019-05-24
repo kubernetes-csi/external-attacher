@@ -60,9 +60,20 @@ endif
 # Specific packages can be excluded from each of the tests below by setting the *_FILTER_CMD variables
 # to something like "| grep -v 'github.com/kubernetes-csi/project/pkg/foobar'". See usage below.
 
+BUILD_IN_DOCKER?=false
+# this file is shared between the csi-* projects; see release-tools/README.md
+DOCKER_BUILDER_WD=/go/src/github.com/kubernetes-csi/$(notdir $(CURDIR))
+DOCKER_BUILDER_IMG?=golang:$(shell grep go: $(CURDIR)/release-tools/travis.yml | cut -d: -f2,2 | tr -d ' ')
+BUILDER_CMD=CGO_ENABLED=0 GOOS=linux go build -a -ldflags '-X main.version=$(REV) -extldflags -static'
+DOCKER_BUILDER_CMD=docker run --rm -v $(CURDIR):$(DOCKER_BUILDER_WD):rw -w $(DOCKER_BUILDER_WD) $(DOCKER_BUILDER_IMG)
+
 build-%:
 	mkdir -p bin
-	CGO_ENABLED=0 GOOS=linux go build -a -ldflags '-X main.version=$(REV) -extldflags "-static"' -o ./bin/$* ./cmd/$*
+ifeq "$(BUILD_IN_DOCKER)" "true"
+	$(DOCKER_BUILDER_CMD) /bin/sh -c "$(BUILDER_CMD) -o ./bin/$* ./cmd/$*"
+else
+	$(BUILDER_CMD) -o ./bin/$* ./cmd/$*
+endif
 
 container-%: build-%
 	docker build -t $*:latest -f $(shell if [ -e ./cmd/$*/Dockerfile ]; then echo ./cmd/$*/Dockerfile; else echo Dockerfile; fi) --label revision=$(REV) .
