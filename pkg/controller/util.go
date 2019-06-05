@@ -21,16 +21,15 @@ import (
 	"fmt"
 	"regexp"
 
-	"github.com/container-storage-interface/spec/lib/go/csi/v0"
-	"github.com/golang/glog"
+	"github.com/container-storage-interface/spec/lib/go/csi"
 	"k8s.io/api/core/v1"
 	storage "k8s.io/api/storage/v1beta1"
 	"k8s.io/client-go/kubernetes"
-	csiapi "k8s.io/csi-api/pkg/apis/csi/v1alpha1"
+	"k8s.io/klog"
 )
 
 func markAsAttached(client kubernetes.Interface, va *storage.VolumeAttachment, metadata map[string]string) (*storage.VolumeAttachment, error) {
-	glog.V(4).Infof("Marking as attached %q", va.Name)
+	klog.V(4).Infof("Marking as attached %q", va.Name)
 	clone := va.DeepCopy()
 	clone.Status.Attached = true
 	clone.Status.AttachmentMetadata = metadata
@@ -40,7 +39,7 @@ func markAsAttached(client kubernetes.Interface, va *storage.VolumeAttachment, m
 	if err != nil {
 		return va, err
 	}
-	glog.V(4).Infof("Marked as attached %q", va.Name)
+	klog.V(4).Infof("Marked as attached %q", va.Name)
 	return newVA, nil
 }
 
@@ -64,11 +63,11 @@ func markAsDetached(client kubernetes.Interface, va *storage.VolumeAttachment) (
 
 	if !found && !va.Status.Attached {
 		// Finalizer was not present, nothing to update
-		glog.V(4).Infof("Already fully detached %q", va.Name)
+		klog.V(4).Infof("Already fully detached %q", va.Name)
 		return va, nil
 	}
 
-	glog.V(4).Infof("Marking as detached %q", va.Name)
+	klog.V(4).Infof("Marking as detached %q", va.Name)
 	clone := va.DeepCopy()
 	clone.Finalizers = newFinalizers
 	clone.Status.Attached = false
@@ -79,7 +78,7 @@ func markAsDetached(client kubernetes.Interface, va *storage.VolumeAttachment) (
 	if err != nil {
 		return va, err
 	}
-	glog.V(4).Infof("Finalizer removed from %q", va.Name)
+	klog.V(4).Infof("Finalizer removed from %q", va.Name)
 	return newVA, nil
 }
 
@@ -87,8 +86,10 @@ const (
 	defaultFSType              = "ext4"
 	nodeIDAnnotation           = "csi.volume.kubernetes.io/nodeid"
 	csiVolAttribsAnnotationKey = "csi.volume.kubernetes.io/volume-attributes"
+	vaNodeIDAnnotation         = "csi.alpha.kubernetes.io/node-id"
 )
 
+// SanitizeDriverName sanitizes provided driver name.
 func SanitizeDriverName(driver string) string {
 	re := regexp.MustCompile("[^a-zA-Z0-9-]")
 	name := re.ReplaceAllString(driver, "-")
@@ -99,11 +100,12 @@ func SanitizeDriverName(driver string) string {
 	return name
 }
 
-// getFinalizerName returns Attacher name suitable to be used as finalizer
+// GetFinalizerName returns Attacher name suitable to be used as finalizer
 func GetFinalizerName(driver string) string {
 	return "external-attacher/" + SanitizeDriverName(driver)
 }
 
+// GetNodeIDFromNode returns nodeID string from node annotations.
 func GetNodeIDFromNode(driver string, node *v1.Node) (string, error) {
 	nodeIDJSON, ok := node.Annotations[nodeIDAnnotation]
 	if !ok {
@@ -122,38 +124,51 @@ func GetNodeIDFromNode(driver string, node *v1.Node) (string, error) {
 	return nodeID, nil
 }
 
-func GetNodeIDFromNodeInfo(driver string, nodeInfo *csiapi.CSINodeInfo) (string, bool) {
-	for _, d := range nodeInfo.CSIDrivers {
-		if d.Driver == driver {
+// GetNodeIDFromCSINode returns nodeID from CSIDriverInfoSpec
+func GetNodeIDFromCSINode(driver string, csiNode *storage.CSINode) (string, bool) {
+	for _, d := range csiNode.Spec.Drivers {
+		if d.Name == driver {
 			return d.NodeID, true
 		}
 	}
 	return "", false
 }
 
-func GetVolumeCapabilities(pv *v1.PersistentVolume) (*csi.VolumeCapability, error) {
+// GetVolumeCapabilities returns volumecapability from PV spec
+func GetVolumeCapabilities(pv *v1.PersistentVolume, csiSource *v1.CSIPersistentVolumeSource) (*csi.VolumeCapability, error) {
 	m := map[v1.PersistentVolumeAccessMode]bool{}
 	for _, mode := range pv.Spec.AccessModes {
 		m[mode] = true
 	}
 
-	if pv.Spec.PersistentVolumeSource.CSI == nil {
-		return nil, fmt.Errorf("persistent volume does not contain CSI volume source")
+	if csiSource == nil {
+		return nil, fmt.Errorf("CSI volume source was nil")
 	}
 
-	fsType := pv.Spec.CSI.FSType
-	if len(fsType) == 0 {
-		fsType = defaultFSType
-	}
-
-	cap := &csi.VolumeCapability{
-		AccessType: &csi.VolumeCapability_Mount{
-			Mount: &csi.VolumeCapability_MountVolume{
-				FsType:     fsType,
-				MountFlags: pv.Spec.MountOptions,
+	var cap *csi.VolumeCapability
+	if pv.Spec.VolumeMode != nil && *pv.Spec.VolumeMode == v1.PersistentVolumeBlock {
+		cap = &csi.VolumeCapability{
+			AccessType: &csi.VolumeCapability_Block{
+				Block: &csi.VolumeCapability_BlockVolume{},
 			},
-		},
-		AccessMode: &csi.VolumeCapability_AccessMode{},
+			AccessMode: &csi.VolumeCapability_AccessMode{},
+		}
+
+	} else {
+		fsType := csiSource.FSType
+		if len(fsType) == 0 {
+			fsType = defaultFSType
+		}
+
+		cap = &csi.VolumeCapability{
+			AccessType: &csi.VolumeCapability_Mount{
+				Mount: &csi.VolumeCapability_MountVolume{
+					FsType:     fsType,
+					MountFlags: pv.Spec.MountOptions,
+				},
+			},
+			AccessMode: &csi.VolumeCapability_AccessMode{},
+		}
 	}
 
 	// Translate array of modes into single VolumeCapability
@@ -180,16 +195,18 @@ func GetVolumeCapabilities(pv *v1.PersistentVolume) (*csi.VolumeCapability, erro
 	return cap, nil
 }
 
-func GetVolumeHandle(pv *v1.PersistentVolume) (string, bool, error) {
-	if pv.Spec.PersistentVolumeSource.CSI == nil {
-		return "", false, fmt.Errorf("persistent volume does not contain CSI volume source")
+// GetVolumeHandle returns VolumeHandle and Readonly flag from CSI PV source
+func GetVolumeHandle(csiSource *v1.CSIPersistentVolumeSource) (string, bool, error) {
+	if csiSource == nil {
+		return "", false, fmt.Errorf("csi source was nil")
 	}
-	return pv.Spec.PersistentVolumeSource.CSI.VolumeHandle, pv.Spec.PersistentVolumeSource.CSI.ReadOnly, nil
+	return csiSource.VolumeHandle, csiSource.ReadOnly, nil
 }
 
-func GetVolumeAttributes(pv *v1.PersistentVolume) (map[string]string, error) {
-	if pv.Spec.PersistentVolumeSource.CSI == nil {
-		return nil, fmt.Errorf("persistent volume does not contain CSI volume source")
+// GetVolumeAttributes returns a dictionary of volume attributes from CSI PV source
+func GetVolumeAttributes(csiSource *v1.CSIPersistentVolumeSource) (map[string]string, error) {
+	if csiSource == nil {
+		return nil, fmt.Errorf("csi source was nil")
 	}
-	return pv.Spec.PersistentVolumeSource.CSI.VolumeAttributes, nil
+	return csiSource.VolumeAttributes, nil
 }
