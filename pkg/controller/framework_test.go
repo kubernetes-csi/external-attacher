@@ -24,10 +24,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/container-storage-interface/spec/lib/go/csi/v0"
+	"github.com/container-storage-interface/spec/lib/go/csi"
 	"github.com/davecgh/go-spew/spew"
-	"github.com/golang/glog"
-	"github.com/kubernetes-csi/external-attacher/pkg/connection"
+	"github.com/kubernetes-csi/external-attacher/pkg/attacher"
+	"k8s.io/klog"
 
 	"k8s.io/api/core/v1"
 	storage "k8s.io/api/storage/v1beta1"
@@ -37,9 +37,6 @@ import (
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/kubernetes/fake"
 	core "k8s.io/client-go/testing"
-	csiapi "k8s.io/csi-api/pkg/apis/csi/v1alpha1"
-	fakecsi "k8s.io/csi-api/pkg/client/clientset/versioned/fake"
-	csiinformers "k8s.io/csi-api/pkg/client/informers/externalversions"
 )
 
 // This is an unit test framework. It is heavily inspired by serviceaccount
@@ -89,6 +86,8 @@ type csiCall struct {
 	volumeAttributes map[string]string
 	// Expected secrets
 	secrets map[string]string
+	// expected readOnly flag
+	readOnly bool
 	// error to return
 	err error
 	// "detached" bool to return. Used only when err != nil
@@ -99,11 +98,11 @@ type csiCall struct {
 	delay time.Duration
 }
 
-type handlerFactory func(client kubernetes.Interface, informerFactory informers.SharedInformerFactory, csiInformerFactory csiinformers.SharedInformerFactory, csi connection.CSIConnection) Handler
+type handlerFactory func(client kubernetes.Interface, informerFactory informers.SharedInformerFactory, csi attacher.Attacher) Handler
 
 func runTests(t *testing.T, handlerFactory handlerFactory, tests []testCase) {
 	for _, test := range tests {
-		glog.Infof("Test %q: started", test.name)
+		klog.Infof("Test %q: started", test.name)
 		objs := test.initialObjects
 		if test.addedVA != nil {
 			objs = append(objs, test.addedVA)
@@ -119,7 +118,7 @@ func runTests(t *testing.T, handlerFactory handlerFactory, tests []testCase) {
 		csiObjs := []runtime.Object{}
 		for _, obj := range objs {
 			switch obj.(type) {
-			case *csiapi.CSINodeInfo:
+			case *storage.CSINode:
 				csiObjs = append(csiObjs, obj)
 			default:
 				coreObjs = append(coreObjs, obj)
@@ -128,13 +127,11 @@ func runTests(t *testing.T, handlerFactory handlerFactory, tests []testCase) {
 
 		// Create client and informers
 		client := fake.NewSimpleClientset(coreObjs...)
-		csiClient := fakecsi.NewSimpleClientset(csiObjs...)
 		informers := informers.NewSharedInformerFactory(client, time.Hour /* disable resync*/)
 		vaInformer := informers.Storage().V1beta1().VolumeAttachments()
 		pvInformer := informers.Core().V1().PersistentVolumes()
 		nodeInformer := informers.Core().V1().Nodes()
-		csiInformers := csiinformers.NewSharedInformerFactory(csiClient, time.Hour /* disable resync*/)
-		nodeInfoInformer := csiInformers.Csi().V1alpha1().CSINodeInfos()
+		csiNodeInformer := informers.Storage().V1beta1().CSINodes()
 		// Fill the informers with initial objects so controller can Get() them
 		for _, obj := range objs {
 			switch obj.(type) {
@@ -146,8 +143,8 @@ func runTests(t *testing.T, handlerFactory handlerFactory, tests []testCase) {
 				vaInformer.Informer().GetStore().Add(obj)
 			case *v1.Secret:
 				// Secrets are not cached in any informer
-			case *csiapi.CSINodeInfo:
-				nodeInfoInformer.Informer().GetStore().Add(obj)
+			case *storage.CSINode:
+				csiNodeInformer.Informer().GetStore().Add(obj)
 			default:
 				t.Fatalf("Unknown initalObject type: %+v", obj)
 			}
@@ -159,10 +156,10 @@ func runTests(t *testing.T, handlerFactory handlerFactory, tests []testCase) {
 			if action.GetVerb() == "update" {
 				switch action.GetResource().Resource {
 				case "volumeattachments":
-					glog.V(5).Infof("Test reactor: updated VA")
+					klog.V(5).Infof("Test reactor: updated VA")
 					vaInformer.Informer().GetStore().Update(action.(core.UpdateAction).GetObject())
 				case "persistentvolumes":
-					glog.V(5).Infof("Test reactor: updated PV")
+					klog.V(5).Infof("Test reactor: updated PV")
 					pvInformer.Informer().GetStore().Update(action.(core.UpdateAction).GetObject())
 				default:
 					t.Errorf("Unknown update resource: %s", action.GetResource())
@@ -177,7 +174,7 @@ func runTests(t *testing.T, handlerFactory handlerFactory, tests []testCase) {
 
 		// Construct controller
 		csiConnection := &fakeCSIConnection{t: t, calls: test.expectedCSICalls}
-		handler := handlerFactory(client, informers, csiInformers, csiConnection)
+		handler := handlerFactory(client, informers, csiConnection)
 		ctrl := NewCSIAttachController(client, testAttacherName, handler, vaInformer, pvInformer)
 
 		// Start the test by enqueueing the right event
@@ -203,11 +200,11 @@ func runTests(t *testing.T, handlerFactory handlerFactory, tests []testCase) {
 				break
 			}
 			if ctrl.vaQueue.Len() > 0 {
-				glog.V(5).Infof("Test %q: %d events in VA queue, processing one", test.name, ctrl.vaQueue.Len())
+				klog.V(5).Infof("Test %q: %d events in VA queue, processing one", test.name, ctrl.vaQueue.Len())
 				ctrl.syncVA()
 			}
 			if ctrl.pvQueue.Len() > 0 {
-				glog.V(5).Infof("Test %q: %d events in PV queue, processing one", test.name, ctrl.vaQueue.Len())
+				klog.V(5).Infof("Test %q: %d events in PV queue, processing one", test.name, ctrl.vaQueue.Len())
 				ctrl.syncPV()
 			}
 			if ctrl.vaQueue.Len() > 0 || ctrl.pvQueue.Len() > 0 {
@@ -217,7 +214,7 @@ func runTests(t *testing.T, handlerFactory handlerFactory, tests []testCase) {
 			currentActionCount := len(client.Actions())
 			if currentActionCount < len(test.expectedActions) {
 				if lastReportedActionCount < currentActionCount {
-					glog.V(5).Infof("Test %q: got %d actions out of %d, waiting for the rest", test.name, currentActionCount, len(test.expectedActions))
+					klog.V(5).Infof("Test %q: got %d actions out of %d, waiting for the rest", test.name, currentActionCount, len(test.expectedActions))
 					lastReportedActionCount = currentActionCount
 				}
 				// The test expected more to happen, wait for them
@@ -263,7 +260,7 @@ func runTests(t *testing.T, handlerFactory handlerFactory, tests []testCase) {
 		if test.additionalCheck != nil {
 			test.additionalCheck(t, test)
 		}
-		glog.Infof("Test %q: finished \n\n", test.name)
+		klog.Infof("Test %q: finished \n\n", test.name)
 	}
 }
 
@@ -276,10 +273,11 @@ const (
 	testNodeID       = "nodeID1"
 )
 
-func createVolumeAttachment(attacher string, pvName string, nodeName string, attached bool, finalizers string) *storage.VolumeAttachment {
+func createVolumeAttachment(attacher string, pvName string, nodeName string, attached bool, finalizers string, annotations map[string]string) *storage.VolumeAttachment {
 	va := &storage.VolumeAttachment{
 		ObjectMeta: metav1.ObjectMeta{
-			Name: pvName + "-" + nodeName,
+			Name:        pvName + "-" + nodeName,
+			Annotations: annotations,
 		},
 		Spec: storage.VolumeAttachmentSpec{
 			Attacher: attacher,
@@ -298,8 +296,8 @@ func createVolumeAttachment(attacher string, pvName string, nodeName string, att
 	return va
 }
 
-func va(attached bool, finalizers string) *storage.VolumeAttachment {
-	return createVolumeAttachment(testAttacherName, testPVName, testNodeName, attached, finalizers)
+func va(attached bool, finalizers string, annotations map[string]string) *storage.VolumeAttachment {
+	return createVolumeAttachment(testAttacherName, testPVName, testNodeName, attached, finalizers, annotations)
 }
 
 func deleted(va *storage.VolumeAttachment) *storage.VolumeAttachment {
@@ -318,7 +316,7 @@ func vaWithNoPVReference(va *storage.VolumeAttachment) *storage.VolumeAttachment
 }
 
 func vaWithInvalidDriver(va *storage.VolumeAttachment) *storage.VolumeAttachment {
-	return createVolumeAttachment("unknownDriver", testPVName, testNodeName, false, "")
+	return createVolumeAttachment("unknownDriver", testPVName, testNodeName, false, "", nil)
 }
 
 func vaWithAttachError(va *storage.VolumeAttachment, message string) *storage.VolumeAttachment {
@@ -353,8 +351,8 @@ func (f *fakeCSIConnection) SupportsPluginControllerService(ctx context.Context)
 	return false, fmt.Errorf("Not implemented")
 }
 
-func (f *fakeCSIConnection) SupportsControllerPublish(ctx context.Context) (bool, error) {
-	return false, fmt.Errorf("Not implemented")
+func (f *fakeCSIConnection) SupportsControllerPublish(ctx context.Context) (bool, bool, error) {
+	return false, false, fmt.Errorf("Not implemented")
 }
 
 func (f *fakeCSIConnection) Attach(ctx context.Context, volumeID string, readOnly bool, nodeID string, caps *csi.VolumeCapability, attributes, secrets map[string]string) (map[string]string, bool, error) {
@@ -393,6 +391,10 @@ func (f *fakeCSIConnection) Attach(ctx context.Context, volumeID string, readOnl
 
 	if !reflect.DeepEqual(call.secrets, secrets) {
 		f.t.Errorf("Wrong CSI Attach call: volume=%s, node=%s, expected secrets %+v, got %+v", volumeID, nodeID, call.secrets, secrets)
+	}
+
+	if call.readOnly != readOnly {
+		f.t.Errorf("Wrong CSI Attach call: volume=%s, node=%s, expected readOnly %t, got %t", volumeID, nodeID, call.readOnly, readOnly)
 	}
 
 	if err != nil {
@@ -444,6 +446,6 @@ func (f *fakeCSIConnection) Close() error {
 	return fmt.Errorf("Not implemented")
 }
 
-func (f *fakeCSIConnection) Probe(ctx context.Context) error {
+func (f *fakeCSIConnection) Probe(timeout time.Duration) error {
 	return nil
 }

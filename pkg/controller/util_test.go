@@ -4,7 +4,7 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/container-storage-interface/spec/lib/go/csi/v0"
+	"github.com/container-storage-interface/spec/lib/go/csi"
 	"k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
@@ -77,6 +77,17 @@ func TestGetNodeIDFromNode(t *testing.T) {
 	}
 }
 
+func createBlockCapability(mode csi.VolumeCapability_AccessMode_Mode) *csi.VolumeCapability {
+	return &csi.VolumeCapability{
+		AccessType: &csi.VolumeCapability_Block{
+			Block: &csi.VolumeCapability_BlockVolume{},
+		},
+		AccessMode: &csi.VolumeCapability_AccessMode{
+			Mode: mode,
+		},
+	}
+}
+
 func createMountCapability(fsType string, mode csi.VolumeCapability_AccessMode_Mode, mountOptions []string) *csi.VolumeCapability {
 	return &csi.VolumeCapability{
 		AccessType: &csi.VolumeCapability_Mount{
@@ -92,8 +103,12 @@ func createMountCapability(fsType string, mode csi.VolumeCapability_AccessMode_M
 }
 
 func TestGetVolumeCapabilities(t *testing.T) {
+	blockVolumeMode := v1.PersistentVolumeMode(v1.PersistentVolumeBlock)
+	filesystemVolumeMode := v1.PersistentVolumeMode(v1.PersistentVolumeFilesystem)
+
 	tests := []struct {
 		name               string
+		volumeMode         *v1.PersistentVolumeMode
 		fsType             string
 		modes              []v1.PersistentVolumeAccessMode
 		mountOptions       []string
@@ -102,8 +117,16 @@ func TestGetVolumeCapabilities(t *testing.T) {
 	}{
 		{
 			name:               "RWX",
+			volumeMode:         &filesystemVolumeMode,
 			modes:              []v1.PersistentVolumeAccessMode{v1.ReadWriteMany},
 			expectedCapability: createMountCapability(defaultFSType, csi.VolumeCapability_AccessMode_MULTI_NODE_MULTI_WRITER, nil),
+			expectError:        false,
+		},
+		{
+			name:               "Block RWX",
+			volumeMode:         &blockVolumeMode,
+			modes:              []v1.PersistentVolumeAccessMode{v1.ReadWriteMany},
+			expectedCapability: createBlockCapability(csi.VolumeCapability_AccessMode_MULTI_NODE_MULTI_WRITER),
 			expectError:        false,
 		},
 		{
@@ -117,6 +140,13 @@ func TestGetVolumeCapabilities(t *testing.T) {
 			name:               "RWO",
 			modes:              []v1.PersistentVolumeAccessMode{v1.ReadWriteOnce},
 			expectedCapability: createMountCapability(defaultFSType, csi.VolumeCapability_AccessMode_SINGLE_NODE_WRITER, nil),
+			expectError:        false,
+		},
+		{
+			name:               "Block RWO",
+			volumeMode:         &blockVolumeMode,
+			modes:              []v1.PersistentVolumeAccessMode{v1.ReadWriteOnce},
+			expectedCapability: createBlockCapability(csi.VolumeCapability_AccessMode_SINGLE_NODE_WRITER),
 			expectError:        false,
 		},
 		{
@@ -155,6 +185,7 @@ func TestGetVolumeCapabilities(t *testing.T) {
 	for _, test := range tests {
 		pv := &v1.PersistentVolume{
 			Spec: v1.PersistentVolumeSpec{
+				VolumeMode:   test.volumeMode,
 				AccessModes:  test.modes,
 				MountOptions: test.mountOptions,
 				PersistentVolumeSource: v1.PersistentVolumeSource{
@@ -164,7 +195,7 @@ func TestGetVolumeCapabilities(t *testing.T) {
 				},
 			},
 		}
-		cap, err := GetVolumeCapabilities(pv)
+		cap, err := GetVolumeCapabilities(pv, pv.Spec.CSI)
 
 		if err == nil && test.expectError {
 			t.Errorf("test %s: expected error, got none", test.name)
@@ -272,7 +303,7 @@ func TestGetVolumeHandle(t *testing.T) {
 	}
 
 	for i, test := range tests {
-		output, readOnly, err := GetVolumeHandle(test.pv)
+		output, readOnly, err := GetVolumeHandle(test.pv.Spec.CSI)
 		if output != test.output {
 			t.Errorf("test %d: expected volume ID %q, got %q", i, test.output, output)
 		}

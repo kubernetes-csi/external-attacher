@@ -20,7 +20,7 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/kubernetes-csi/external-attacher/pkg/connection"
+	"github.com/kubernetes-csi/external-attacher/pkg/attacher"
 
 	storage "k8s.io/api/storage/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -30,10 +30,9 @@ import (
 	"k8s.io/client-go/informers"
 	"k8s.io/client-go/kubernetes"
 	core "k8s.io/client-go/testing"
-	csiinformers "k8s.io/csi-api/pkg/client/informers/externalversions"
 )
 
-func trivialHandlerFactory(client kubernetes.Interface, informerFactory informers.SharedInformerFactory, csiInformerFactory csiinformers.SharedInformerFactory, csi connection.CSIConnection) Handler {
+func trivialHandlerFactory(client kubernetes.Interface, informerFactory informers.SharedInformerFactory, csi attacher.Attacher) Handler {
 	return NewTrivialHandler(client)
 }
 
@@ -47,26 +46,26 @@ func TestTrivialHandler(t *testing.T) {
 	tests := []testCase{
 		{
 			name:    "add -> successful write",
-			addedVA: va(false, ""),
+			addedVA: va(false, "", nil),
 			expectedActions: []core.Action{
-				core.NewUpdateAction(vaGroupResourceVersion, metav1.NamespaceNone, va(true, "")),
+				core.NewUpdateAction(vaGroupResourceVersion, metav1.NamespaceNone, va(true, "", nil)),
 			},
 		},
 		{
 			name:      "update -> successful write",
-			updatedVA: va(false, ""),
+			updatedVA: va(false, "", nil),
 			expectedActions: []core.Action{
-				core.NewUpdateAction(vaGroupResourceVersion, metav1.NamespaceNone, va(true, "")),
+				core.NewUpdateAction(vaGroupResourceVersion, metav1.NamespaceNone, va(true, "", nil)),
 			},
 		},
 		{
 			name:            "unknown driver -> controller ignores",
-			addedVA:         vaWithInvalidDriver(va(false, "")),
+			addedVA:         vaWithInvalidDriver(va(false, "", nil)),
 			expectedActions: []core.Action{},
 		},
 		{
 			name:    "failed write -> controller retries",
-			addedVA: va(false, ""),
+			addedVA: va(false, "", nil),
 			reactors: []reaction{
 				{
 					verb:     "update",
@@ -86,9 +85,9 @@ func TestTrivialHandler(t *testing.T) {
 				},
 			},
 			expectedActions: []core.Action{
-				core.NewUpdateAction(vaGroupResourceVersion, metav1.NamespaceNone, va(true, "")),
-				core.NewUpdateAction(vaGroupResourceVersion, metav1.NamespaceNone, va(true, "")),
-				core.NewUpdateAction(vaGroupResourceVersion, metav1.NamespaceNone, va(true, "")),
+				core.NewUpdateAction(vaGroupResourceVersion, metav1.NamespaceNone, va(true, "", nil)),
+				core.NewUpdateAction(vaGroupResourceVersion, metav1.NamespaceNone, va(true, "", nil)),
+				core.NewUpdateAction(vaGroupResourceVersion, metav1.NamespaceNone, va(true, "", nil)),
 			},
 		},
 	}
