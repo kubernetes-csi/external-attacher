@@ -1,10 +1,10 @@
 FROM registry.svc.ci.openshift.org/ocp/builder:golang-1.10 AS builder
 WORKDIR /go/src/github.com/kubernetes-csi/external-attacher
 COPY . .
-RUN go build ./cmd/csi-attacher
+RUN make build
 
 FROM registry.svc.ci.openshift.org/ocp/4.0:base
-COPY --from=builder /go/src/github.com/kubernetes-csi/external-attacher/csi-attacher /usr/bin/
+COPY --from=builder /go/src/github.com/kubernetes-csi/external-attacher/bin/csi-attacher /usr/bin/
 RUN useradd csi-attacher
 USER csi-attacher
 ENTRYPOINT ["/usr/bin/csi-attacher"]
