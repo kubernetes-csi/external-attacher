@@ -331,13 +331,32 @@ func deleted(va *storage.VolumeAttachment) *storage.VolumeAttachment {
 	return va
 }
 
+func vaAddInlineSpec(va *storage.VolumeAttachment) *storage.VolumeAttachment {
+	va.Spec.Source.InlineVolumeSpec = &v1.PersistentVolumeSpec{
+		AccessModes: []v1.PersistentVolumeAccessMode{v1.ReadWriteOnce},
+		PersistentVolumeSource: v1.PersistentVolumeSource{
+			CSI: &v1.CSIPersistentVolumeSource{
+				Driver:       "com.test.foo",
+				VolumeHandle: testVolumeHandle,
+			},
+		},
+	}
+	return va
+}
+
+func vaWithInlineSpec(va *storage.VolumeAttachment) *storage.VolumeAttachment {
+	va.Spec.Source.PersistentVolumeName = nil
+	return vaAddInlineSpec(va)
+}
+
 func vaWithMetadata(va *storage.VolumeAttachment, metadata map[string]string) *storage.VolumeAttachment {
 	va.Status.AttachmentMetadata = metadata
 	return va
 }
 
-func vaWithNoPVReference(va *storage.VolumeAttachment) *storage.VolumeAttachment {
+func vaWithNoPVReferenceNorInlineVolumeSpec(va *storage.VolumeAttachment) *storage.VolumeAttachment {
 	va.Spec.Source.PersistentVolumeName = nil
+	va.Spec.Source.InlineVolumeSpec = nil
 	return va
 }
 

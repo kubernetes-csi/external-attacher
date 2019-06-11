@@ -149,6 +149,11 @@ func pvWithAttributes(pv *v1.PersistentVolume, attributes map[string]string) *v1
 	return pv
 }
 
+func vaInlineSpecWithAttributes(va *storage.VolumeAttachment, attributes map[string]string) *storage.VolumeAttachment {
+	va.Spec.Source.InlineVolumeSpec.PersistentVolumeSource.CSI.VolumeAttributes = attributes
+	return va
+}
+
 func pvWithSecret(pv *v1.PersistentVolume, secretName string) *v1.PersistentVolume {
 	pv.Spec.PersistentVolumeSource.CSI.ControllerPublishSecretRef = &v1.SecretReference{
 		Name:      secretName,
@@ -157,9 +162,22 @@ func pvWithSecret(pv *v1.PersistentVolume, secretName string) *v1.PersistentVolu
 	return pv
 }
 
+func vaInlineSpecWithSecret(va *storage.VolumeAttachment, secretName string) *storage.VolumeAttachment {
+	va.Spec.Source.InlineVolumeSpec.PersistentVolumeSource.CSI.ControllerPublishSecretRef = &v1.SecretReference{
+		Name:      secretName,
+		Namespace: "default",
+	}
+	return va
+}
+
 func pvReadOnly(pv *v1.PersistentVolume) *v1.PersistentVolume {
 	pv.Spec.PersistentVolumeSource.CSI.ReadOnly = true
 	return pv
+}
+
+func vaInlineSpecReadOnly(va *storage.VolumeAttachment) *storage.VolumeAttachment {
+	va.Spec.Source.InlineVolumeSpec.PersistentVolumeSource.CSI.ReadOnly = true
+	return va
 }
 
 func node() *v1.Node {
@@ -282,11 +300,43 @@ func TestCSIHandler(t *testing.T) {
 			},
 		},
 		{
+			name:           "VolumeAttachment with InlineVolumeSpec -> successful attachment",
+			initialObjects: []runtime.Object{node()},
+			addedVA:        vaWithInlineSpec(va(false /*attached*/, "" /*finalizer*/, nil /* annotations */)),
+			expectedActions: []core.Action{
+				core.NewPatchAction(vaGroupResourceVersion, metav1.NamespaceNone, testPVName+"-"+testNodeName,
+					types.MergePatchType, patch(va(false /*attached*/, "" /*finalizer*/, nil /* annotations */),
+						va(false /*attached*/, fin, ann))),
+				core.NewPatchAction(vaGroupResourceVersion, metav1.NamespaceNone, testPVName+"-"+testNodeName,
+					types.MergePatchType, patch(va(false /*attached*/, fin, ann),
+						va(true /*attached*/, fin, ann))),
+			},
+			expectedCSICalls: []csiCall{
+				{"attach", testVolumeHandle, testNodeID, noAttrs, noSecrets, readWrite, success, notDetached, noMetadata, 0},
+			},
+		},
+		{
 			name:           "readOnly VolumeAttachment added -> successful attachment",
 			initialObjects: []runtime.Object{pvReadOnly(pvWithFinalizer()), node()},
 			addedVA:        va(false /*attached*/, "" /*finalizer*/, nil /* annotations */),
 			expectedActions: []core.Action{
 				// Finalizer is saved first
+				core.NewPatchAction(vaGroupResourceVersion, metav1.NamespaceNone, testPVName+"-"+testNodeName,
+					types.MergePatchType, patch(va(false /*attached*/, "" /*finalizer*/, nil /* annotations */),
+						va(false /*attached*/, fin, ann))),
+				core.NewPatchAction(vaGroupResourceVersion, metav1.NamespaceNone, testPVName+"-"+testNodeName,
+					types.MergePatchType, patch(va(false /*attached*/, fin, ann),
+						va(true /*attached*/, fin, ann))),
+			},
+			expectedCSICalls: []csiCall{
+				{"attach", testVolumeHandle, testNodeID, noAttrs, noSecrets, readOnly, success, notDetached, noMetadata, 0},
+			},
+		},
+		{
+			name:           "readOnly VolumeAttachment with InlineVolumeSpec -> successful attachment",
+			initialObjects: []runtime.Object{node()},
+			addedVA:        vaInlineSpecReadOnly(vaWithInlineSpec(va(false /*attached*/, "" /*finalizer*/, nil /* annotations */))),
+			expectedActions: []core.Action{
 				core.NewPatchAction(vaGroupResourceVersion, metav1.NamespaceNone, testPVName+"-"+testNodeName,
 					types.MergePatchType, patch(va(false /*attached*/, "" /*finalizer*/, nil /* annotations */),
 						va(false /*attached*/, fin, ann))),
@@ -316,9 +366,43 @@ func TestCSIHandler(t *testing.T) {
 			},
 		},
 		{
+			name:           "VolumeAttachment with InlineVolumeSpec updated -> successful attachment",
+			initialObjects: []runtime.Object{node()},
+			updatedVA:      vaWithInlineSpec(va(false /*attached*/, "" /*finalizer*/, nil /* annotations */)),
+			expectedActions: []core.Action{
+				// Finalizer is saved first
+				core.NewPatchAction(vaGroupResourceVersion, metav1.NamespaceNone, testPVName+"-"+testNodeName,
+					types.MergePatchType, patch(va(false /*attached*/, "" /*finalizer*/, nil /* annotations */),
+						va(false /*attached*/, fin, ann))),
+				core.NewPatchAction(vaGroupResourceVersion, metav1.NamespaceNone, testPVName+"-"+testNodeName,
+					types.MergePatchType, patch(va(false /*attached*/, fin, ann),
+						va(true /*attached*/, fin, ann))),
+			},
+			expectedCSICalls: []csiCall{
+				{"attach", testVolumeHandle, testNodeID, noAttrs, noSecrets, readWrite, success, notDetached, noMetadata, 0},
+			},
+		},
+		{
 			name:           "VolumeAttachment with attributes -> successful attachment",
 			initialObjects: []runtime.Object{pvWithAttributes(pvWithFinalizer(), map[string]string{"foo": "bar"}), node()},
 			updatedVA:      va(false, "", nil),
+			expectedActions: []core.Action{
+				// Finalizer is saved first
+				core.NewPatchAction(vaGroupResourceVersion, metav1.NamespaceNone, testPVName+"-"+testNodeName,
+					types.MergePatchType, patch(va(false /*attached*/, "" /*finalizer*/, nil /* annotations */),
+						va(false /*attached*/, fin, ann))),
+				core.NewPatchAction(vaGroupResourceVersion, metav1.NamespaceNone, testPVName+"-"+testNodeName,
+					types.MergePatchType, patch(va(false /*attached*/, fin, ann),
+						va(true /*attached*/, fin, ann))),
+			},
+			expectedCSICalls: []csiCall{
+				{"attach", testVolumeHandle, testNodeID, map[string]string{"foo": "bar"}, noSecrets, readWrite, success, notDetached, noMetadata, 0},
+			},
+		},
+		{
+			name:           "VolumeAttachment with InlineVolumeSpec and attributes -> successful attachment",
+			initialObjects: []runtime.Object{node()},
+			updatedVA:      vaInlineSpecWithAttributes(vaWithInlineSpec(va(false, "", nil)) /*va*/, map[string]string{"foo": "bar"} /*attributes*/),
 			expectedActions: []core.Action{
 				// Finalizer is saved first
 				core.NewPatchAction(vaGroupResourceVersion, metav1.NamespaceNone, testPVName+"-"+testNodeName,
@@ -351,9 +435,45 @@ func TestCSIHandler(t *testing.T) {
 			},
 		},
 		{
+			name:           "VolumeAttachment with InlineVolumeSpec and secrets -> successful attachment",
+			initialObjects: []runtime.Object{node(), secret()},
+			updatedVA:      vaInlineSpecWithSecret(vaWithInlineSpec(va(false, "", nil)) /*va*/, "secret" /*secret*/),
+			expectedActions: []core.Action{
+				core.NewGetAction(secretGroupResourceVersion, "default", "secret"),
+				// Finalizer is saved first
+				core.NewPatchAction(vaGroupResourceVersion, metav1.NamespaceNone, testPVName+"-"+testNodeName,
+					types.MergePatchType, patch(va(false /*attached*/, "" /*finalizer*/, nil /* annotations */),
+						va(false /*attached*/, fin, ann))),
+				core.NewPatchAction(vaGroupResourceVersion, metav1.NamespaceNone, testPVName+"-"+testNodeName,
+					types.MergePatchType, patch(va(false /*attached*/, fin, ann),
+						va(true /*attached*/, fin, ann))),
+			},
+			expectedCSICalls: []csiCall{
+				{"attach", testVolumeHandle, testNodeID, noAttrs, map[string]string{"foo": "bar"}, readWrite, success, notDetached, noMetadata, 0},
+			},
+		},
+		{
 			name:           "VolumeAttachment with empty secrets -> successful attachment",
 			initialObjects: []runtime.Object{pvWithSecret(pvWithFinalizer(), "emptySecret"), node(), emptySecret()},
 			updatedVA:      va(false, "", nil),
+			expectedActions: []core.Action{
+				core.NewGetAction(secretGroupResourceVersion, "default", "emptySecret"),
+				// Finalizer is saved first
+				core.NewPatchAction(vaGroupResourceVersion, metav1.NamespaceNone, testPVName+"-"+testNodeName,
+					types.MergePatchType, patch(va(false /*attached*/, "" /*finalizer*/, nil /* annotations */),
+						va(false /*attached*/, fin, ann))),
+				core.NewPatchAction(vaGroupResourceVersion, metav1.NamespaceNone, testPVName+"-"+testNodeName,
+					types.MergePatchType, patch(va(false /*attached*/, fin, ann),
+						va(true /*attached*/, fin, ann))),
+			},
+			expectedCSICalls: []csiCall{
+				{"attach", testVolumeHandle, testNodeID, noAttrs, map[string]string{}, readWrite, success, notDetached, noMetadata, 0},
+			},
+		},
+		{
+			name:           "VolumeAttachment with InlineVolumeSpec and empty secrets -> successful attachment",
+			initialObjects: []runtime.Object{node(), emptySecret()},
+			updatedVA:      vaInlineSpecWithSecret(vaWithInlineSpec(va(false, "", nil)) /*va*/, "emptySecret" /*secret*/),
 			expectedActions: []core.Action{
 				core.NewGetAction(secretGroupResourceVersion, "default", "emptySecret"),
 				// Finalizer is saved first
@@ -538,13 +658,23 @@ func TestCSIHandler(t *testing.T) {
 			},
 		},
 		{
-			name:           "invalid PV reference-> error",
+			name:           "neither PV nor InlineVolumeSpec reference-> error",
 			initialObjects: []runtime.Object{pvWithFinalizer(), node()},
-			addedVA:        vaWithNoPVReference(va(false, fin, ann)),
+			addedVA:        vaWithNoPVReferenceNorInlineVolumeSpec(va(false, fin, ann)),
 			expectedActions: []core.Action{
 				core.NewPatchAction(vaGroupResourceVersion, metav1.NamespaceNone, testPVName+"-"+testNodeName,
-					types.MergePatchType, patch(vaWithNoPVReference(va(false, fin, ann)),
-						vaWithAttachError(vaWithNoPVReference(va(false, fin, ann)), "VolumeAttachment.spec.persistentVolumeName is empty"))),
+					types.MergePatchType, patch(vaWithNoPVReferenceNorInlineVolumeSpec(va(false, fin, ann)),
+						vaWithAttachError(vaWithNoPVReferenceNorInlineVolumeSpec(va(false, fin, ann)), "neither InlineCSIVolumeSource nor PersistentVolumeName specified in VA source"))),
+			},
+		},
+		{
+			name:           "both PV and InlineVolumeSpec reference-> error",
+			initialObjects: []runtime.Object{pvWithFinalizer(), node()},
+			addedVA:        vaAddInlineSpec(va(false, fin, ann)),
+			expectedActions: []core.Action{
+				core.NewPatchAction(vaGroupResourceVersion, metav1.NamespaceNone, testPVName+"-"+testNodeName,
+					types.MergePatchType, patch(vaWithNoPVReferenceNorInlineVolumeSpec(va(false, fin, ann)),
+						vaWithAttachError(vaWithNoPVReferenceNorInlineVolumeSpec(va(false, fin, ann)), "both InlineCSIVolumeSource and PersistentVolumeName specified in VA source"))),
 			},
 		},
 		{
@@ -750,6 +880,19 @@ func TestCSIHandler(t *testing.T) {
 			},
 		},
 		{
+			name:           "VolumeAttachment with InlineVolumeSpec marked for deletion -> successful detach",
+			initialObjects: []runtime.Object{node()},
+			addedVA:        deleted(vaWithInlineSpec(va(true, fin, ann))),
+			expectedActions: []core.Action{
+				core.NewPatchAction(vaGroupResourceVersion, metav1.NamespaceNone, testPVName+"-"+testNodeName,
+					types.MergePatchType, patch(deleted(vaWithInlineSpec(va(true, fin, ann))),
+						deleted(vaWithInlineSpec(va(false /*attached*/, "", ann))))),
+			},
+			expectedCSICalls: []csiCall{
+				{"detach", testVolumeHandle, testNodeID, noAttrs, noSecrets, readWrite, success, detached, noMetadata, 0},
+			},
+		},
+		{
 			name:           "volume with secrets -> successful detach",
 			initialObjects: []runtime.Object{pvWithSecret(pvWithFinalizer(), "secret"), node(), secret()},
 			addedVA:        deleted(va(true, fin, ann)),
@@ -764,6 +907,20 @@ func TestCSIHandler(t *testing.T) {
 			},
 		},
 		{
+			name:           "volume attachment with InlineVolumeSpec and secrets -> successful detach",
+			initialObjects: []runtime.Object{node(), secret()},
+			addedVA:        deleted(vaInlineSpecWithSecret(vaWithInlineSpec(va(true, fin, ann)), "secret")),
+			expectedActions: []core.Action{
+				core.NewGetAction(secretGroupResourceVersion, "default", "secret"),
+				core.NewPatchAction(vaGroupResourceVersion, metav1.NamespaceNone, testPVName+"-"+testNodeName,
+					types.MergePatchType, patch(deleted(vaInlineSpecWithSecret(vaWithInlineSpec(va(true, fin, ann)), "secret")),
+						deleted(vaInlineSpecWithSecret(vaWithInlineSpec(va(false /*attached*/, "", ann)), "secret")))),
+			},
+			expectedCSICalls: []csiCall{
+				{"detach", testVolumeHandle, testNodeID, noAttrs, map[string]string{"foo": "bar"}, readWrite, success, detached, noMetadata, 0},
+			},
+		},
+		{
 			name:           "volume with empty secrets -> successful detach",
 			initialObjects: []runtime.Object{pvWithSecret(pvWithFinalizer(), "emptySecret"), node(), emptySecret()},
 			addedVA:        deleted(va(true, fin, ann)),
@@ -772,6 +929,20 @@ func TestCSIHandler(t *testing.T) {
 				core.NewPatchAction(vaGroupResourceVersion, metav1.NamespaceNone, testPVName+"-"+testNodeName,
 					types.MergePatchType, patch(deleted(va(true, fin, ann)),
 						deleted(va(false /*attached*/, "", ann)))),
+			},
+			expectedCSICalls: []csiCall{
+				{"detach", testVolumeHandle, testNodeID, noAttrs, map[string]string{}, readWrite, success, detached, noMetadata, 0},
+			},
+		},
+		{
+			name:           "volume attachment with InlineVolumeSpec and empty secrets -> successful detach",
+			initialObjects: []runtime.Object{node(), emptySecret()},
+			addedVA:        deleted(vaInlineSpecWithSecret(vaWithInlineSpec(va(true, fin, ann)), "emptySecret")),
+			expectedActions: []core.Action{
+				core.NewGetAction(secretGroupResourceVersion, "default", "emptySecret"),
+				core.NewPatchAction(vaGroupResourceVersion, metav1.NamespaceNone, testPVName+"-"+testNodeName,
+					types.MergePatchType, patch(deleted(vaInlineSpecWithSecret(vaWithInlineSpec(va(true, fin, ann)), "emptySecret")),
+						deleted(vaInlineSpecWithSecret(vaWithInlineSpec(va(false /*attached*/, "", ann)), "emptySecret")))),
 			},
 			expectedCSICalls: []csiCall{
 				{"detach", testVolumeHandle, testNodeID, noAttrs, map[string]string{}, readWrite, success, detached, noMetadata, 0},
@@ -886,14 +1057,25 @@ func TestCSIHandler(t *testing.T) {
 			},
 		},
 		{
-			name:           "detach invalid PV reference-> error",
+			name:           "detach VA with neither PV nor InlineCSIVolumeSource reference-> error",
 			initialObjects: []runtime.Object{pvWithFinalizer(), node()},
-			addedVA:        deleted(vaWithNoPVReference(va(true, fin, ann))),
+			addedVA:        deleted(vaWithNoPVReferenceNorInlineVolumeSpec(va(true, fin, ann))),
 			expectedActions: []core.Action{
 				core.NewPatchAction(vaGroupResourceVersion, metav1.NamespaceNone, testPVName+"-"+testNodeName,
-					types.MergePatchType, patch(deleted(vaWithNoPVReference(va(true, fin, ann))),
-						deleted(vaWithDetachError(vaWithNoPVReference(va(true, fin, ann)),
-							"VolumeAttachment.spec.persistentVolumeName is empty")))),
+					types.MergePatchType, patch(deleted(vaWithNoPVReferenceNorInlineVolumeSpec(va(true, fin, ann))),
+						deleted(vaWithDetachError(vaWithNoPVReferenceNorInlineVolumeSpec(va(true, fin, ann)),
+							"neither InlineCSIVolumeSource nor PersistentVolumeName specified in VA source")))),
+			},
+		},
+		{
+			name:           "detach VA with both PV and InlineCSIVolumeSource reference-> error",
+			initialObjects: []runtime.Object{pvWithFinalizer(), node()},
+			addedVA:        deleted(vaAddInlineSpec(va(true, fin, ann))),
+			expectedActions: []core.Action{
+				core.NewPatchAction(vaGroupResourceVersion, metav1.NamespaceNone, testPVName+"-"+testNodeName,
+					types.MergePatchType, patch(deleted(vaAddInlineSpec(va(true, fin, ann))),
+						deleted(vaWithDetachError(vaAddInlineSpec(va(true, fin, ann)),
+							"both InlineCSIVolumeSource and PersistentVolumeName specified in VA source")))),
 			},
 		},
 		{

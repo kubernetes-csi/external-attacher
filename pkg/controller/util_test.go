@@ -195,7 +195,7 @@ func TestGetVolumeCapabilities(t *testing.T) {
 				},
 			},
 		}
-		cap, err := GetVolumeCapabilities(pv, pv.Spec.CSI)
+		cap, err := GetVolumeCapabilities(&pv.Spec, pv.Spec.CSI)
 
 		if err == nil && test.expectError {
 			t.Errorf("test %s: expected error, got none", test.name)
