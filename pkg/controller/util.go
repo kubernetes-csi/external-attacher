@@ -143,18 +143,20 @@ func GetNodeIDFromCSINode(driver string, csiNode *storage.CSINode) (string, bool
 }
 
 // GetVolumeCapabilities returns volumecapability from PV spec
-func GetVolumeCapabilities(pv *v1.PersistentVolume, csiSource *v1.CSIPersistentVolumeSource) (*csi.VolumeCapability, error) {
+func GetVolumeCapabilities(pvSpec *v1.PersistentVolumeSpec, csiSource *v1.CSIPersistentVolumeSource) (*csi.VolumeCapability, error) {
 	m := map[v1.PersistentVolumeAccessMode]bool{}
-	for _, mode := range pv.Spec.AccessModes {
+	for _, mode := range pvSpec.AccessModes {
 		m[mode] = true
 	}
 
+	// csiSource is passed separately for if PV source had to go through
+	// CSI translation for regular (non-inline) volumes
 	if csiSource == nil {
 		return nil, fmt.Errorf("CSI volume source was nil")
 	}
 
 	var cap *csi.VolumeCapability
-	if pv.Spec.VolumeMode != nil && *pv.Spec.VolumeMode == v1.PersistentVolumeBlock {
+	if pvSpec.VolumeMode != nil && *pvSpec.VolumeMode == v1.PersistentVolumeBlock {
 		cap = &csi.VolumeCapability{
 			AccessType: &csi.VolumeCapability_Block{
 				Block: &csi.VolumeCapability_BlockVolume{},
@@ -172,7 +174,7 @@ func GetVolumeCapabilities(pv *v1.PersistentVolume, csiSource *v1.CSIPersistentV
 			AccessType: &csi.VolumeCapability_Mount{
 				Mount: &csi.VolumeCapability_MountVolume{
 					FsType:     fsType,
-					MountFlags: pv.Spec.MountOptions,
+					MountFlags: pvSpec.MountOptions,
 				},
 			},
 			AccessMode: &csi.VolumeCapability_AccessMode{},
@@ -198,7 +200,7 @@ func GetVolumeCapabilities(pv *v1.PersistentVolume, csiSource *v1.CSIPersistentV
 		cap.AccessMode.Mode = csi.VolumeCapability_AccessMode_SINGLE_NODE_WRITER
 
 	default:
-		return nil, fmt.Errorf("unsupported AccessMode combination: %+v", pv.Spec.AccessModes)
+		return nil, fmt.Errorf("unsupported AccessMode combination: %+v", pvSpec.AccessModes)
 	}
 	return cap, nil
 }

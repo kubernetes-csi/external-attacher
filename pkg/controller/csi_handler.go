@@ -18,6 +18,7 @@ package controller
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
@@ -256,26 +257,41 @@ func (h *csiHandler) csiAttach(va *storage.VolumeAttachment) (*storage.VolumeAtt
 	// Check as much as possible before adding VA finalizer - it would block
 	// deletion of VA on error.
 
-	if va.Spec.Source.PersistentVolumeName == nil {
-		return va, nil, fmt.Errorf("VolumeAttachment.spec.persistentVolumeName is empty")
-	}
+	var csiSource *v1.CSIPersistentVolumeSource
+	var pvSpec *v1.PersistentVolumeSpec
+	if va.Spec.Source.PersistentVolumeName != nil {
+		if va.Spec.Source.InlineVolumeSpec != nil {
+			return va, nil, errors.New("both InlineCSIVolumeSource and PersistentVolumeName specified in VA source")
+		}
+		pv, err := h.pvLister.Get(*va.Spec.Source.PersistentVolumeName)
+		if err != nil {
+			return va, nil, err
+		}
+		// Refuse to attach volumes that are marked for deletion.
+		if pv.DeletionTimestamp != nil {
+			return va, nil, fmt.Errorf("PersistentVolume %q is marked for deletion", pv.Name)
+		}
+		pv, err = h.addPVFinalizer(pv)
+		if err != nil {
+			return va, nil, fmt.Errorf("could not add PersistentVolume finalizer: %s", err)
+		}
 
-	pv, err := h.pvLister.Get(*va.Spec.Source.PersistentVolumeName)
-	if err != nil {
-		return va, nil, err
-	}
-	// Refuse to attach volumes that are marked for deletion.
-	if pv.DeletionTimestamp != nil {
-		return va, nil, fmt.Errorf("PersistentVolume %q is marked for deletion", pv.Name)
-	}
-	pv, err = h.addPVFinalizer(pv)
-	if err != nil {
-		return va, nil, fmt.Errorf("could not add PersistentVolume finalizer: %s", err)
-	}
+		csiSource, err = getCSISource(pv)
+		if err != nil {
+			return va, nil, err
+		}
 
-	csiSource, err := getCSISource(pv)
-	if err != nil {
-		return va, nil, err
+		pvSpec = &pv.Spec
+	} else if va.Spec.Source.InlineVolumeSpec != nil {
+		if va.Spec.Source.InlineVolumeSpec.CSI != nil {
+			csiSource = va.Spec.Source.InlineVolumeSpec.CSI
+		} else {
+			return va, nil, errors.New("inline volume spec contains nil CSI source")
+		}
+
+		pvSpec = va.Spec.Source.InlineVolumeSpec
+	} else {
+		return va, nil, errors.New("neither InlineCSIVolumeSource nor PersistentVolumeName specified in VA source")
 	}
 
 	attributes, err := GetVolumeAttributes(csiSource)
@@ -293,7 +309,7 @@ func (h *csiHandler) csiAttach(va *storage.VolumeAttachment) (*storage.VolumeAtt
 		readOnly = false
 	}
 
-	volumeCapabilities, err := GetVolumeCapabilities(pv, csiSource)
+	volumeCapabilities, err := GetVolumeCapabilities(pvSpec, csiSource)
 	if err != nil {
 		return va, nil, err
 	}
@@ -330,18 +346,27 @@ func (h *csiHandler) csiAttach(va *storage.VolumeAttachment) (*storage.VolumeAtt
 }
 
 func (h *csiHandler) csiDetach(va *storage.VolumeAttachment) (*storage.VolumeAttachment, error) {
-	if va.Spec.Source.PersistentVolumeName == nil {
-		return va, fmt.Errorf("VolumeAttachment.spec.persistentVolumeName is empty")
-	}
-
-	pv, err := h.pvLister.Get(*va.Spec.Source.PersistentVolumeName)
-	if err != nil {
-		return va, err
-	}
-
-	csiSource, err := getCSISource(pv)
-	if err != nil {
-		return va, err
+	var csiSource *v1.CSIPersistentVolumeSource
+	if va.Spec.Source.PersistentVolumeName != nil {
+		if va.Spec.Source.InlineVolumeSpec != nil {
+			return va, errors.New("both InlineCSIVolumeSource and PersistentVolumeName specified in VA source")
+		}
+		pv, err := h.pvLister.Get(*va.Spec.Source.PersistentVolumeName)
+		if err != nil {
+			return va, err
+		}
+		csiSource, err = getCSISource(pv)
+		if err != nil {
+			return va, err
+		}
+	} else if va.Spec.Source.InlineVolumeSpec != nil {
+		if va.Spec.Source.InlineVolumeSpec.CSI != nil {
+			csiSource = va.Spec.Source.InlineVolumeSpec.CSI
+		} else {
+			return va, errors.New("inline volume spec contains nil CSI source")
+		}
+	} else {
+		return va, errors.New("neither InlineCSIVolumeSource nor PersistentVolumeName specified in VA source")
 	}
 
 	volumeHandle, _, err := GetVolumeHandle(csiSource)
