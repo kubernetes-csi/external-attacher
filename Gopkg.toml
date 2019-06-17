@@ -24,6 +24,10 @@
   name = "k8s.io/api"
   branch = "release-1.15"
 
+[[constraint]]
+  name = "k8s.io/csi-translation-lib"
+  branch = "master"
+
 [prune]
    non-go = true
    go-tests = true
