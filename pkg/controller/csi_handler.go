@@ -29,7 +29,6 @@ import (
 	storage "k8s.io/api/storage/v1beta1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
-	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/kubernetes"
 	corelisters "k8s.io/client-go/listers/core/v1"
 	storagelisters "k8s.io/client-go/listers/storage/v1beta1"
@@ -192,8 +191,9 @@ func (h *csiHandler) prepareVANodeID(va *storage.VolumeAttachment, nodeID string
 	return clone, true
 }
 
-func (h *csiHandler) saveVA(va *storage.VolumeAttachment, patch []byte) (*storage.VolumeAttachment, error) {
-	newVA, err := h.client.StorageV1beta1().VolumeAttachments().Patch(va.Name, types.MergePatchType, patch)
+func (h *csiHandler) saveVA(va *storage.VolumeAttachment) (*storage.VolumeAttachment, error) {
+	// TODO: use patch to save us from VersionError
+	newVA, err := h.client.StorageV1beta1().VolumeAttachments().Update(va)
 	if err != nil {
 		return va, err
 	}
@@ -215,13 +215,11 @@ func (h *csiHandler) addPVFinalizer(pv *v1.PersistentVolume) (*v1.PersistentVolu
 	klog.V(4).Infof("Adding finalizer to PV %q", pv.Name)
 	clone := pv.DeepCopy()
 	clone.Finalizers = append(clone.Finalizers, finalizerName)
-
-	var newPV *v1.PersistentVolume
-	var err error
-	if newPV, err = h.patchPV(pv, clone); err != nil {
+	// TODO: use patch to save us from VersionError
+	newPV, err := h.client.CoreV1().PersistentVolumes().Update(clone)
+	if err != nil {
 		return pv, err
 	}
-
 	klog.V(4).Infof("PV finalizer added to %q", pv.Name)
 	return newPV, nil
 }
@@ -326,9 +324,10 @@ func (h *csiHandler) csiAttach(va *storage.VolumeAttachment) (*storage.VolumeAtt
 	originalVA := va
 	va, finalizerAdded := h.prepareVAFinalizer(va)
 	va, nodeIDAdded := h.prepareVANodeID(va, nodeID)
-
 	if finalizerAdded || nodeIDAdded {
-		if va, err = h.patchVA(originalVA, va); err != nil {
+		va, err = h.saveVA(va)
+		if err != nil {
+			// va modification failed, return the original va that's still on API server
 			return originalVA, nil, fmt.Errorf("could not save VolumeAttachment: %s", err)
 		}
 	}
@@ -411,9 +410,8 @@ func (h *csiHandler) saveAttachError(va *storage.VolumeAttachment, err error) (*
 		Message: err.Error(),
 		Time:    metav1.Now(),
 	}
-
-	var newVa *storage.VolumeAttachment
-	if newVa, err = h.patchVA(va, clone); err != nil {
+	newVa, err := h.client.StorageV1beta1().VolumeAttachments().Update(clone)
+	if err != nil {
 		return va, err
 	}
 	klog.V(4).Infof("Saved attach error to %q", va.Name)
@@ -427,9 +425,8 @@ func (h *csiHandler) saveDetachError(va *storage.VolumeAttachment, err error) (*
 		Message: err.Error(),
 		Time:    metav1.Now(),
 	}
-
-	var newVa *storage.VolumeAttachment
-	if newVa, err = h.patchVA(va, clone); err != nil {
+	newVa, err := h.client.StorageV1beta1().VolumeAttachments().Update(clone)
+	if err != nil {
 		return va, err
 	}
 	klog.V(4).Infof("Saved detach error to %q", va.Name)
@@ -494,13 +491,12 @@ func (h *csiHandler) SyncNewOrUpdatedPersistentVolume(pv *v1.PersistentVolume) {
 		newFinalizers = nil
 	}
 	clone.Finalizers = newFinalizers
-
-	if _, err = h.patchPV(pv, clone); err != nil {
+	_, err = h.client.CoreV1().PersistentVolumes().Update(clone)
+	if err != nil {
 		klog.Errorf("Failed to remove finalizer from PV %q: %s", pv.Name, err.Error())
 		h.pvQueue.AddRateLimited(pv.Name)
 		return
 	}
-
 	klog.V(2).Infof("Removed finalizer from PV %q", pv.Name)
 	h.pvQueue.Forget(pv.Name)
 
@@ -562,30 +558,4 @@ func (h *csiHandler) getNodeID(driver string, nodeName string, va *storage.Volum
 
 	// return nodeLister.Get error
 	return "", err
-}
-
-func (h *csiHandler) patchVA(va, clone *storage.VolumeAttachment) (*storage.VolumeAttachment, error) {
-	patch, err := createMergePatch(va, clone)
-	if err != nil {
-		return va, err
-	}
-
-	newVa, err := h.client.StorageV1beta1().VolumeAttachments().Patch(va.Name, types.MergePatchType, patch)
-	if err != nil {
-		return va, err
-	}
-	return newVa, nil
-}
-
-func (h *csiHandler) patchPV(pv, clone *v1.PersistentVolume) (*v1.PersistentVolume, error) {
-	patch, err := createMergePatch(pv, clone)
-	if err != nil {
-		return pv, err
-	}
-
-	newPV, err := h.client.CoreV1().PersistentVolumes().Patch(pv.Name, types.MergePatchType, patch)
-	if err != nil {
-		return pv, err
-	}
-	return newPV, nil
 }
