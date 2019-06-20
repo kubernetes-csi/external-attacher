@@ -699,7 +699,6 @@
   input-imports = [
     "github.com/container-storage-interface/spec/lib/go/csi",
     "github.com/davecgh/go-spew/spew",
-    "github.com/evanphx/json-patch",
     "github.com/golang/mock/gomock",
     "github.com/golang/protobuf/proto",
     "github.com/kubernetes-csi/csi-lib-utils/connection",
@@ -720,7 +719,6 @@
     "k8s.io/apimachinery/pkg/labels",
     "k8s.io/apimachinery/pkg/runtime",
     "k8s.io/apimachinery/pkg/runtime/schema",
-    "k8s.io/apimachinery/pkg/types",
     "k8s.io/apimachinery/pkg/util/wait",
     "k8s.io/client-go/informers",
     "k8s.io/client-go/informers/core/v1",

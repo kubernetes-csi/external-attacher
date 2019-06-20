@@ -29,8 +29,7 @@ import (
 	"github.com/kubernetes-csi/external-attacher/pkg/attacher"
 	"k8s.io/klog"
 
-	"encoding/json"
-	"k8s.io/api/core/v1"
+	v1 "k8s.io/api/core/v1"
 	storage "k8s.io/api/storage/v1beta1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -243,30 +242,6 @@ func runTests(t *testing.T, handlerFactory handlerFactory, tests []testCase) {
 				if o.Status.DetachError != nil {
 					o.Status.DetachError.Time = metav1.Time{}
 				}
-			}
-
-			if action.GetVerb() == "patch" && action.GetResource().Resource == "volumeattachments" {
-				patchAction := action.(core.PatchActionImpl)
-				patch := patchAction.GetPatch()
-				var va storage.VolumeAttachment
-				err := json.Unmarshal(patch, &va)
-				if va.Status.AttachError != nil {
-					va.Status.AttachError.Time = metav1.Time{}
-				}
-				if va.Status.DetachError != nil {
-					va.Status.DetachError.Time = metav1.Time{}
-				}
-
-				if va.Status.AttachError != nil || va.Status.DetachError != nil {
-
-					patch, err = createMergePatch(storage.VolumeAttachment{}, va)
-					if err != nil {
-						t.Errorf("Test %q create patch failed", t.Name())
-					}
-					patchAction.Patch = patch
-					action = patchAction
-				}
-
 			}
 
 			expectedAction := test.expectedActions[i]
