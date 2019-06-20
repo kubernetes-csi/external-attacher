@@ -192,7 +192,7 @@ func (h *csiHandler) prepareVANodeID(va *storage.VolumeAttachment, nodeID string
 }
 
 func (h *csiHandler) saveVA(va *storage.VolumeAttachment) (*storage.VolumeAttachment, error) {
-	// TODO: use patch to save us from VersionError
+	// TODO: #158 #157: use patch to save us from VersionError
 	newVA, err := h.client.StorageV1beta1().VolumeAttachments().Update(va)
 	if err != nil {
 		return va, err
@@ -215,7 +215,7 @@ func (h *csiHandler) addPVFinalizer(pv *v1.PersistentVolume) (*v1.PersistentVolu
 	klog.V(4).Infof("Adding finalizer to PV %q", pv.Name)
 	clone := pv.DeepCopy()
 	clone.Finalizers = append(clone.Finalizers, finalizerName)
-	// TODO: use patch to save us from VersionError
+	// TODO: #158 #157: use patch to save us from VersionError
 	newPV, err := h.client.CoreV1().PersistentVolumes().Update(clone)
 	if err != nil {
 		return pv, err

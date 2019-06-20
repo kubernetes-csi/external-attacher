@@ -34,7 +34,7 @@ func markAsAttached(client kubernetes.Interface, va *storage.VolumeAttachment, m
 	clone.Status.Attached = true
 	clone.Status.AttachmentMetadata = metadata
 	clone.Status.AttachError = nil
-	// TODO: use patch to save us from VersionError
+	// TODO: #158 #157: use patch to save us from VersionError
 	newVA, err := client.StorageV1beta1().VolumeAttachments().Update(clone)
 	if err != nil {
 		return va, err
@@ -73,7 +73,7 @@ func markAsDetached(client kubernetes.Interface, va *storage.VolumeAttachment) (
 	clone.Status.Attached = false
 	clone.Status.DetachError = nil
 	clone.Status.AttachmentMetadata = nil
-	// TODO: use patch to save us from VersionError
+	// TODO: #158 #157: use patch to save us from VersionError
 	newVA, err := client.StorageV1beta1().VolumeAttachments().Update(clone)
 	if err != nil {
 		return va, err
