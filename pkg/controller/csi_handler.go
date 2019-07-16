@@ -240,12 +240,6 @@ func getCSISource(pv *v1.PersistentVolume) (*v1.CSIPersistentVolumeSource, error
 	}
 	if pv.Spec.CSI != nil {
 		return pv.Spec.CSI, nil
-	} else if csitranslationlib.IsPVMigratable(pv) {
-		csiPV, err := csitranslationlib.TranslateInTreePVToCSI(pv)
-		if err != nil {
-			return nil, fmt.Errorf("failed to translate in tree pv to CSI: %v", err)
-		}
-		return csiPV.Spec.CSI, nil
 	}
 	return nil, fmt.Errorf("pv contained non-csi source that was not migrated")
 }
@@ -274,6 +268,15 @@ func (h *csiHandler) csiAttach(va *storage.VolumeAttachment) (*storage.VolumeAtt
 			return va, nil, fmt.Errorf("could not add PersistentVolume finalizer: %s", err)
 		}
 
+		if csitranslationlib.IsPVMigratable(pv) {
+			pv, err = csitranslationlib.TranslateInTreePVToCSI(pv)
+			if err != nil {
+				return va, nil, fmt.Errorf("failed to translate in tree pv to CSI: %v", err)
+			}
+		}
+
+		// Both csiSource and pvSpec could be translated here if the PV was
+		// migrated
 		csiSource, err = getCSISource(pv)
 		if err != nil {
 			return va, nil, err
@@ -307,7 +310,7 @@ func (h *csiHandler) csiAttach(va *storage.VolumeAttachment) (*storage.VolumeAtt
 		readOnly = false
 	}
 
-	volumeCapabilities, err := GetVolumeCapabilities(pvSpec, csiSource)
+	volumeCapabilities, err := GetVolumeCapabilities(pvSpec)
 	if err != nil {
 		return va, nil, err
 	}
@@ -353,6 +356,12 @@ func (h *csiHandler) csiDetach(va *storage.VolumeAttachment) (*storage.VolumeAtt
 		pv, err := h.pvLister.Get(*va.Spec.Source.PersistentVolumeName)
 		if err != nil {
 			return va, err
+		}
+		if csitranslationlib.IsPVMigratable(pv) {
+			pv, err = csitranslationlib.TranslateInTreePVToCSI(pv)
+			if err != nil {
+				return va, fmt.Errorf("failed to translate in tree pv to CSI: %v", err)
+			}
 		}
 		csiSource, err = getCSISource(pv)
 		if err != nil {
