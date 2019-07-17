@@ -18,6 +18,7 @@ package controller
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"regexp"
 
@@ -135,16 +136,14 @@ func GetNodeIDFromCSINode(driver string, csiNode *storage.CSINode) (string, bool
 }
 
 // GetVolumeCapabilities returns volumecapability from PV spec
-func GetVolumeCapabilities(pvSpec *v1.PersistentVolumeSpec, csiSource *v1.CSIPersistentVolumeSource) (*csi.VolumeCapability, error) {
+func GetVolumeCapabilities(pvSpec *v1.PersistentVolumeSpec) (*csi.VolumeCapability, error) {
 	m := map[v1.PersistentVolumeAccessMode]bool{}
 	for _, mode := range pvSpec.AccessModes {
 		m[mode] = true
 	}
 
-	// csiSource is passed separately for if PV source had to go through
-	// CSI translation for regular (non-inline) volumes
-	if csiSource == nil {
-		return nil, fmt.Errorf("CSI volume source was nil")
+	if pvSpec.CSI == nil {
+		return nil, errors.New("CSI volume source was nil")
 	}
 
 	var cap *csi.VolumeCapability
@@ -157,7 +156,7 @@ func GetVolumeCapabilities(pvSpec *v1.PersistentVolumeSpec, csiSource *v1.CSIPer
 		}
 
 	} else {
-		fsType := csiSource.FSType
+		fsType := pvSpec.CSI.FSType
 		if len(fsType) == 0 {
 			fsType = defaultFSType
 		}
