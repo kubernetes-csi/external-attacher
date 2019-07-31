@@ -5,6 +5,4 @@ RUN make build
 
 FROM registry.svc.ci.openshift.org/openshift/origin-v4.0:base
 COPY --from=builder /go/src/github.com/kubernetes-csi/external-attacher/bin/csi-attacher /usr/bin/
-RUN useradd csi-attacher
-USER csi-attacher
 ENTRYPOINT ["/usr/bin/csi-attacher"]
