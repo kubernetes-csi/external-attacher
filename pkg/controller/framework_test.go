@@ -409,10 +409,10 @@ func (f *fakeCSIConnection) Attach(ctx context.Context, volumeID string, readOnl
 	return call.metadata, call.detached, call.err
 }
 
-func (f *fakeCSIConnection) Detach(ctx context.Context, volumeID string, nodeID string, secrets map[string]string) (bool, error) {
+func (f *fakeCSIConnection) Detach(ctx context.Context, volumeID string, nodeID string, secrets map[string]string) error {
 	if f.index >= len(f.calls) {
 		f.t.Errorf("Unexpected CSI Detach call: volume=%s, node=%s, index: %d, calls: %+v", volumeID, nodeID, f.index, f.calls)
-		return true, fmt.Errorf("unexpected call")
+		return fmt.Errorf("unexpected call")
 	}
 	call := f.calls[f.index]
 	f.index++
@@ -443,9 +443,9 @@ func (f *fakeCSIConnection) Detach(ctx context.Context, volumeID string, nodeID 
 	}
 
 	if err != nil {
-		return true, err
+		return err
 	}
-	return call.detached, call.err
+	return call.err
 }
 
 func (f *fakeCSIConnection) Close() error {

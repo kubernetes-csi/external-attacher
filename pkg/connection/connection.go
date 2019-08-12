@@ -54,11 +54,8 @@ type CSIConnection interface {
 	// status.
 	Attach(ctx context.Context, volumeID string, readOnly bool, nodeID string, caps *csi.VolumeCapability, attributes, secrets map[string]string) (metadata map[string]string, detached bool, err error)
 
-	// Detach given volume from given node. Note that "detached" is returned on
-	// error and means that the volume is for sure detached from the node.
-	// "false" means that the volume may or may not be detached and caller
-	// should retry.
-	Detach(ctx context.Context, volumeID string, nodeID string, secrets map[string]string) (detached bool, err error)
+	// Detach given volume from given node.
+	Detach(ctx context.Context, volumeID string, nodeID string, secrets map[string]string) error
 
 	// Probe checks that the CSI driver is ready to process requests
 	Probe(ctx context.Context) error
@@ -218,7 +215,7 @@ func (c *csiConnection) Attach(ctx context.Context, volumeID string, readOnly bo
 	return rsp.PublishContext, false, nil
 }
 
-func (c *csiConnection) Detach(ctx context.Context, volumeID string, nodeID string, secrets map[string]string) (detached bool, err error) {
+func (c *csiConnection) Detach(ctx context.Context, volumeID string, nodeID string, secrets map[string]string) error {
 	client := csi.NewControllerClient(c.conn)
 
 	req := csi.ControllerUnpublishVolumeRequest{
@@ -227,11 +224,8 @@ func (c *csiConnection) Detach(ctx context.Context, volumeID string, nodeID stri
 		Secrets:  secrets,
 	}
 
-	_, err = client.ControllerUnpublishVolume(ctx, &req)
-	if err != nil {
-		return isFinalError(err), err
-	}
-	return true, nil
+	_, err := client.ControllerUnpublishVolume(ctx, &req)
+	return err
 }
 
 func (c *csiConnection) Close() error {
