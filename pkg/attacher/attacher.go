@@ -86,6 +86,12 @@ func (a *attacher) Detach(ctx context.Context, volumeID string, nodeID string, s
 	}
 
 	_, err := client.ControllerUnpublishVolume(ctx, &req)
+	if err != nil && isNotFound(err) {
+		// Do not change behavior of NotFound in stable branches.
+		// See https://github.com/kubernetes-csi/external-attacher/pull/165 and
+		// https://github.com/container-storage-interface/spec/pull/375
+		return nil
+	}
 	return err
 }
 
@@ -124,4 +130,13 @@ func isFinalError(err error) bool {
 	// All other errors mean that the operation (attach/detach) either did not
 	// even start or failed. It is for sure not in progress.
 	return true
+}
+
+func isNotFound(err error) bool {
+	st, ok := status.FromError(err)
+	if !ok {
+		// This is not gRPC error.
+		return false
+	}
+	return st.Code() == codes.NotFound
 }
