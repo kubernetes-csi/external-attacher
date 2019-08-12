@@ -629,15 +629,14 @@ func TestDetachAttach(t *testing.T) {
 			expectError: true,
 		},
 		{
-			// Explicitly test NotFound, it's handled as any other error.
-			// https://github.com/kubernetes-csi/external-attacher/pull/165
+			// Explicitly test NotFound, it should be ignored.
 			name:        "gRPC NotFound error",
 			volumeID:    defaultVolumeID,
 			nodeID:      defaultNodeID,
 			input:       defaultRequest,
 			output:      nil,
 			injectError: codes.NotFound,
-			expectError: true,
+			expectError: false,
 		},
 	}
 
