@@ -584,54 +584,59 @@ func TestDetachAttach(t *testing.T) {
 	}
 
 	tests := []struct {
-		name           string
-		volumeID       string
-		nodeID         string
-		secrets        map[string]string
-		input          *csi.ControllerUnpublishVolumeRequest
-		output         *csi.ControllerUnpublishVolumeResponse
-		injectError    codes.Code
-		expectError    bool
-		expectDetached bool
+		name        string
+		volumeID    string
+		nodeID      string
+		secrets     map[string]string
+		input       *csi.ControllerUnpublishVolumeRequest
+		output      *csi.ControllerUnpublishVolumeResponse
+		injectError codes.Code
+		expectError bool
 	}{
 		{
-			name:           "success",
-			volumeID:       defaultVolumeID,
-			nodeID:         defaultNodeID,
-			input:          defaultRequest,
-			output:         &csi.ControllerUnpublishVolumeResponse{},
-			expectError:    false,
-			expectDetached: true,
+			name:        "success",
+			volumeID:    defaultVolumeID,
+			nodeID:      defaultNodeID,
+			input:       defaultRequest,
+			output:      &csi.ControllerUnpublishVolumeResponse{},
+			expectError: false,
 		},
 		{
-			name:           "secrets",
-			volumeID:       defaultVolumeID,
-			nodeID:         defaultNodeID,
-			secrets:        map[string]string{"foo": "bar"},
-			input:          secretsRequest,
-			output:         &csi.ControllerUnpublishVolumeResponse{},
-			expectError:    false,
-			expectDetached: true,
+			name:        "secrets",
+			volumeID:    defaultVolumeID,
+			nodeID:      defaultNodeID,
+			secrets:     map[string]string{"foo": "bar"},
+			input:       secretsRequest,
+			output:      &csi.ControllerUnpublishVolumeResponse{},
+			expectError: false,
 		},
 		{
-			name:           "gRPC final error",
-			volumeID:       defaultVolumeID,
-			nodeID:         defaultNodeID,
-			input:          defaultRequest,
-			output:         nil,
-			injectError:    codes.NotFound,
-			expectError:    true,
-			expectDetached: true,
+			name:        "gRPC final error",
+			volumeID:    defaultVolumeID,
+			nodeID:      defaultNodeID,
+			input:       defaultRequest,
+			output:      nil,
+			injectError: codes.PermissionDenied,
+			expectError: true,
 		},
 		{
-			name:           "gRPC transient error",
-			volumeID:       defaultVolumeID,
-			nodeID:         defaultNodeID,
-			input:          defaultRequest,
-			output:         nil,
-			injectError:    codes.DeadlineExceeded,
-			expectError:    true,
-			expectDetached: false,
+			name:        "gRPC transient error",
+			volumeID:    defaultVolumeID,
+			nodeID:      defaultNodeID,
+			input:       defaultRequest,
+			output:      nil,
+			injectError: codes.DeadlineExceeded,
+			expectError: true,
+		},
+		{
+			// Explicitly test NotFound, it should be ignored.
+			name:        "gRPC NotFound error",
+			volumeID:    defaultVolumeID,
+			nodeID:      defaultNodeID,
+			input:       defaultRequest,
+			output:      nil,
+			injectError: codes.NotFound,
+			expectError: false,
 		},
 	}
 
@@ -656,15 +661,12 @@ func TestDetachAttach(t *testing.T) {
 			controllerServer.EXPECT().ControllerUnpublishVolume(gomock.Any(), pbMatch(in)).Return(out, injectedErr).Times(1)
 		}
 
-		detached, err := csiConn.Detach(context.Background(), test.volumeID, test.nodeID, test.secrets)
+		err := csiConn.Detach(context.Background(), test.volumeID, test.nodeID, test.secrets)
 		if test.expectError && err == nil {
 			t.Errorf("test %q: Expected error, got none", test.name)
 		}
 		if !test.expectError && err != nil {
 			t.Errorf("test %q: got error: %v", test.name, err)
-		}
-		if detached != test.expectDetached {
-			t.Errorf("test %q: expected detached=%v, got %v", test.name, test.expectDetached, detached)
 		}
 	}
 }

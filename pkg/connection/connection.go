@@ -54,11 +54,8 @@ type CSIConnection interface {
 	// status.
 	Attach(ctx context.Context, volumeID string, readOnly bool, nodeID string, caps *csi.VolumeCapability, attributes, secrets map[string]string) (metadata map[string]string, detached bool, err error)
 
-	// Detach given volume from given node. Note that "detached" is returned on
-	// error and means that the volume is for sure detached from the node.
-	// "false" means that the volume may or may not be detached and caller
-	// should retry.
-	Detach(ctx context.Context, volumeID string, nodeID string, secrets map[string]string) (detached bool, err error)
+	// Detach given volume from given node.
+	Detach(ctx context.Context, volumeID string, nodeID string, secrets map[string]string) error
 
 	// Probe checks that the CSI driver is ready to process requests
 	Probe(ctx context.Context) error
@@ -218,7 +215,7 @@ func (c *csiConnection) Attach(ctx context.Context, volumeID string, readOnly bo
 	return rsp.PublishContext, false, nil
 }
 
-func (c *csiConnection) Detach(ctx context.Context, volumeID string, nodeID string, secrets map[string]string) (detached bool, err error) {
+func (c *csiConnection) Detach(ctx context.Context, volumeID string, nodeID string, secrets map[string]string) error {
 	client := csi.NewControllerClient(c.conn)
 
 	req := csi.ControllerUnpublishVolumeRequest{
@@ -227,11 +224,14 @@ func (c *csiConnection) Detach(ctx context.Context, volumeID string, nodeID stri
 		Secrets:  secrets,
 	}
 
-	_, err = client.ControllerUnpublishVolume(ctx, &req)
-	if err != nil {
-		return isFinalError(err), err
+	_, err := client.ControllerUnpublishVolume(ctx, &req)
+	if err != nil && isNotFound(err) {
+		// Do not change behavior of NotFound in stable branches.
+		// See https://github.com/kubernetes-csi/external-attacher/pull/165 and
+		// https://github.com/container-storage-interface/spec/pull/375
+		return nil
 	}
-	return true, nil
+	return err
 }
 
 func (c *csiConnection) Close() error {
@@ -273,4 +273,13 @@ func isFinalError(err error) bool {
 	// All other errors mean that the operation (attach/detach) either did not
 	// even start or failed. It is for sure not in progress.
 	return true
+}
+
+func isNotFound(err error) bool {
+	st, ok := status.FromError(err)
+	if !ok {
+		// This is not gRPC error.
+		return false
+	}
+	return st.Code() == codes.NotFound
 }

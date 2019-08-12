@@ -26,7 +26,7 @@ import (
 	"github.com/kubernetes-csi/external-attacher/pkg/connection"
 
 	csiMigration "github.com/kubernetes-csi/kubernetes-csi-migration-library"
-	"k8s.io/api/core/v1"
+	v1 "k8s.io/api/core/v1"
 	storage "k8s.io/api/storage/v1beta1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
@@ -365,17 +365,13 @@ func (h *csiHandler) csiDetach(va *storage.VolumeAttachment) (*storage.VolumeAtt
 
 	ctx, cancel := context.WithTimeout(context.Background(), h.timeout)
 	defer cancel()
-	detached, err := h.csiConnection.Detach(ctx, volumeHandle, nodeID, secrets)
-	if err != nil && !detached {
+	err = h.csiConnection.Detach(ctx, volumeHandle, nodeID, secrets)
+	if err != nil {
 		// The volume may not be fully detached. Save the error and try again
 		// after backoff.
 		return va, err
 	}
-	if err != nil {
-		glog.V(2).Infof("Detached %q with error %s", va.Name, err.Error())
-	} else {
-		glog.V(2).Infof("Detached %q", va.Name)
-	}
+	glog.V(2).Infof("Detached %q", va.Name)
 
 	if va, err := markAsDetached(h.client, va); err != nil {
 		return va, fmt.Errorf("could not mark as detached: %s", err)
