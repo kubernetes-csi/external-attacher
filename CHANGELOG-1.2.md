@@ -1,3 +1,9 @@
+# Changelog since v1.2.0
+
+## Bug Fixes
+
+- Fixed handling of ControllerUnpublish errors. The attacher will retry to ControllerUnpublish a volume after any error except for NotFound. ([#168](https://github.com/kubernetes-csi/external-attacher/pull/168), [@jsafrane](https://github.com/jsafrane))
+
 # Changelog since v1.1.0
 
 ## New Features
