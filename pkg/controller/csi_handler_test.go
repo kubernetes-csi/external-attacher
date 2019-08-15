@@ -30,9 +30,11 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
+	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/informers"
 	"k8s.io/client-go/kubernetes"
 	core "k8s.io/client-go/testing"
+	"k8s.io/klog"
 )
 
 const (
@@ -241,6 +243,15 @@ func secret() *v1.Secret {
 	}
 }
 
+func patch(original, new interface{}) []byte {
+	patch, err := createMergePatch(original, new)
+	if err != nil {
+		klog.Fatalf("Failed to create patch %+v", err)
+		return nil
+	}
+	return patch
+}
+
 func TestCSIHandler(t *testing.T) {
 	vaGroupResourceVersion := schema.GroupVersionResource{
 		Group:    storage.GroupName,
@@ -278,8 +289,12 @@ func TestCSIHandler(t *testing.T) {
 			addedVA:        va(false /*attached*/, "" /*finalizer*/, nil /* annotations */),
 			expectedActions: []core.Action{
 				// Finalizer is saved first
-				core.NewUpdateAction(vaGroupResourceVersion, metav1.NamespaceNone, va(false /*attached*/, fin, ann)),
-				core.NewUpdateAction(vaGroupResourceVersion, metav1.NamespaceNone, va(true /*attached*/, fin, ann)),
+				core.NewPatchAction(vaGroupResourceVersion, metav1.NamespaceNone, testPVName+"-"+testNodeName,
+					types.MergePatchType, patch(va(false /*attached*/, "" /*finalizer*/, nil /* annotations */),
+						va(false /*attached*/, fin, ann))),
+				core.NewPatchAction(vaGroupResourceVersion, metav1.NamespaceNone, testPVName+"-"+testNodeName,
+					types.MergePatchType, patch(va(false /*attached*/, fin, ann),
+						va(true /*attached*/, fin, ann))),
 			},
 			expectedCSICalls: []csiCall{
 				{"attach", testVolumeHandle, testNodeID, noAttrs, noSecrets, readWrite, success, notDetached, noMetadata, 0},
@@ -290,8 +305,12 @@ func TestCSIHandler(t *testing.T) {
 			initialObjects: []runtime.Object{node()},
 			addedVA:        vaWithInlineSpec(va(false /*attached*/, "" /*finalizer*/, nil /* annotations */)),
 			expectedActions: []core.Action{
-				core.NewUpdateAction(vaGroupResourceVersion, metav1.NamespaceNone, vaWithInlineSpec(va(false /*attached*/, fin, ann))),
-				core.NewUpdateAction(vaGroupResourceVersion, metav1.NamespaceNone, vaWithInlineSpec(va(true /*attached*/, fin, ann))),
+				core.NewPatchAction(vaGroupResourceVersion, metav1.NamespaceNone, testPVName+"-"+testNodeName,
+					types.MergePatchType, patch(va(false /*attached*/, "" /*finalizer*/, nil /* annotations */),
+						va(false /*attached*/, fin, ann))),
+				core.NewPatchAction(vaGroupResourceVersion, metav1.NamespaceNone, testPVName+"-"+testNodeName,
+					types.MergePatchType, patch(va(false /*attached*/, fin, ann),
+						va(true /*attached*/, fin, ann))),
 			},
 			expectedCSICalls: []csiCall{
 				{"attach", testVolumeHandle, testNodeID, noAttrs, noSecrets, readWrite, success, notDetached, noMetadata, 0},
@@ -303,8 +322,12 @@ func TestCSIHandler(t *testing.T) {
 			addedVA:        va(false /*attached*/, "" /*finalizer*/, nil /* annotations */),
 			expectedActions: []core.Action{
 				// Finalizer is saved first
-				core.NewUpdateAction(vaGroupResourceVersion, metav1.NamespaceNone, va(false /*attached*/, fin, ann)),
-				core.NewUpdateAction(vaGroupResourceVersion, metav1.NamespaceNone, va(true /*attached*/, fin, ann)),
+				core.NewPatchAction(vaGroupResourceVersion, metav1.NamespaceNone, testPVName+"-"+testNodeName,
+					types.MergePatchType, patch(va(false /*attached*/, "" /*finalizer*/, nil /* annotations */),
+						va(false /*attached*/, fin, ann))),
+				core.NewPatchAction(vaGroupResourceVersion, metav1.NamespaceNone, testPVName+"-"+testNodeName,
+					types.MergePatchType, patch(va(false /*attached*/, fin, ann),
+						va(true /*attached*/, fin, ann))),
 			},
 			expectedCSICalls: []csiCall{
 				{"attach", testVolumeHandle, testNodeID, noAttrs, noSecrets, readOnly, success, notDetached, noMetadata, 0},
@@ -315,8 +338,12 @@ func TestCSIHandler(t *testing.T) {
 			initialObjects: []runtime.Object{node()},
 			addedVA:        vaInlineSpecReadOnly(vaWithInlineSpec(va(false /*attached*/, "" /*finalizer*/, nil /* annotations */))),
 			expectedActions: []core.Action{
-				core.NewUpdateAction(vaGroupResourceVersion, metav1.NamespaceNone, vaInlineSpecReadOnly(vaWithInlineSpec(va(false /*attached*/, fin, ann)))),
-				core.NewUpdateAction(vaGroupResourceVersion, metav1.NamespaceNone, vaInlineSpecReadOnly(vaWithInlineSpec(va(true /*attached*/, fin, ann)))),
+				core.NewPatchAction(vaGroupResourceVersion, metav1.NamespaceNone, testPVName+"-"+testNodeName,
+					types.MergePatchType, patch(va(false /*attached*/, "" /*finalizer*/, nil /* annotations */),
+						va(false /*attached*/, fin, ann))),
+				core.NewPatchAction(vaGroupResourceVersion, metav1.NamespaceNone, testPVName+"-"+testNodeName,
+					types.MergePatchType, patch(va(false /*attached*/, fin, ann),
+						va(true /*attached*/, fin, ann))),
 			},
 			expectedCSICalls: []csiCall{
 				{"attach", testVolumeHandle, testNodeID, noAttrs, noSecrets, readOnly, success, notDetached, noMetadata, 0},
@@ -328,8 +355,12 @@ func TestCSIHandler(t *testing.T) {
 			updatedVA:      va(false, "", nil),
 			expectedActions: []core.Action{
 				// Finalizer is saved first
-				core.NewUpdateAction(vaGroupResourceVersion, metav1.NamespaceNone, va(false /*attached*/, fin, ann)),
-				core.NewUpdateAction(vaGroupResourceVersion, metav1.NamespaceNone, va(true /*attached*/, fin, ann)),
+				core.NewPatchAction(vaGroupResourceVersion, metav1.NamespaceNone, testPVName+"-"+testNodeName,
+					types.MergePatchType, patch(va(false /*attached*/, "" /*finalizer*/, nil /* annotations */),
+						va(false /*attached*/, fin, ann))),
+				core.NewPatchAction(vaGroupResourceVersion, metav1.NamespaceNone, testPVName+"-"+testNodeName,
+					types.MergePatchType, patch(va(false /*attached*/, fin, ann),
+						va(true /*attached*/, fin, ann))),
 			},
 			expectedCSICalls: []csiCall{
 				{"attach", testVolumeHandle, testNodeID, noAttrs, noSecrets, readWrite, success, notDetached, noMetadata, 0},
@@ -341,8 +372,12 @@ func TestCSIHandler(t *testing.T) {
 			updatedVA:      vaWithInlineSpec(va(false /*attached*/, "" /*finalizer*/, nil /* annotations */)),
 			expectedActions: []core.Action{
 				// Finalizer is saved first
-				core.NewUpdateAction(vaGroupResourceVersion, metav1.NamespaceNone, vaWithInlineSpec(va(false /*attached*/, fin, ann))),
-				core.NewUpdateAction(vaGroupResourceVersion, metav1.NamespaceNone, vaWithInlineSpec(va(true /*attached*/, fin, ann))),
+				core.NewPatchAction(vaGroupResourceVersion, metav1.NamespaceNone, testPVName+"-"+testNodeName,
+					types.MergePatchType, patch(va(false /*attached*/, "" /*finalizer*/, nil /* annotations */),
+						va(false /*attached*/, fin, ann))),
+				core.NewPatchAction(vaGroupResourceVersion, metav1.NamespaceNone, testPVName+"-"+testNodeName,
+					types.MergePatchType, patch(va(false /*attached*/, fin, ann),
+						va(true /*attached*/, fin, ann))),
 			},
 			expectedCSICalls: []csiCall{
 				{"attach", testVolumeHandle, testNodeID, noAttrs, noSecrets, readWrite, success, notDetached, noMetadata, 0},
@@ -354,8 +389,12 @@ func TestCSIHandler(t *testing.T) {
 			updatedVA:      va(false, "", nil),
 			expectedActions: []core.Action{
 				// Finalizer is saved first
-				core.NewUpdateAction(vaGroupResourceVersion, metav1.NamespaceNone, va(false /*attached*/, fin, ann)),
-				core.NewUpdateAction(vaGroupResourceVersion, metav1.NamespaceNone, va(true /*attached*/, fin, ann)),
+				core.NewPatchAction(vaGroupResourceVersion, metav1.NamespaceNone, testPVName+"-"+testNodeName,
+					types.MergePatchType, patch(va(false /*attached*/, "" /*finalizer*/, nil /* annotations */),
+						va(false /*attached*/, fin, ann))),
+				core.NewPatchAction(vaGroupResourceVersion, metav1.NamespaceNone, testPVName+"-"+testNodeName,
+					types.MergePatchType, patch(va(false /*attached*/, fin, ann),
+						va(true /*attached*/, fin, ann))),
 			},
 			expectedCSICalls: []csiCall{
 				{"attach", testVolumeHandle, testNodeID, map[string]string{"foo": "bar"}, noSecrets, readWrite, success, notDetached, noMetadata, 0},
@@ -367,8 +406,12 @@ func TestCSIHandler(t *testing.T) {
 			updatedVA:      vaInlineSpecWithAttributes(vaWithInlineSpec(va(false, "", nil)) /*va*/, map[string]string{"foo": "bar"} /*attributes*/),
 			expectedActions: []core.Action{
 				// Finalizer is saved first
-				core.NewUpdateAction(vaGroupResourceVersion, metav1.NamespaceNone, vaInlineSpecWithAttributes(vaWithInlineSpec(va(false /*attached*/, fin, ann)), map[string]string{"foo": "bar"})),
-				core.NewUpdateAction(vaGroupResourceVersion, metav1.NamespaceNone, vaInlineSpecWithAttributes(vaWithInlineSpec(va(true /*attached*/, fin, ann)), map[string]string{"foo": "bar"})),
+				core.NewPatchAction(vaGroupResourceVersion, metav1.NamespaceNone, testPVName+"-"+testNodeName,
+					types.MergePatchType, patch(va(false /*attached*/, "" /*finalizer*/, nil /* annotations */),
+						va(false /*attached*/, fin, ann))),
+				core.NewPatchAction(vaGroupResourceVersion, metav1.NamespaceNone, testPVName+"-"+testNodeName,
+					types.MergePatchType, patch(va(false /*attached*/, fin, ann),
+						va(true /*attached*/, fin, ann))),
 			},
 			expectedCSICalls: []csiCall{
 				{"attach", testVolumeHandle, testNodeID, map[string]string{"foo": "bar"}, noSecrets, readWrite, success, notDetached, noMetadata, 0},
@@ -381,8 +424,12 @@ func TestCSIHandler(t *testing.T) {
 			expectedActions: []core.Action{
 				core.NewGetAction(secretGroupResourceVersion, "default", "secret"),
 				// Finalizer is saved first
-				core.NewUpdateAction(vaGroupResourceVersion, metav1.NamespaceNone, va(false /*attached*/, fin, ann)),
-				core.NewUpdateAction(vaGroupResourceVersion, metav1.NamespaceNone, va(true /*attached*/, fin, ann)),
+				core.NewPatchAction(vaGroupResourceVersion, metav1.NamespaceNone, testPVName+"-"+testNodeName,
+					types.MergePatchType, patch(va(false /*attached*/, "" /*finalizer*/, nil /* annotations */),
+						va(false /*attached*/, fin, ann))),
+				core.NewPatchAction(vaGroupResourceVersion, metav1.NamespaceNone, testPVName+"-"+testNodeName,
+					types.MergePatchType, patch(va(false /*attached*/, fin, ann),
+						va(true /*attached*/, fin, ann))),
 			},
 			expectedCSICalls: []csiCall{
 				{"attach", testVolumeHandle, testNodeID, noAttrs, map[string]string{"foo": "bar"}, readWrite, success, notDetached, noMetadata, 0},
@@ -395,8 +442,12 @@ func TestCSIHandler(t *testing.T) {
 			expectedActions: []core.Action{
 				core.NewGetAction(secretGroupResourceVersion, "default", "secret"),
 				// Finalizer is saved first
-				core.NewUpdateAction(vaGroupResourceVersion, metav1.NamespaceNone, vaInlineSpecWithSecret(vaWithInlineSpec(va(false /*attached*/, fin, ann)), "secret")),
-				core.NewUpdateAction(vaGroupResourceVersion, metav1.NamespaceNone, vaInlineSpecWithSecret(vaWithInlineSpec(va(true /*attached*/, fin, ann)), "secret")),
+				core.NewPatchAction(vaGroupResourceVersion, metav1.NamespaceNone, testPVName+"-"+testNodeName,
+					types.MergePatchType, patch(va(false /*attached*/, "" /*finalizer*/, nil /* annotations */),
+						va(false /*attached*/, fin, ann))),
+				core.NewPatchAction(vaGroupResourceVersion, metav1.NamespaceNone, testPVName+"-"+testNodeName,
+					types.MergePatchType, patch(va(false /*attached*/, fin, ann),
+						va(true /*attached*/, fin, ann))),
 			},
 			expectedCSICalls: []csiCall{
 				{"attach", testVolumeHandle, testNodeID, noAttrs, map[string]string{"foo": "bar"}, readWrite, success, notDetached, noMetadata, 0},
@@ -409,8 +460,12 @@ func TestCSIHandler(t *testing.T) {
 			expectedActions: []core.Action{
 				core.NewGetAction(secretGroupResourceVersion, "default", "emptySecret"),
 				// Finalizer is saved first
-				core.NewUpdateAction(vaGroupResourceVersion, metav1.NamespaceNone, va(false /*attached*/, fin, ann)),
-				core.NewUpdateAction(vaGroupResourceVersion, metav1.NamespaceNone, va(true /*attached*/, fin, ann)),
+				core.NewPatchAction(vaGroupResourceVersion, metav1.NamespaceNone, testPVName+"-"+testNodeName,
+					types.MergePatchType, patch(va(false /*attached*/, "" /*finalizer*/, nil /* annotations */),
+						va(false /*attached*/, fin, ann))),
+				core.NewPatchAction(vaGroupResourceVersion, metav1.NamespaceNone, testPVName+"-"+testNodeName,
+					types.MergePatchType, patch(va(false /*attached*/, fin, ann),
+						va(true /*attached*/, fin, ann))),
 			},
 			expectedCSICalls: []csiCall{
 				{"attach", testVolumeHandle, testNodeID, noAttrs, map[string]string{}, readWrite, success, notDetached, noMetadata, 0},
@@ -423,8 +478,12 @@ func TestCSIHandler(t *testing.T) {
 			expectedActions: []core.Action{
 				core.NewGetAction(secretGroupResourceVersion, "default", "emptySecret"),
 				// Finalizer is saved first
-				core.NewUpdateAction(vaGroupResourceVersion, metav1.NamespaceNone, vaInlineSpecWithSecret(vaWithInlineSpec(va(false /*attached*/, fin, ann)), "emptySecret")),
-				core.NewUpdateAction(vaGroupResourceVersion, metav1.NamespaceNone, vaInlineSpecWithSecret(vaWithInlineSpec(va(true /*attached*/, fin, ann)), "emptySecret")),
+				core.NewPatchAction(vaGroupResourceVersion, metav1.NamespaceNone, testPVName+"-"+testNodeName,
+					types.MergePatchType, patch(va(false /*attached*/, "" /*finalizer*/, nil /* annotations */),
+						va(false /*attached*/, fin, ann))),
+				core.NewPatchAction(vaGroupResourceVersion, metav1.NamespaceNone, testPVName+"-"+testNodeName,
+					types.MergePatchType, patch(va(false /*attached*/, fin, ann),
+						va(true /*attached*/, fin, ann))),
 			},
 			expectedCSICalls: []csiCall{
 				{"attach", testVolumeHandle, testNodeID, noAttrs, map[string]string{}, readWrite, success, notDetached, noMetadata, 0},
@@ -436,7 +495,9 @@ func TestCSIHandler(t *testing.T) {
 			updatedVA:      va(false, "", nil),
 			expectedActions: []core.Action{
 				core.NewGetAction(secretGroupResourceVersion, "default", "unknownSecret"),
-				core.NewUpdateAction(vaGroupResourceVersion, metav1.NamespaceNone, vaWithAttachError(va(false, "", nil), "failed to load secret \"default/unknownSecret\": secrets \"unknownSecret\" not found")),
+				core.NewPatchAction(vaGroupResourceVersion, metav1.NamespaceNone, testPVName+"-"+testNodeName,
+					types.MergePatchType, patch(va(false /*attached*/, "", nil),
+						vaWithAttachError(va(false, "", nil), "failed to load secret \"default/unknownSecret\": secrets \"unknownSecret\" not found"))),
 			},
 			expectedCSICalls: []csiCall{},
 		},
@@ -446,10 +507,16 @@ func TestCSIHandler(t *testing.T) {
 			updatedVA:      va(false, "", nil),
 			expectedActions: []core.Action{
 				// PV Finalizer after VA
-				core.NewUpdateAction(pvGroupResourceVersion, metav1.NamespaceNone, pvWithFinalizer()),
+				core.NewPatchAction(pvGroupResourceVersion, metav1.NamespaceNone, testPVName,
+					types.MergePatchType, patch(pv(), pvWithFinalizer())),
 				// VA Finalizer is saved last
-				core.NewUpdateAction(vaGroupResourceVersion, metav1.NamespaceNone, va(false /*attached*/, fin, ann)),
-				core.NewUpdateAction(vaGroupResourceVersion, metav1.NamespaceNone, va(true /*attached*/, fin, ann)),
+				// Finalizer is saved first
+				core.NewPatchAction(vaGroupResourceVersion, metav1.NamespaceNone, testPVName+"-"+testNodeName,
+					types.MergePatchType, patch(va(false /*attached*/, "" /*finalizer*/, nil /* annotations */),
+						va(false /*attached*/, fin, ann))),
+				core.NewPatchAction(vaGroupResourceVersion, metav1.NamespaceNone, testPVName+"-"+testNodeName,
+					types.MergePatchType, patch(va(false /*attached*/, fin, ann),
+						va(true /*attached*/, fin, ann))),
 			},
 			expectedCSICalls: []csiCall{
 				{"attach", testVolumeHandle, testNodeID, noAttrs, noSecrets, readWrite, success, notDetached, noMetadata, 0},
@@ -461,7 +528,7 @@ func TestCSIHandler(t *testing.T) {
 			updatedVA:      va(false, "", nil),
 			reactors: []reaction{
 				{
-					verb:     "update",
+					verb:     "patch",
 					resource: "persistentvolumes",
 					reactor: func(t *testing.T) core.ReactionFunc {
 						i := 0
@@ -479,15 +546,29 @@ func TestCSIHandler(t *testing.T) {
 			},
 			expectedActions: []core.Action{
 				// PV Finalizer - fails
-				core.NewUpdateAction(pvGroupResourceVersion, metav1.NamespaceNone, pvWithFinalizer()),
+				core.NewPatchAction(pvGroupResourceVersion, metav1.NamespaceNone, testPVName,
+					types.MergePatchType, patch(pv(), pvWithFinalizer())),
 				// Error is saved
-				core.NewUpdateAction(vaGroupResourceVersion, metav1.NamespaceNone, vaWithAttachError(va(false, "", nil), "could not add PersistentVolume finalizer: persistentvolume \"pv1\" is forbidden: Mock error")),
+				core.NewPatchAction(vaGroupResourceVersion, metav1.NamespaceNone, testPVName+"-"+testNodeName,
+					types.MergePatchType, patch(va(false /*attached*/, "" /*finalizer*/, nil /* annotations */),
+						vaWithAttachError(va(false, "", nil), "could not add PersistentVolume finalizer: persistentvolume \"pv1\" is forbidden: Mock error"))),
 				// Second PV Finalizer - succeeds
-				core.NewUpdateAction(pvGroupResourceVersion, metav1.NamespaceNone, pvWithFinalizer()),
+				core.NewPatchAction(pvGroupResourceVersion, metav1.NamespaceNone, testPVName,
+					types.MergePatchType, patch(pv(), pvWithFinalizer())),
 				// VA Finalizer is saved first, error remains
-				core.NewUpdateAction(vaGroupResourceVersion, metav1.NamespaceNone, vaWithAttachError(va(false, fin, ann), "could not add PersistentVolume finalizer: persistentvolume \"pv1\" is forbidden: Mock error")),
+				core.NewPatchAction(vaGroupResourceVersion, metav1.NamespaceNone, testPVName+"-"+testNodeName,
+					types.MergePatchType, patch(
+						vaWithAttachError(va(false, "", nil),
+							"could not add PersistentVolume finalizer: persistentvolume \"pv1\" is forbidden: Mock error"),
+						vaWithAttachError(va(false, fin, ann),
+							"could not add PersistentVolume finalizer: persistentvolume \"pv1\" is forbidden: Mock error"))),
 				// Attach succeeds, error is deleted
-				core.NewUpdateAction(vaGroupResourceVersion, metav1.NamespaceNone, va(true /*attached*/, fin, ann)),
+				core.NewPatchAction(vaGroupResourceVersion, metav1.NamespaceNone, testPVName+"-"+testNodeName,
+					types.MergePatchType, patch(
+						vaWithAttachError(va(false, fin, ann),
+							"could not add PersistentVolume finalizer: persistentvolume \"pv1\" is forbidden: Mock error"),
+						va(true, fin, ann)),
+				),
 			},
 			expectedCSICalls: []csiCall{
 				{"attach", testVolumeHandle, testNodeID, noAttrs, noSecrets, readWrite, success, notDetached, noMetadata, 0},
@@ -505,7 +586,9 @@ func TestCSIHandler(t *testing.T) {
 			initialObjects: []runtime.Object{pvDeleted(pv()), node()},
 			updatedVA:      va(false, fin, ann),
 			expectedActions: []core.Action{
-				core.NewUpdateAction(vaGroupResourceVersion, metav1.NamespaceNone, vaWithAttachError(va(false, fin, ann), "PersistentVolume \"pv1\" is marked for deletion")),
+				core.NewPatchAction(vaGroupResourceVersion, metav1.NamespaceNone, testPVName+"-"+testNodeName,
+					types.MergePatchType, patch(va(false /*attached*/, fin /*finalizer*/, ann /* annotations */),
+						vaWithAttachError(va(false, fin, ann), "PersistentVolume \"pv1\" is marked for deletion"))),
 			},
 			expectedCSICalls: []csiCall{},
 		},
@@ -515,8 +598,11 @@ func TestCSIHandler(t *testing.T) {
 			addedVA:        va(false, "", nil),
 			expectedActions: []core.Action{
 				// Finalizer is saved first
-				core.NewUpdateAction(vaGroupResourceVersion, metav1.NamespaceNone, va(false /*attached*/, fin, ann)),
-				core.NewUpdateAction(vaGroupResourceVersion, metav1.NamespaceNone, vaWithMetadata(va(true, fin, ann), map[string]string{"foo": "bar"})),
+				core.NewPatchAction(vaGroupResourceVersion, metav1.NamespaceNone, testPVName+"-"+testNodeName,
+					types.MergePatchType, patch(va(false /*attached*/, "", nil), va(false /*attached*/, fin, ann))),
+				core.NewPatchAction(vaGroupResourceVersion, metav1.NamespaceNone, testPVName+"-"+testNodeName,
+					types.MergePatchType, patch(va(false /*attached*/, fin, ann),
+						vaWithMetadata(va(true, fin, ann), map[string]string{"foo": "bar"}))),
 			},
 			expectedCSICalls: []csiCall{
 				{"attach", testVolumeHandle, testNodeID, noAttrs, noSecrets, readWrite, success, notDetached, map[string]string{"foo": "bar"}, 0},
@@ -533,7 +619,9 @@ func TestCSIHandler(t *testing.T) {
 			initialObjects: []runtime.Object{node()},
 			addedVA:        va(false, fin, ann),
 			expectedActions: []core.Action{
-				core.NewUpdateAction(vaGroupResourceVersion, metav1.NamespaceNone, vaWithAttachError(va(false, fin, ann), "persistentvolume \"pv1\" not found")),
+				core.NewPatchAction(vaGroupResourceVersion, metav1.NamespaceNone, testPVName+"-"+testNodeName,
+					types.MergePatchType, patch(va(false, fin, ann), vaWithAttachError(va(false, fin, ann),
+						"persistentvolume \"pv1\" not found"))),
 			},
 		},
 		{
@@ -542,7 +630,7 @@ func TestCSIHandler(t *testing.T) {
 			addedVA:        va(false, fin, ann),
 			reactors: []reaction{
 				{
-					verb:     "update",
+					verb:     "patch",
 					resource: "volumeattachments",
 					reactor: func(t *testing.T) core.ReactionFunc {
 						i := 0
@@ -559,9 +647,15 @@ func TestCSIHandler(t *testing.T) {
 				},
 			},
 			expectedActions: []core.Action{
-				core.NewUpdateAction(vaGroupResourceVersion, metav1.NamespaceNone, vaWithAttachError(va(false, fin, ann), "persistentvolume \"pv1\" not found")),
-				core.NewUpdateAction(vaGroupResourceVersion, metav1.NamespaceNone, vaWithAttachError(va(false, fin, ann), "persistentvolume \"pv1\" not found")),
-				core.NewUpdateAction(vaGroupResourceVersion, metav1.NamespaceNone, vaWithAttachError(va(false, fin, ann), "persistentvolume \"pv1\" not found")),
+				core.NewPatchAction(vaGroupResourceVersion, metav1.NamespaceNone, testPVName+"-"+testNodeName,
+					types.MergePatchType, patch(va(false, fin, ann), vaWithAttachError(va(false, fin, ann),
+						"persistentvolume \"pv1\" not found"))),
+				core.NewPatchAction(vaGroupResourceVersion, metav1.NamespaceNone, testPVName+"-"+testNodeName,
+					types.MergePatchType, patch(va(false, fin, ann), vaWithAttachError(va(false, fin, ann),
+						"persistentvolume \"pv1\" not found"))),
+				core.NewPatchAction(vaGroupResourceVersion, metav1.NamespaceNone, testPVName+"-"+testNodeName,
+					types.MergePatchType, patch(va(false, fin, ann), vaWithAttachError(va(false, fin, ann),
+						"persistentvolume \"pv1\" not found"))),
 			},
 		},
 		{
@@ -569,7 +663,9 @@ func TestCSIHandler(t *testing.T) {
 			initialObjects: []runtime.Object{pvWithFinalizer(), node()},
 			addedVA:        vaWithNoPVReferenceNorInlineVolumeSpec(va(false, fin, ann)),
 			expectedActions: []core.Action{
-				core.NewUpdateAction(vaGroupResourceVersion, metav1.NamespaceNone, vaWithAttachError(vaWithNoPVReferenceNorInlineVolumeSpec(va(false, fin, ann)), "neither InlineCSIVolumeSource nor PersistentVolumeName specified in VA source")),
+				core.NewPatchAction(vaGroupResourceVersion, metav1.NamespaceNone, testPVName+"-"+testNodeName,
+					types.MergePatchType, patch(vaWithNoPVReferenceNorInlineVolumeSpec(va(false, fin, ann)),
+						vaWithAttachError(vaWithNoPVReferenceNorInlineVolumeSpec(va(false, fin, ann)), "neither InlineCSIVolumeSource nor PersistentVolumeName specified in VA source"))),
 			},
 		},
 		{
@@ -577,7 +673,9 @@ func TestCSIHandler(t *testing.T) {
 			initialObjects: []runtime.Object{pvWithFinalizer(), node()},
 			addedVA:        vaAddInlineSpec(va(false, fin, ann)),
 			expectedActions: []core.Action{
-				core.NewUpdateAction(vaGroupResourceVersion, metav1.NamespaceNone, vaWithAttachError(vaAddInlineSpec(va(false, fin, ann)), "both InlineCSIVolumeSource and PersistentVolumeName specified in VA source")),
+				core.NewPatchAction(vaGroupResourceVersion, metav1.NamespaceNone, testPVName+"-"+testNodeName,
+					types.MergePatchType, patch(vaWithNoPVReferenceNorInlineVolumeSpec(va(false, fin, ann)),
+						vaWithAttachError(vaWithNoPVReferenceNorInlineVolumeSpec(va(false, fin, ann)), "both InlineCSIVolumeSource and PersistentVolumeName specified in VA source"))),
 			},
 		},
 		{
@@ -585,7 +683,9 @@ func TestCSIHandler(t *testing.T) {
 			initialObjects: []runtime.Object{pvWithFinalizer()},
 			addedVA:        va(false, fin, ann),
 			expectedActions: []core.Action{
-				core.NewUpdateAction(vaGroupResourceVersion, metav1.NamespaceNone, vaWithAttachError(va(false, fin, ann), "node \"node1\" not found")),
+				core.NewPatchAction(vaGroupResourceVersion, metav1.NamespaceNone, testPVName+"-"+testNodeName,
+					types.MergePatchType, patch(va(false, fin, ann), vaWithAttachError(va(false, fin, ann),
+						"node \"node1\" not found"))),
 			},
 		},
 		{
@@ -594,7 +694,7 @@ func TestCSIHandler(t *testing.T) {
 			addedVA:        va(false, "", nil),
 			reactors: []reaction{
 				{
-					verb:     "update",
+					verb:     "patch",
 					resource: "volumeattachments",
 					reactor: func(t *testing.T) core.ReactionFunc {
 						i := 0
@@ -612,12 +712,21 @@ func TestCSIHandler(t *testing.T) {
 			},
 			expectedActions: []core.Action{
 				// Controller tries to save VA finalizer, it fails
-				core.NewUpdateAction(vaGroupResourceVersion, metav1.NamespaceNone, va(false /*attached*/, fin, ann)),
+				core.NewPatchAction(vaGroupResourceVersion, metav1.NamespaceNone, testPVName+"-"+testNodeName,
+					types.MergePatchType, patch(va(false, "", nil),
+						va(false /*attached*/, fin, ann))),
 				// Controller tries to save error, it fails too
-				core.NewUpdateAction(vaGroupResourceVersion, metav1.NamespaceNone, vaWithAttachError(va(false /*attached*/, "", nil), "could not save VolumeAttachment: volumeattachments.storage.k8s.io \"pv1-node1\" is forbidden: Mock error")),
+
+				core.NewPatchAction(vaGroupResourceVersion, metav1.NamespaceNone, testPVName+"-"+testNodeName,
+					types.MergePatchType, patch(va(false /*attached*/, "" /*finalizer*/, nil /* annotations */),
+						vaWithAttachError(va(false /*attached*/, "", nil), "could not save VolumeAttachment: volumeattachments.storage.k8s.io \"pv1-node1\" is forbidden: Mock error"))),
 				// Controller tries to save VA finalizer again, it succeeds
-				core.NewUpdateAction(vaGroupResourceVersion, metav1.NamespaceNone, va(false /*attached*/, fin, ann)),
-				core.NewUpdateAction(vaGroupResourceVersion, metav1.NamespaceNone, va(true /*attached*/, fin, ann)),
+				core.NewPatchAction(vaGroupResourceVersion, metav1.NamespaceNone, testPVName+"-"+testNodeName,
+					types.MergePatchType, patch(va(false /*attached*/, "" /*finalizer*/, nil /* annotations */),
+						va(false /*attached*/, fin, ann))),
+				core.NewPatchAction(vaGroupResourceVersion, metav1.NamespaceNone, testPVName+"-"+testNodeName,
+					types.MergePatchType, patch(va(false /*attached*/, fin, ann),
+						va(true /*attached*/, fin, ann))),
 			},
 			expectedCSICalls: []csiCall{
 				{"attach", testVolumeHandle, testNodeID, noAttrs, noSecrets, readWrite, success, notDetached, noMetadata, 0},
@@ -629,7 +738,7 @@ func TestCSIHandler(t *testing.T) {
 			addedVA:        va(false, "", nil),
 			reactors: []reaction{
 				{
-					verb:     "update",
+					verb:     "patch",
 					resource: "volumeattachments",
 					reactor: func(t *testing.T) core.ReactionFunc {
 						i := 0
@@ -645,10 +754,16 @@ func TestCSIHandler(t *testing.T) {
 			},
 			expectedActions: []core.Action{
 				// Finalizer is saved first
-				core.NewUpdateAction(vaGroupResourceVersion, metav1.NamespaceNone, va(false /*attached*/, fin, ann)),
+				core.NewPatchAction(vaGroupResourceVersion, metav1.NamespaceNone, testPVName+"-"+testNodeName,
+					types.MergePatchType, patch(va(false /*attached*/, "" /*finalizer*/, nil /* annotations */),
+						va(false /*attached*/, fin, ann))),
 				// Second save with attached=true fails
-				core.NewUpdateAction(vaGroupResourceVersion, metav1.NamespaceNone, va(true /*attached*/, fin, ann)),
-				core.NewUpdateAction(vaGroupResourceVersion, metav1.NamespaceNone, va(true /*attached*/, fin, ann)),
+				core.NewPatchAction(vaGroupResourceVersion, metav1.NamespaceNone, testPVName+"-"+testNodeName,
+					types.MergePatchType, patch(va(false /*attached*/, fin /*finalizer*/, ann /* annotations */),
+						va(true /*attached*/, fin, ann))),
+				//core.NewPatchAction(vaGroupResourceVersion, metav1.NamespaceNone, testPVName+"-"+testNodeName,
+				//	types.MergePatchType, patch(va(false /*attached*/ , fin /*finalizer*/ , ann /* annotations */),
+				//		va(true /*attached*/ , fin, ann))),
 			},
 			expectedCSICalls: []csiCall{
 				{"attach", testVolumeHandle, testNodeID, noAttrs, noSecrets, readWrite, success, notDetached, noMetadata, 0},
@@ -661,9 +776,15 @@ func TestCSIHandler(t *testing.T) {
 			addedVA:        va(false, "", nil),
 			expectedActions: []core.Action{
 				// Finalizer is saved first
-				core.NewUpdateAction(vaGroupResourceVersion, metav1.NamespaceNone, va(false /*attached*/, fin, ann)),
-				core.NewUpdateAction(vaGroupResourceVersion, metav1.NamespaceNone, vaWithAttachError(va(false, fin, ann), "mock error")),
-				core.NewUpdateAction(vaGroupResourceVersion, metav1.NamespaceNone, va(true /*attached*/, fin, ann)),
+				core.NewPatchAction(vaGroupResourceVersion, metav1.NamespaceNone, testPVName+"-"+testNodeName,
+					types.MergePatchType, patch(va(false /*attached*/, "" /*finalizer*/, nil /* annotations */),
+						va(false /*attached*/, fin, ann))),
+				core.NewPatchAction(vaGroupResourceVersion, metav1.NamespaceNone, testPVName+"-"+testNodeName,
+					types.MergePatchType, patch(va(false /*attached*/, fin /*finalizer*/, ann /* annotations */),
+						vaWithAttachError(va(false, fin, ann), "mock error"))),
+				//core.NewPatchAction(vaGroupResourceVersion, metav1.NamespaceNone, testPVName+"-"+testNodeName,
+				//	types.MergePatchType, patch(vaWithAttachError(va(false, fin, ann), "mock error"),
+				//		va(true /*attached*/ , fin, ann))),
 			},
 			expectedCSICalls: []csiCall{
 				{"attach", testVolumeHandle, testNodeID, noAttrs, noSecrets, readWrite, fmt.Errorf("mock error"), notDetached, noMetadata, 0},
@@ -676,8 +797,12 @@ func TestCSIHandler(t *testing.T) {
 			addedVA:        va(false, "", nil),
 			expectedActions: []core.Action{
 				// Finalizer is saved first
-				core.NewUpdateAction(vaGroupResourceVersion, metav1.NamespaceNone, va(false /*attached*/, fin, ann)),
-				core.NewUpdateAction(vaGroupResourceVersion, metav1.NamespaceNone, va(true /*attached*/, fin, ann)),
+				core.NewPatchAction(vaGroupResourceVersion, metav1.NamespaceNone, testPVName+"-"+testNodeName,
+					types.MergePatchType, patch(va(false /*attached*/, "" /*finalizer*/, nil /* annotations */),
+						va(false /*attached*/, fin, ann))),
+				core.NewPatchAction(vaGroupResourceVersion, metav1.NamespaceNone, testPVName+"-"+testNodeName,
+					types.MergePatchType, patch(va(false /*attached*/, fin, ann),
+						va(true /*attached*/, fin, ann))),
 			},
 			expectedCSICalls: []csiCall{
 				{"attach", testVolumeHandle, testNodeID, noAttrs, noSecrets, readWrite, success, notDetached, noMetadata, 500 * time.Millisecond},
@@ -689,7 +814,9 @@ func TestCSIHandler(t *testing.T) {
 			initialObjects: []runtime.Object{pvWithFinalizer(), nodeWithoutAnnotations()},
 			addedVA:        va(false, fin, ann),
 			expectedActions: []core.Action{
-				core.NewUpdateAction(vaGroupResourceVersion, metav1.NamespaceNone, vaWithAttachError(va(false, fin, ann), "node \"node1\" has no NodeID annotation")),
+				core.NewPatchAction(vaGroupResourceVersion, metav1.NamespaceNone, testPVName+"-"+testNodeName,
+					types.MergePatchType, patch(va(false /*attached*/, fin, ann),
+						vaWithAttachError(va(false, fin, ann), "node \"node1\" has no NodeID annotation"))),
 			},
 		},
 		{
@@ -697,7 +824,9 @@ func TestCSIHandler(t *testing.T) {
 			initialObjects: []runtime.Object{pvWithFinalizer(), nodeWithoutAnnotations(), csiNodeEmpty()},
 			addedVA:        va(false, fin, ann),
 			expectedActions: []core.Action{
-				core.NewUpdateAction(vaGroupResourceVersion, metav1.NamespaceNone, vaWithAttachError(va(false, fin, ann), "node \"node1\" has no NodeID annotation")),
+				core.NewPatchAction(vaGroupResourceVersion, metav1.NamespaceNone, testPVName+"-"+testNodeName,
+					types.MergePatchType, patch(va(false /*attached*/, fin, ann),
+						vaWithAttachError(va(false, fin, ann), "node \"node1\" has no NodeID annotation"))),
 			},
 		},
 		{
@@ -706,8 +835,12 @@ func TestCSIHandler(t *testing.T) {
 			addedVA:        va(false /*attached*/, "" /*finalizer*/, nil),
 			expectedActions: []core.Action{
 				// Finalizer is saved first
-				core.NewUpdateAction(vaGroupResourceVersion, metav1.NamespaceNone, va(false /*attached*/, fin, ann)),
-				core.NewUpdateAction(vaGroupResourceVersion, metav1.NamespaceNone, va(true /*attached*/, fin, ann)),
+				core.NewPatchAction(vaGroupResourceVersion, metav1.NamespaceNone, testPVName+"-"+testNodeName,
+					types.MergePatchType, patch(va(false /*attached*/, "" /*finalizer*/, nil /* annotations */),
+						va(false /*attached*/, fin, ann))),
+				core.NewPatchAction(vaGroupResourceVersion, metav1.NamespaceNone, testPVName+"-"+testNodeName,
+					types.MergePatchType, patch(va(false /*attached*/, fin, ann),
+						va(true /*attached*/, fin, ann))),
 			},
 			expectedCSICalls: []csiCall{
 				{"attach", testVolumeHandle, testNodeID, noAttrs, noSecrets, readWrite, success, notDetached, noMetadata, 0},
@@ -719,23 +852,29 @@ func TestCSIHandler(t *testing.T) {
 			addedVA:        va(false /*attached*/, "" /*finalizer*/, nil),
 			expectedActions: []core.Action{
 				// Finalizer is saved first
-				core.NewUpdateAction(vaGroupResourceVersion, metav1.NamespaceNone, va(false /*attached*/, fin, ann)),
-				core.NewUpdateAction(vaGroupResourceVersion, metav1.NamespaceNone, va(true /*attached*/, fin, ann)),
+				core.NewPatchAction(vaGroupResourceVersion, metav1.NamespaceNone, testPVName+"-"+testNodeName,
+					types.MergePatchType, patch(va(false /*attached*/, "" /*finalizer*/, nil /* annotations */),
+						va(false /*attached*/, fin, ann))),
+				core.NewPatchAction(vaGroupResourceVersion, metav1.NamespaceNone, testPVName+"-"+testNodeName,
+					types.MergePatchType, patch(va(false /*attached*/, fin, ann),
+						va(true /*attached*/, fin, ann))),
 			},
 			expectedCSICalls: []csiCall{
 				{"attach", "projects/UNSPECIFIED/zones/testZone/disks/testpd", testNodeID,
 					map[string]string{"partition": ""}, noSecrets, readWrite, success, notDetached, noMetadata, 0},
 			},
 		},
-		//
-		// DETACH
-		//
+
+		//DETACH
+
 		{
 			name:           "VolumeAttachment marked for deletion -> successful detach",
 			initialObjects: []runtime.Object{pvWithFinalizer(), node()},
 			addedVA:        deleted(va(true, fin, ann)),
 			expectedActions: []core.Action{
-				core.NewUpdateAction(vaGroupResourceVersion, metav1.NamespaceNone, deleted(va(false /*attached*/, "", ann))),
+				core.NewPatchAction(vaGroupResourceVersion, metav1.NamespaceNone, testPVName+"-"+testNodeName,
+					types.MergePatchType, patch(deleted(va(true, fin, ann)),
+						deleted(va(false /*attached*/, "", ann)))),
 			},
 			expectedCSICalls: []csiCall{
 				{"detach", testVolumeHandle, testNodeID, noAttrs, noSecrets, readWrite, success, ignored, noMetadata, 0},
@@ -746,7 +885,9 @@ func TestCSIHandler(t *testing.T) {
 			initialObjects: []runtime.Object{node()},
 			addedVA:        deleted(vaWithInlineSpec(va(true, fin, ann))),
 			expectedActions: []core.Action{
-				core.NewUpdateAction(vaGroupResourceVersion, metav1.NamespaceNone, deleted(vaWithInlineSpec(va(false /*attached*/, "", ann)))),
+				core.NewPatchAction(vaGroupResourceVersion, metav1.NamespaceNone, testPVName+"-"+testNodeName,
+					types.MergePatchType, patch(deleted(vaWithInlineSpec(va(true, fin, ann))),
+						deleted(vaWithInlineSpec(va(false /*attached*/, "", ann))))),
 			},
 			expectedCSICalls: []csiCall{
 				{"detach", testVolumeHandle, testNodeID, noAttrs, noSecrets, readWrite, success, ignored, noMetadata, 0},
@@ -758,7 +899,9 @@ func TestCSIHandler(t *testing.T) {
 			addedVA:        deleted(va(true, fin, ann)),
 			expectedActions: []core.Action{
 				core.NewGetAction(secretGroupResourceVersion, "default", "secret"),
-				core.NewUpdateAction(vaGroupResourceVersion, metav1.NamespaceNone, deleted(va(false /*attached*/, "", ann))),
+				core.NewPatchAction(vaGroupResourceVersion, metav1.NamespaceNone, testPVName+"-"+testNodeName,
+					types.MergePatchType, patch(deleted(va(true, fin, ann)),
+						deleted(va(false /*attached*/, "", ann)))),
 			},
 			expectedCSICalls: []csiCall{
 				{"detach", testVolumeHandle, testNodeID, noAttrs, map[string]string{"foo": "bar"}, readWrite, success, ignored, noMetadata, 0},
@@ -770,7 +913,9 @@ func TestCSIHandler(t *testing.T) {
 			addedVA:        deleted(vaInlineSpecWithSecret(vaWithInlineSpec(va(true, fin, ann)), "secret")),
 			expectedActions: []core.Action{
 				core.NewGetAction(secretGroupResourceVersion, "default", "secret"),
-				core.NewUpdateAction(vaGroupResourceVersion, metav1.NamespaceNone, deleted(vaInlineSpecWithSecret(vaWithInlineSpec(va(false /*attached*/, "", ann)), "secret"))),
+				core.NewPatchAction(vaGroupResourceVersion, metav1.NamespaceNone, testPVName+"-"+testNodeName,
+					types.MergePatchType, patch(deleted(vaInlineSpecWithSecret(vaWithInlineSpec(va(true, fin, ann)), "secret")),
+						deleted(vaInlineSpecWithSecret(vaWithInlineSpec(va(false /*attached*/, "", ann)), "secret")))),
 			},
 			expectedCSICalls: []csiCall{
 				{"detach", testVolumeHandle, testNodeID, noAttrs, map[string]string{"foo": "bar"}, readWrite, success, ignored, noMetadata, 0},
@@ -782,7 +927,9 @@ func TestCSIHandler(t *testing.T) {
 			addedVA:        deleted(va(true, fin, ann)),
 			expectedActions: []core.Action{
 				core.NewGetAction(secretGroupResourceVersion, "default", "emptySecret"),
-				core.NewUpdateAction(vaGroupResourceVersion, metav1.NamespaceNone, deleted(va(false /*attached*/, "", ann))),
+				core.NewPatchAction(vaGroupResourceVersion, metav1.NamespaceNone, testPVName+"-"+testNodeName,
+					types.MergePatchType, patch(deleted(va(true, fin, ann)),
+						deleted(va(false /*attached*/, "", ann)))),
 			},
 			expectedCSICalls: []csiCall{
 				{"detach", testVolumeHandle, testNodeID, noAttrs, map[string]string{}, readWrite, success, ignored, noMetadata, 0},
@@ -794,7 +941,9 @@ func TestCSIHandler(t *testing.T) {
 			addedVA:        deleted(vaInlineSpecWithSecret(vaWithInlineSpec(va(true, fin, ann)), "emptySecret")),
 			expectedActions: []core.Action{
 				core.NewGetAction(secretGroupResourceVersion, "default", "emptySecret"),
-				core.NewUpdateAction(vaGroupResourceVersion, metav1.NamespaceNone, deleted(vaInlineSpecWithSecret(vaWithInlineSpec(va(false /*attached*/, "", ann)), "emptySecret"))),
+				core.NewPatchAction(vaGroupResourceVersion, metav1.NamespaceNone, testPVName+"-"+testNodeName,
+					types.MergePatchType, patch(deleted(vaInlineSpecWithSecret(vaWithInlineSpec(va(true, fin, ann)), "emptySecret")),
+						deleted(vaInlineSpecWithSecret(vaWithInlineSpec(va(false /*attached*/, "", ann)), "emptySecret")))),
 			},
 			expectedCSICalls: []csiCall{
 				{"detach", testVolumeHandle, testNodeID, noAttrs, map[string]string{}, readWrite, success, ignored, noMetadata, 0},
@@ -806,7 +955,10 @@ func TestCSIHandler(t *testing.T) {
 			addedVA:        deleted(va(true, fin, ann)),
 			expectedActions: []core.Action{
 				core.NewGetAction(secretGroupResourceVersion, "default", "unknownSecret"),
-				core.NewUpdateAction(vaGroupResourceVersion, metav1.NamespaceNone, deleted(vaWithDetachError(va(true, fin, ann), "failed to load secret \"default/unknownSecret\": secrets \"unknownSecret\" not found"))),
+				core.NewPatchAction(vaGroupResourceVersion, metav1.NamespaceNone, testPVName+"-"+testNodeName,
+					types.MergePatchType, patch(deleted(va(true, fin, ann)),
+						deleted(vaWithDetachError(va(true, fin, ann),
+							"failed to load secret \"default/unknownSecret\": secrets \"unknownSecret\" not found")))),
 			},
 			expectedCSICalls: []csiCall{},
 		},
@@ -815,8 +967,12 @@ func TestCSIHandler(t *testing.T) {
 			initialObjects: []runtime.Object{pvWithFinalizer(), node()},
 			addedVA:        deleted(va(true, fin, ann)),
 			expectedActions: []core.Action{
-				core.NewUpdateAction(vaGroupResourceVersion, metav1.NamespaceNone, vaWithDetachError(deleted(va(true /*attached*/, fin, ann)), "mock error")),
-				core.NewUpdateAction(vaGroupResourceVersion, metav1.NamespaceNone, deleted(va(false /*attached*/, "", ann))),
+				core.NewPatchAction(vaGroupResourceVersion, metav1.NamespaceNone, testPVName+"-"+testNodeName,
+					types.MergePatchType, patch(deleted(va(true, fin, ann)),
+						deleted(vaWithDetachError(va(true, fin, ann), "mock error")))),
+				core.NewPatchAction(vaGroupResourceVersion, metav1.NamespaceNone, testPVName+"-"+testNodeName,
+					types.MergePatchType, patch(deleted(va(true, fin, ann)),
+						deleted(va(false, "", ann)))),
 			},
 			expectedCSICalls: []csiCall{
 				{"detach", testVolumeHandle, testNodeID, noAttrs, noSecrets, readWrite, fmt.Errorf("mock error"), ignored, noMetadata, 0},
@@ -828,7 +984,9 @@ func TestCSIHandler(t *testing.T) {
 			initialObjects: []runtime.Object{pvWithFinalizer(), node()},
 			addedVA:        deleted(va(true, fin, ann)),
 			expectedActions: []core.Action{
-				core.NewUpdateAction(vaGroupResourceVersion, metav1.NamespaceNone, deleted(va(false /*attached*/, "", ann))),
+				core.NewPatchAction(vaGroupResourceVersion, metav1.NamespaceNone, testPVName+"-"+testNodeName,
+					types.MergePatchType, patch(deleted(va(true, fin, ann)),
+						deleted(va(false /*attached*/, "", ann)))),
 			},
 			expectedCSICalls: []csiCall{
 				{"detach", testVolumeHandle, testNodeID, noAttrs, noSecrets, readWrite, success, ignored, noMetadata, 500 * time.Millisecond},
@@ -847,7 +1005,9 @@ func TestCSIHandler(t *testing.T) {
 			initialObjects: []runtime.Object{node()},
 			addedVA:        deleted(va(true, fin, ann)),
 			expectedActions: []core.Action{
-				core.NewUpdateAction(vaGroupResourceVersion, metav1.NamespaceNone, deleted(vaWithDetachError(va(true, fin, ann), "persistentvolume \"pv1\" not found"))),
+				core.NewPatchAction(vaGroupResourceVersion, metav1.NamespaceNone, testPVName+"-"+testNodeName,
+					types.MergePatchType, patch(deleted(va(true, fin, ann)),
+						deleted(vaWithDetachError(va(true, fin, ann), "persistentvolume \"pv1\" not found")))),
 			},
 		},
 		{
@@ -873,9 +1033,15 @@ func TestCSIHandler(t *testing.T) {
 				},
 			},
 			expectedActions: []core.Action{
-				core.NewUpdateAction(vaGroupResourceVersion, metav1.NamespaceNone, deleted(vaWithDetachError(va(true, fin, ann), "persistentvolume \"pv1\" not found"))),
-				core.NewUpdateAction(vaGroupResourceVersion, metav1.NamespaceNone, deleted(vaWithDetachError(va(true, fin, ann), "persistentvolume \"pv1\" not found"))),
-				core.NewUpdateAction(vaGroupResourceVersion, metav1.NamespaceNone, deleted(vaWithDetachError(va(true, fin, ann), "persistentvolume \"pv1\" not found"))),
+				core.NewPatchAction(vaGroupResourceVersion, metav1.NamespaceNone, testPVName+"-"+testNodeName,
+					types.MergePatchType, patch(deleted(va(true, fin, ann)),
+						deleted(vaWithDetachError(va(true, fin, ann), "persistentvolume \"pv1\" not found")))),
+				core.NewPatchAction(vaGroupResourceVersion, metav1.NamespaceNone, testPVName+"-"+testNodeName,
+					types.MergePatchType, patch(deleted(va(true, fin, ann)),
+						deleted(vaWithDetachError(va(true, fin, ann), "persistentvolume \"pv1\" not found")))),
+				core.NewPatchAction(vaGroupResourceVersion, metav1.NamespaceNone, testPVName+"-"+testNodeName,
+					types.MergePatchType, patch(deleted(va(true, fin, ann)),
+						deleted(vaWithDetachError(va(true, fin, ann), "persistentvolume \"pv1\" not found")))),
 			},
 		},
 		{
@@ -883,7 +1049,10 @@ func TestCSIHandler(t *testing.T) {
 			initialObjects: []runtime.Object{pvWithFinalizer(), node()},
 			addedVA:        deleted(vaWithNoPVReferenceNorInlineVolumeSpec(va(true, fin, ann))),
 			expectedActions: []core.Action{
-				core.NewUpdateAction(vaGroupResourceVersion, metav1.NamespaceNone, deleted(vaWithDetachError(vaWithNoPVReferenceNorInlineVolumeSpec(va(true, fin, ann)), "neither InlineCSIVolumeSource nor PersistentVolumeName specified in VA source"))),
+				core.NewPatchAction(vaGroupResourceVersion, metav1.NamespaceNone, testPVName+"-"+testNodeName,
+					types.MergePatchType, patch(deleted(vaWithNoPVReferenceNorInlineVolumeSpec(va(true, fin, ann))),
+						deleted(vaWithDetachError(vaWithNoPVReferenceNorInlineVolumeSpec(va(true, fin, ann)),
+							"neither InlineCSIVolumeSource nor PersistentVolumeName specified in VA source")))),
 			},
 		},
 		{
@@ -891,7 +1060,10 @@ func TestCSIHandler(t *testing.T) {
 			initialObjects: []runtime.Object{pvWithFinalizer(), node()},
 			addedVA:        deleted(vaAddInlineSpec(va(true, fin, ann))),
 			expectedActions: []core.Action{
-				core.NewUpdateAction(vaGroupResourceVersion, metav1.NamespaceNone, deleted(vaWithDetachError(vaAddInlineSpec(va(true, fin, ann)), "both InlineCSIVolumeSource and PersistentVolumeName specified in VA source"))),
+				core.NewPatchAction(vaGroupResourceVersion, metav1.NamespaceNone, testPVName+"-"+testNodeName,
+					types.MergePatchType, patch(deleted(vaAddInlineSpec(va(true, fin, ann))),
+						deleted(vaWithDetachError(vaAddInlineSpec(va(true, fin, ann)),
+							"both InlineCSIVolumeSource and PersistentVolumeName specified in VA source")))),
 			},
 		},
 		{
@@ -899,7 +1071,9 @@ func TestCSIHandler(t *testing.T) {
 			initialObjects: []runtime.Object{pvWithFinalizer()},
 			addedVA:        deleted(va(true, fin, nil)),
 			expectedActions: []core.Action{
-				core.NewUpdateAction(vaGroupResourceVersion, metav1.NamespaceNone, deleted(vaWithDetachError(va(true, fin, nil), "node \"node1\" not found"))),
+				core.NewPatchAction(vaGroupResourceVersion, metav1.NamespaceNone, testPVName+"-"+testNodeName,
+					types.MergePatchType, patch(deleted(va(true, fin, nil)),
+						deleted(vaWithDetachError(va(true, fin, nil), "node \"node1\" not found")))),
 			},
 		},
 		{
@@ -907,7 +1081,10 @@ func TestCSIHandler(t *testing.T) {
 			initialObjects: []runtime.Object{pvWithFinalizer()},
 			addedVA:        deleted(va(true, fin, map[string]string{vaNodeIDAnnotation: "annotatedNodeID"})),
 			expectedActions: []core.Action{
-				core.NewUpdateAction(vaGroupResourceVersion, metav1.NamespaceNone, deleted(va(false /*attached*/, "", map[string]string{vaNodeIDAnnotation: "annotatedNodeID"}))),
+				core.NewPatchAction(vaGroupResourceVersion, metav1.NamespaceNone, testPVName+"-"+testNodeName,
+					types.MergePatchType, patch(
+						deleted(va(true, fin, map[string]string{vaNodeIDAnnotation: "annotatedNodeID"})),
+						deleted(va(false /*attached*/, "", map[string]string{vaNodeIDAnnotation: "annotatedNodeID"})))),
 			},
 			expectedCSICalls: []csiCall{
 				{"detach", testVolumeHandle, "annotatedNodeID", noAttrs, noSecrets, readWrite, success, detached, noMetadata, 0},
@@ -918,7 +1095,9 @@ func TestCSIHandler(t *testing.T) {
 			initialObjects: []runtime.Object{pvWithFinalizer(), node()},
 			addedVA:        deleted(va(true, fin, map[string]string{vaNodeIDAnnotation: "annotatedNodeID"})),
 			expectedActions: []core.Action{
-				core.NewUpdateAction(vaGroupResourceVersion, metav1.NamespaceNone, deleted(va(false /*attached*/, "", map[string]string{vaNodeIDAnnotation: "annotatedNodeID"}))),
+				core.NewPatchAction(vaGroupResourceVersion, metav1.NamespaceNone, testPVName+"-"+testNodeName,
+					types.MergePatchType, patch(deleted(va(true, fin, map[string]string{vaNodeIDAnnotation: "annotatedNodeID"})),
+						deleted(va(false /*attached*/, "", map[string]string{vaNodeIDAnnotation: "annotatedNodeID"})))),
 			},
 			expectedCSICalls: []csiCall{
 				{"detach", testVolumeHandle, testNodeID, noAttrs, noSecrets, readWrite, success, detached, noMetadata, 0},
@@ -930,7 +1109,7 @@ func TestCSIHandler(t *testing.T) {
 			addedVA:        deleted(va(false, fin, ann)),
 			reactors: []reaction{
 				{
-					verb:     "update",
+					verb:     "patch",
 					resource: "volumeattachments",
 					reactor: func(t *testing.T) core.ReactionFunc {
 						i := 0
@@ -946,11 +1125,21 @@ func TestCSIHandler(t *testing.T) {
 			},
 			expectedActions: []core.Action{
 				// This fails
-				core.NewUpdateAction(vaGroupResourceVersion, metav1.NamespaceNone, deleted(va(false, "", ann))),
+				core.NewPatchAction(vaGroupResourceVersion, metav1.NamespaceNone, testPVName+"-"+testNodeName,
+					types.MergePatchType, patch(
+						deleted(va(false, fin, ann)),
+						deleted(va(false, "", ann)))),
 				// Saving error succeeds
-				core.NewUpdateAction(vaGroupResourceVersion, metav1.NamespaceNone, vaWithDetachError(deleted(va(false, fin, ann)), "could not mark as detached: volumeattachments.storage.k8s.io \"pv1-node1\" is forbidden: mock error")),
+				core.NewPatchAction(vaGroupResourceVersion, metav1.NamespaceNone, testPVName+"-"+testNodeName,
+					types.MergePatchType, patch(
+						deleted(va(false, fin, ann)),
+						vaWithDetachError(deleted(va(false, fin, ann)),
+							"could not mark as detached: volumeattachments.storage.k8s.io \"pv1-node1\" is forbidden: mock error"))),
 				// Second save of attached=false succeeds
-				core.NewUpdateAction(vaGroupResourceVersion, metav1.NamespaceNone, deleted(va(false, "", ann))),
+				core.NewPatchAction(vaGroupResourceVersion, metav1.NamespaceNone, testPVName+"-"+testNodeName,
+					types.MergePatchType, patch(
+						deleted(va(false, fin, ann)),
+						deleted(va(false, "", ann)))),
 			},
 			expectedCSICalls: []csiCall{
 				{"detach", testVolumeHandle, testNodeID, noAttrs, noSecrets, readWrite, success, detached, noMetadata, 0},
@@ -963,7 +1152,10 @@ func TestCSIHandler(t *testing.T) {
 			addedVA:        deleted(va(true /*attached*/, fin /*finalizer*/, ann)),
 			expectedActions: []core.Action{
 				// Finalizer is saved first
-				core.NewUpdateAction(vaGroupResourceVersion, metav1.NamespaceNone, deleted(va(false /*attached*/, "", ann))),
+				core.NewPatchAction(vaGroupResourceVersion, metav1.NamespaceNone, testPVName+"-"+testNodeName,
+					types.MergePatchType, patch(
+						deleted(va(true, fin, ann)),
+						deleted(va(false /*attached*/, "", ann)))),
 			},
 			expectedCSICalls: []csiCall{
 				{"detach", "projects/UNSPECIFIED/zones/testZone/disks/testpd", testNodeID,
@@ -978,7 +1170,9 @@ func TestCSIHandler(t *testing.T) {
 			initialObjects: []runtime.Object{pvDeleted(pvWithFinalizer())},
 			deletedVA:      va(false, "", nil),
 			expectedActions: []core.Action{
-				core.NewUpdateAction(pvGroupResourceVersion, metav1.NamespaceNone, pvDeleted(pv())),
+				core.NewPatchAction(pvGroupResourceVersion, metav1.NamespaceNone, testPVName,
+					types.MergePatchType, patch(pvDeleted(pvWithFinalizer()),
+						pvDeleted(pv()))),
 			},
 		},
 		{
@@ -986,7 +1180,9 @@ func TestCSIHandler(t *testing.T) {
 			initialObjects: []runtime.Object{},
 			updatedPV:      pvDeleted(pvWithFinalizer()),
 			expectedActions: []core.Action{
-				core.NewUpdateAction(pvGroupResourceVersion, metav1.NamespaceNone, pvDeleted(pv())),
+				core.NewPatchAction(pvGroupResourceVersion, metav1.NamespaceNone, testPVName,
+					types.MergePatchType, patch(pvDeleted(pvWithFinalizer()),
+						pvDeleted(pv()))),
 			},
 		},
 		{
@@ -994,7 +1190,8 @@ func TestCSIHandler(t *testing.T) {
 			initialObjects: []runtime.Object{pvDeleted(pvWithFinalizers(pvWithFinalizer(), "foo/bar", "bar/baz"))},
 			deletedVA:      va(false, "", nil),
 			expectedActions: []core.Action{
-				core.NewUpdateAction(pvGroupResourceVersion, metav1.NamespaceNone, pvDeleted(pvWithFinalizers(pv(), "foo/bar", "bar/baz"))),
+				core.NewPatchAction(pvGroupResourceVersion, metav1.NamespaceNone, testPVName,
+					types.MergePatchType, patch(pvDeleted(pvWithFinalizers(pvWithFinalizer(), "foo/bar", "bar/baz")), pvDeleted(pvWithFinalizers(pv(), "foo/bar", "bar/baz")))),
 			},
 		},
 		{
@@ -1003,7 +1200,7 @@ func TestCSIHandler(t *testing.T) {
 			deletedVA:      va(false, "", nil),
 			reactors: []reaction{
 				{
-					verb:     "update",
+					verb:     "patch",
 					resource: "persistentvolumes",
 					reactor: func(t *testing.T) core.ReactionFunc {
 						i := 0
@@ -1019,11 +1216,14 @@ func TestCSIHandler(t *testing.T) {
 			},
 			expectedActions: []core.Action{
 				// This update fails
-				core.NewUpdateAction(pvGroupResourceVersion, metav1.NamespaceNone, pvDeleted(pv())),
+				core.NewPatchAction(pvGroupResourceVersion, metav1.NamespaceNone, testPVName,
+					types.MergePatchType, patch(pvDeleted(pvWithFinalizer()), pvDeleted(pv()))),
 				// This one fails too
-				core.NewUpdateAction(pvGroupResourceVersion, metav1.NamespaceNone, pvDeleted(pv())),
+				core.NewPatchAction(pvGroupResourceVersion, metav1.NamespaceNone, testPVName,
+					types.MergePatchType, patch(pvDeleted(pvWithFinalizer()), pvDeleted(pv()))),
 				// This one succeeds
-				core.NewUpdateAction(pvGroupResourceVersion, metav1.NamespaceNone, pvDeleted(pv())),
+				core.NewPatchAction(pvGroupResourceVersion, metav1.NamespaceNone, testPVName,
+					types.MergePatchType, patch(pvDeleted(pvWithFinalizer()), pvDeleted(pv()))),
 			},
 		},
 		{
@@ -1072,8 +1272,12 @@ func TestCSIHandlerReadOnly(t *testing.T) {
 			addedVA:        va(false /*attached*/, "" /*finalizer*/, nil /* annotations */),
 			expectedActions: []core.Action{
 				// Finalizer is saved first
-				core.NewUpdateAction(vaGroupResourceVersion, metav1.NamespaceNone, va(false /*attached*/, fin, ann)),
-				core.NewUpdateAction(vaGroupResourceVersion, metav1.NamespaceNone, va(true /*attached*/, fin, ann)),
+				core.NewPatchAction(vaGroupResourceVersion, metav1.NamespaceNone, testPVName+"-"+testNodeName,
+					types.MergePatchType, patch(va(false /*attached*/, "" /*finalizer*/, nil /* annotations */),
+						va(false /*attached*/, fin, ann))),
+				core.NewPatchAction(vaGroupResourceVersion, metav1.NamespaceNone, testPVName+"-"+testNodeName,
+					types.MergePatchType, patch(va(false /*attached*/, fin, ann),
+						va(true /*attached*/, fin, ann))),
 			},
 			expectedCSICalls: []csiCall{
 				{"attach", testVolumeHandle, testNodeID, noAttrs, noSecrets, readWrite, success, notDetached, noMetadata, 0},
@@ -1085,8 +1289,12 @@ func TestCSIHandlerReadOnly(t *testing.T) {
 			addedVA:        va(false /*attached*/, "" /*finalizer*/, nil /* annotations */),
 			expectedActions: []core.Action{
 				// Finalizer is saved first
-				core.NewUpdateAction(vaGroupResourceVersion, metav1.NamespaceNone, va(false /*attached*/, fin, ann)),
-				core.NewUpdateAction(vaGroupResourceVersion, metav1.NamespaceNone, va(true /*attached*/, fin, ann)),
+				core.NewPatchAction(vaGroupResourceVersion, metav1.NamespaceNone, testPVName+"-"+testNodeName,
+					types.MergePatchType, patch(va(false /*attached*/, "" /*finalizer*/, nil /* annotations */),
+						va(false /*attached*/, fin, ann))),
+				core.NewPatchAction(vaGroupResourceVersion, metav1.NamespaceNone, testPVName+"-"+testNodeName,
+					types.MergePatchType, patch(va(false /*attached*/, fin, ann),
+						va(true /*attached*/, fin, ann))),
 			},
 			expectedCSICalls: []csiCall{
 				{"attach", testVolumeHandle, testNodeID, noAttrs, noSecrets, readWrite, success, notDetached, noMetadata, 0},

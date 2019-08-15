@@ -23,8 +23,10 @@ import (
 	"regexp"
 
 	"github.com/container-storage-interface/spec/lib/go/csi"
+	"github.com/evanphx/json-patch"
 	"k8s.io/api/core/v1"
 	storage "k8s.io/api/storage/v1beta1"
+	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/klog"
 )
@@ -35,8 +37,11 @@ func markAsAttached(client kubernetes.Interface, va *storage.VolumeAttachment, m
 	clone.Status.Attached = true
 	clone.Status.AttachmentMetadata = metadata
 	clone.Status.AttachError = nil
-	// TODO: #158 #157: use patch to save us from VersionError
-	newVA, err := client.StorageV1beta1().VolumeAttachments().Update(clone)
+	patch, err := createMergePatch(va, clone)
+	if err != nil {
+		return va, err
+	}
+	newVA, err := client.StorageV1beta1().VolumeAttachments().Patch(va.Name, types.MergePatchType, patch)
 	if err != nil {
 		return va, err
 	}
@@ -74,8 +79,11 @@ func markAsDetached(client kubernetes.Interface, va *storage.VolumeAttachment) (
 	clone.Status.Attached = false
 	clone.Status.DetachError = nil
 	clone.Status.AttachmentMetadata = nil
-	// TODO: #158 #157: use patch to save us from VersionError
-	newVA, err := client.StorageV1beta1().VolumeAttachments().Update(clone)
+	patch, err := createMergePatch(va, clone)
+	if err != nil {
+		return va, err
+	}
+	newVA, err := client.StorageV1beta1().VolumeAttachments().Patch(va.Name, types.MergePatchType, patch)
 	if err != nil {
 		return va, err
 	}
@@ -210,4 +218,21 @@ func GetVolumeAttributes(csiSource *v1.CSIPersistentVolumeSource) (map[string]st
 		return nil, fmt.Errorf("csi source was nil")
 	}
 	return csiSource.VolumeAttributes, nil
+}
+
+// createMergePatch return patch generated from original and new interfaces
+func createMergePatch(original, new interface{}) ([]byte, error) {
+	pvByte, err := json.Marshal(original)
+	if err != nil {
+		return nil, err
+	}
+	cloneByte, err := json.Marshal(new)
+	if err != nil {
+		return nil, err
+	}
+	patch, err := jsonpatch.CreateMergePatch(pvByte, cloneByte)
+	if err != nil {
+		return nil, err
+	}
+	return patch, nil
 }
