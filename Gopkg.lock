@@ -117,11 +117,10 @@
   version = "v1.1.6"
 
 [[projects]]
-  digest = "1:2ba2f2748b27fb42591ed036f5b2d280fdcc2003d265a34d88d99d4d74e8a4f3"
+  digest = "1:cfbb7ea18e982b7f97205743fcbdd7828f42ce1ac667192b713ada9fc62a958d"
   name = "github.com/kubernetes-csi/csi-lib-utils"
   packages = [
     "connection",
-    "deprecatedflags",
     "leaderelection",
     "protosanitizer",
     "rpc",
@@ -702,7 +701,6 @@
     "github.com/golang/mock/gomock",
     "github.com/golang/protobuf/proto",
     "github.com/kubernetes-csi/csi-lib-utils/connection",
-    "github.com/kubernetes-csi/csi-lib-utils/deprecatedflags",
     "github.com/kubernetes-csi/csi-lib-utils/leaderelection",
     "github.com/kubernetes-csi/csi-lib-utils/protosanitizer",
     "github.com/kubernetes-csi/csi-lib-utils/rpc",

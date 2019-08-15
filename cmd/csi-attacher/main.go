@@ -33,7 +33,6 @@ import (
 
 	"github.com/container-storage-interface/spec/lib/go/csi"
 	"github.com/kubernetes-csi/csi-lib-utils/connection"
-	"github.com/kubernetes-csi/csi-lib-utils/deprecatedflags"
 	"github.com/kubernetes-csi/csi-lib-utils/leaderelection"
 	"github.com/kubernetes-csi/csi-lib-utils/rpc"
 	"github.com/kubernetes-csi/external-attacher/pkg/attacher"
@@ -57,21 +56,18 @@ const (
 
 // Command line flags
 var (
-	kubeconfig        = flag.String("kubeconfig", "", "Absolute path to the kubeconfig file. Required only when running out of cluster.")
-	resync            = flag.Duration("resync", 10*time.Minute, "Resync interval of the controller.")
-	connectionTimeout = flag.Duration("connection-timeout", 0, "This option is deprecated.")
-	csiAddress        = flag.String("csi-address", "/run/csi/socket", "Address of the CSI driver socket.")
-	dummy             = flag.Bool("dummy", false, "Run in dummy mode, i.e. not connecting to CSI driver and marking everything as attached. Expected CSI driver name is \"csi/dummy\".")
-	showVersion       = flag.Bool("version", false, "Show version.")
-	timeout           = flag.Duration("timeout", 15*time.Second, "Timeout for waiting for attaching or detaching the volume.")
+	kubeconfig  = flag.String("kubeconfig", "", "Absolute path to the kubeconfig file. Required only when running out of cluster.")
+	resync      = flag.Duration("resync", 10*time.Minute, "Resync interval of the controller.")
+	csiAddress  = flag.String("csi-address", "/run/csi/socket", "Address of the CSI driver socket.")
+	dummy       = flag.Bool("dummy", false, "Run in dummy mode, i.e. not connecting to CSI driver and marking everything as attached. Expected CSI driver name is \"csi/dummy\".")
+	showVersion = flag.Bool("version", false, "Show version.")
+	timeout     = flag.Duration("timeout", 15*time.Second, "Timeout for waiting for attaching or detaching the volume.")
 
 	retryIntervalStart = flag.Duration("retry-interval-start", time.Second, "Initial retry interval of failed create volume or deletion. It doubles with each failure, up to retry-interval-max.")
 	retryIntervalMax   = flag.Duration("retry-interval-max", 5*time.Minute, "Maximum retry interval of failed create volume or deletion.")
 
 	enableLeaderElection    = flag.Bool("leader-election", false, "Enable leader election.")
-	leaderElectionType      = flag.String("leader-election-type", leaderElectionTypeConfigMaps, "the type of leader election, options are 'configmaps' (default) or 'leases' (recommended). The 'configmaps' option is deprecated in favor of 'leases'.")
 	leaderElectionNamespace = flag.String("leader-election-namespace", "", "Namespace where the leader election resource lives. Defaults to the pod namespace if not set.")
-	_                       = deprecatedflags.Add("leader-election-identity")
 )
 
 var (
@@ -93,10 +89,6 @@ func main() {
 		return
 	}
 	klog.Infof("Version: %s", version)
-
-	if *connectionTimeout != 0 {
-		klog.Warningf("Warning: option -connection-timeout is deprecated and has no effect")
-	}
 
 	// Create the client config. Use kubeconfig if given, otherwise assume in-cluster.
 	config, err := buildConfig(*kubeconfig)
@@ -196,19 +188,9 @@ func main() {
 	if !*enableLeaderElection {
 		run(context.TODO())
 	} else {
-		var le leaderElection
-
 		// Name of config map with leader election lock
 		lockName := "external-attacher-leader-" + csiAttacher
-		if *leaderElectionType == leaderElectionTypeConfigMaps {
-			klog.Warningf("The '%s' leader election type is deprecated and will be removed in a future release. Use '--leader-election-type=%s' instead.", leaderElectionTypeConfigMaps, leaderElectionTypeLeases)
-			le = leaderelection.NewLeaderElectionWithConfigMaps(clientset, lockName, run)
-		} else if *leaderElectionType == leaderElectionTypeLeases {
-			le = leaderelection.NewLeaderElection(clientset, lockName, run)
-		} else {
-			klog.Errorf("--leader-election-type must be either '%s' or '%s'", leaderElectionTypeConfigMaps, leaderElectionTypeLeases)
-			os.Exit(1)
-		}
+		le := leaderelection.NewLeaderElection(clientset, lockName, run)
 
 		if *leaderElectionNamespace != "" {
 			le.WithNamespace(*leaderElectionNamespace)
