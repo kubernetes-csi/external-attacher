@@ -761,9 +761,15 @@ func TestCSIHandler(t *testing.T) {
 				core.NewPatchAction(vaGroupResourceVersion, metav1.NamespaceNone, testPVName+"-"+testNodeName,
 					types.MergePatchType, patch(va(false /*attached*/, fin /*finalizer*/, ann /* annotations */),
 						va(true /*attached*/, fin, ann))),
-				//core.NewPatchAction(vaGroupResourceVersion, metav1.NamespaceNone, testPVName+"-"+testNodeName,
-				//	types.MergePatchType, patch(va(false /*attached*/ , fin /*finalizer*/ , ann /* annotations */),
-				//		va(true /*attached*/ , fin, ann))),
+				// Our implementation of fake PATCH did not store the first VA with annotation + finalizer,
+				// the controller tries to save it again.
+				core.NewPatchAction(vaGroupResourceVersion, metav1.NamespaceNone, testPVName+"-"+testNodeName,
+					types.MergePatchType, patch(va(false /*attached*/, "" /*finalizer*/, nil /* annotations */),
+						va(false /*attached*/, fin, ann))),
+				// Final save that succeeds.
+				core.NewPatchAction(vaGroupResourceVersion, metav1.NamespaceNone, testPVName+"-"+testNodeName,
+					types.MergePatchType, patch(va(false /*attached*/, fin /*finalizer*/, ann /* annotations */),
+						va(true /*attached*/, fin, ann))),
 			},
 			expectedCSICalls: []csiCall{
 				{"attach", testVolumeHandle, testNodeID, noAttrs, noSecrets, readWrite, success, notDetached, noMetadata, 0},
@@ -782,9 +788,15 @@ func TestCSIHandler(t *testing.T) {
 				core.NewPatchAction(vaGroupResourceVersion, metav1.NamespaceNone, testPVName+"-"+testNodeName,
 					types.MergePatchType, patch(va(false /*attached*/, fin /*finalizer*/, ann /* annotations */),
 						vaWithAttachError(va(false, fin, ann), "mock error"))),
-				//core.NewPatchAction(vaGroupResourceVersion, metav1.NamespaceNone, testPVName+"-"+testNodeName,
-				//	types.MergePatchType, patch(vaWithAttachError(va(false, fin, ann), "mock error"),
-				//		va(true /*attached*/ , fin, ann))),
+				// Our implementation of fake PATCH did not store the first VA with annotation + finalizer,
+				// the controller tries to save it again.
+				core.NewPatchAction(vaGroupResourceVersion, metav1.NamespaceNone, testPVName+"-"+testNodeName,
+					types.MergePatchType, patch(va(false /*attached*/, "" /*finalizer*/, nil /* annotations */),
+						va(false /*attached*/, fin, ann))),
+				// Final save that succeeds.
+				core.NewPatchAction(vaGroupResourceVersion, metav1.NamespaceNone, testPVName+"-"+testNodeName,
+					types.MergePatchType, patch(vaWithAttachError(va(false, fin, ann), "mock error"),
+						va(true /*attached*/, fin, ann))),
 			},
 			expectedCSICalls: []csiCall{
 				{"attach", testVolumeHandle, testNodeID, noAttrs, noSecrets, readWrite, fmt.Errorf("mock error"), notDetached, noMetadata, 0},
