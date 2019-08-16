@@ -66,9 +66,6 @@ Note that the external-attacher does not scale with more replicas. Only one exte
 * `--retry-interval-max`: The exponential backoff maximum value. See [CSI error and timeout handling](#csi-error-and-timeout-handling) for details. 5 minutes is used by default.
 
 #### Other recognized arguments
-
-* `--dummy`: Runs the external-attacher in dummy mode, i.e. without any CSI driver. All volumes are immediately reported as attached / detached as controller-manager requires. This option can be used for debugging of other CSI components such as Kubernetes Attach / Detach controller.
-
 * `--kubeconfig <path>`: Path to Kubernetes client configuration that the external-attacher uses to connect to Kubernetes API server. When omitted, default token provided by Kubernetes will be used. This option is useful only when the external-attacher does not run as a Kubernetes pod, e.g. for debugging.
 
 * `--resync <duration>`: Internal resync interval when the external-attacher re-evaluates all existing `VolumeAttachment` instances and tries to fulfill them, i.e. attach / detach corresponding volumes. It does not affect re-tries of failed CSI calls! It should be used only when there is a bug in Kubernetes watch logic.
@@ -76,13 +73,6 @@ Note that the external-attacher does not scale with more replicas. Only one exte
 * `--version`: Prints current external-attacher version and quits.
 
 * All glog / klog arguments are supported, such as `-v <log level>` or `-alsologtostderr`.
-
-#### Deprecated arguments
-* `--connection-timeout <duration>`: This option was used to limit establishing connection to CSI driver. Currently, the option does not have any effect and the external-attacher tries to connect to CSI driver socket indefinitely. It is recommended to run ReadinessProbe on the driver to ensure that the driver comes up in reasonable time.
-
-* `--leader-election-type`: This option was used to choose which leader election resource type to use. Currently, the option defaults to `configmaps`, but will be removed in the future to only support `leases` based leader election.
-
-* `--leader-election-identity <id>`: This option is deprecated and has no effect since external-attacher will now use the pod hostname as the leader election identity
 
 ### CSI error and timeout handling
 The external-attacher invokes all gRPC calls to CSI driver with timeout provided by `--timeout` command line argument (15 seconds by default).

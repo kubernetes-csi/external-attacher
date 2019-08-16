@@ -67,11 +67,6 @@ metadata:
   namespace: default
   name: external-attacher-cfg
 rules:
-# access to configmaps is only supported for backwards compatibility reasons
-# and can be removed once you are uses Leases (--leader-election-type=leases)
-- apiGroups: [""]
-  resources: ["configmaps"]
-  verbs: ["get", "watch", "list", "delete", "update", "create"]
 - apiGroups: ["coordination.k8s.io"]
   resources: ["leases"]
   verbs: ["get", "watch", "list", "delete", "update", "create"]
