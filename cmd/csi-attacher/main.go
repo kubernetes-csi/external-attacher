@@ -47,9 +47,6 @@ const (
 	// Default timeout of short CSI calls like GetPluginInfo
 	csiTimeout = time.Second
 
-	// Name of CSI plugin for dummy operation
-	dummyAttacherName = "csi/dummy"
-
 	leaderElectionTypeLeases     = "leases"
 	leaderElectionTypeConfigMaps = "configmaps"
 )
@@ -59,7 +56,6 @@ var (
 	kubeconfig  = flag.String("kubeconfig", "", "Absolute path to the kubeconfig file. Required only when running out of cluster.")
 	resync      = flag.Duration("resync", 10*time.Minute, "Resync interval of the controller.")
 	csiAddress  = flag.String("csi-address", "/run/csi/socket", "Address of the CSI driver socket.")
-	dummy       = flag.Bool("dummy", false, "Run in dummy mode, i.e. not connecting to CSI driver and marking everything as attached. Expected CSI driver name is \"csi/dummy\".")
 	showVersion = flag.Bool("version", false, "Show version.")
 	timeout     = flag.Duration("timeout", 15*time.Second, "Timeout for waiting for attaching or detaching the volume.")
 
@@ -106,63 +102,55 @@ func main() {
 	factory := informers.NewSharedInformerFactory(clientset, *resync)
 	var csiFactory csiinformers.SharedInformerFactory
 	var handler controller.Handler
+	// Connect to CSI.
+	csiConn, err := connection.Connect(*csiAddress)
+	if err != nil {
+		klog.Error(err.Error())
+		os.Exit(1)
+	}
 
-	var csiAttacher string
-	if *dummy {
-		// Do not connect to any CSI, mark everything as attached.
+	err = rpc.ProbeForever(csiConn, *timeout)
+	if err != nil {
+		klog.Error(err.Error())
+		os.Exit(1)
+	}
+
+	// Find driver name.
+	ctx, cancel := context.WithTimeout(context.Background(), csiTimeout)
+	defer cancel()
+	csiAttacher, err := rpc.GetDriverName(ctx, csiConn)
+	if err != nil {
+		klog.Error(err.Error())
+		os.Exit(1)
+	}
+	klog.V(2).Infof("CSI driver name: %q", csiAttacher)
+
+	supportsService, err := supportsPluginControllerService(ctx, csiConn)
+	if err != nil {
+		klog.Error(err.Error())
+		os.Exit(1)
+	}
+	if !supportsService {
 		handler = controller.NewTrivialHandler(clientset)
-		csiAttacher = dummyAttacherName
+		klog.V(2).Infof("CSI driver does not support Plugin Controller Service, using trivial handler")
 	} else {
-		// Connect to CSI.
-		csiConn, err := connection.Connect(*csiAddress)
+		// Find out if the driver supports attach/detach.
+		supportsAttach, supportsReadOnly, err := supportsControllerPublish(ctx, csiConn)
 		if err != nil {
 			klog.Error(err.Error())
 			os.Exit(1)
 		}
-
-		err = rpc.ProbeForever(csiConn, *timeout)
-		if err != nil {
-			klog.Error(err.Error())
-			os.Exit(1)
-		}
-
-		// Find driver name.
-		ctx, cancel := context.WithTimeout(context.Background(), csiTimeout)
-		defer cancel()
-		csiAttacher, err = rpc.GetDriverName(ctx, csiConn)
-		if err != nil {
-			klog.Error(err.Error())
-			os.Exit(1)
-		}
-		klog.V(2).Infof("CSI driver name: %q", csiAttacher)
-
-		supportsService, err := supportsPluginControllerService(ctx, csiConn)
-		if err != nil {
-			klog.Error(err.Error())
-			os.Exit(1)
-		}
-		if !supportsService {
-			handler = controller.NewTrivialHandler(clientset)
-			klog.V(2).Infof("CSI driver does not support Plugin Controller Service, using trivial handler")
+		if supportsAttach {
+			pvLister := factory.Core().V1().PersistentVolumes().Lister()
+			nodeLister := factory.Core().V1().Nodes().Lister()
+			vaLister := factory.Storage().V1beta1().VolumeAttachments().Lister()
+			csiNodeLister := factory.Storage().V1beta1().CSINodes().Lister()
+			attacher := attacher.NewAttacher(csiConn)
+			handler = controller.NewCSIHandler(clientset, csiAttacher, attacher, pvLister, nodeLister, csiNodeLister, vaLister, timeout, supportsReadOnly)
+			klog.V(2).Infof("CSI driver supports ControllerPublishUnpublish, using real CSI handler")
 		} else {
-			// Find out if the driver supports attach/detach.
-			supportsAttach, supportsReadOnly, err := supportsControllerPublish(ctx, csiConn)
-			if err != nil {
-				klog.Error(err.Error())
-				os.Exit(1)
-			}
-			if supportsAttach {
-				pvLister := factory.Core().V1().PersistentVolumes().Lister()
-				nodeLister := factory.Core().V1().Nodes().Lister()
-				vaLister := factory.Storage().V1beta1().VolumeAttachments().Lister()
-				csiNodeLister := factory.Storage().V1beta1().CSINodes().Lister()
-				attacher := attacher.NewAttacher(csiConn)
-				handler = controller.NewCSIHandler(clientset, csiAttacher, attacher, pvLister, nodeLister, csiNodeLister, vaLister, timeout, supportsReadOnly)
-				klog.V(2).Infof("CSI driver supports ControllerPublishUnpublish, using real CSI handler")
-			} else {
-				handler = controller.NewTrivialHandler(clientset)
-				klog.V(2).Infof("CSI driver does not support ControllerPublishUnpublish, using trivial handler")
-			}
+			handler = controller.NewTrivialHandler(clientset)
+			klog.V(2).Infof("CSI driver does not support ControllerPublishUnpublish, using trivial handler")
 		}
 	}
 

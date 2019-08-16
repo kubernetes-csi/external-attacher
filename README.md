@@ -66,8 +66,6 @@ Note that the external-attacher does not scale with more replicas. Only one exte
 * `--retry-interval-end`: The exponential backoff maximum value. See [CSI error and timeout handling](#csi-error-and-timeout-handling) for details. 5 minutes is used by default.
 
 #### Other recognized arguments
-* `--dummy`: Runs the external-attacher in dummy mode, i.e. without any CSI driver. All volumes are immediately reported as attached / detached as controller-manager requires. This option can be used for debugging of other CSI components such as Kubernetes Attach / Detach controller.
-
 * `--kubeconfig <path>`: Path to Kubernetes client configuration that the external-attacher uses to connect to Kubernetes API server. When omitted, default token provided by Kubernetes will be used. This option is useful only when the external-attacher does not run as a Kubernetes pod, e.g. for debugging.
 
 * `--resync <duration>`: Internal resync interval when the external-attacher re-evaluates all existing `VolumeAttachment` instances and tries to fulfill them, i.e. attach / detach corresponding volumes. It does not affect re-tries of failed CSI calls! It should be used only when there is a bug in Kubernetes watch logic.
