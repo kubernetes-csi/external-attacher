@@ -28,7 +28,6 @@ import (
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
 	"k8s.io/client-go/util/workqueue"
-	csiinformers "k8s.io/csi-api/pkg/client/informers/externalversions"
 	"k8s.io/klog"
 
 	"github.com/container-storage-interface/spec/lib/go/csi"
@@ -100,7 +99,6 @@ func main() {
 	}
 
 	factory := informers.NewSharedInformerFactory(clientset, *resync)
-	var csiFactory csiinformers.SharedInformerFactory
 	var handler controller.Handler
 	// Connect to CSI.
 	csiConn, err := connection.Connect(*csiAddress)
@@ -167,9 +165,6 @@ func main() {
 	run := func(ctx context.Context) {
 		stopCh := ctx.Done()
 		factory.Start(stopCh)
-		if csiFactory != nil {
-			csiFactory.Start(stopCh)
-		}
 		ctrl.Run(threads, stopCh)
 	}
 

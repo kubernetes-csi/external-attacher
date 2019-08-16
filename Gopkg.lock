@@ -629,24 +629,6 @@
 
 [[projects]]
   branch = "master"
-  digest = "1:53b7e3883e80297c18e07558404edadf3f9b7e07ffd4e0b114673ad176723d97"
-  name = "k8s.io/csi-api"
-  packages = [
-    "pkg/apis/csi/v1alpha1",
-    "pkg/client/clientset/versioned",
-    "pkg/client/clientset/versioned/scheme",
-    "pkg/client/clientset/versioned/typed/csi/v1alpha1",
-    "pkg/client/informers/externalversions",
-    "pkg/client/informers/externalversions/csi",
-    "pkg/client/informers/externalversions/csi/v1alpha1",
-    "pkg/client/informers/externalversions/internalinterfaces",
-    "pkg/client/listers/csi/v1alpha1",
-  ]
-  pruneopts = "NUT"
-  revision = "94ac839bf26cd8861226396b93ddf920cbb7ccc9"
-
-[[projects]]
-  branch = "master"
   digest = "1:026d302ec8c8f568cb6805891133e749e2f8b6b94068cd7375a3bbba232c9f38"
   name = "k8s.io/csi-translation-lib"
   packages = [
@@ -733,7 +715,6 @@
     "k8s.io/client-go/tools/clientcmd",
     "k8s.io/client-go/tools/record",
     "k8s.io/client-go/util/workqueue",
-    "k8s.io/csi-api/pkg/client/informers/externalversions",
     "k8s.io/csi-translation-lib",
     "k8s.io/klog",
   ]
