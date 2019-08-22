@@ -40,8 +40,6 @@ import (
 )
 
 const (
-	// Number of worker threads
-	threads = 10
 
 	// Default timeout of short CSI calls like GetPluginInfo
 	csiTimeout = time.Second
@@ -52,11 +50,12 @@ const (
 
 // Command line flags
 var (
-	kubeconfig  = flag.String("kubeconfig", "", "Absolute path to the kubeconfig file. Required only when running out of cluster.")
-	resync      = flag.Duration("resync", 10*time.Minute, "Resync interval of the controller.")
-	csiAddress  = flag.String("csi-address", "/run/csi/socket", "Address of the CSI driver socket.")
-	showVersion = flag.Bool("version", false, "Show version.")
-	timeout     = flag.Duration("timeout", 15*time.Second, "Timeout for waiting for attaching or detaching the volume.")
+	kubeconfig    = flag.String("kubeconfig", "", "Absolute path to the kubeconfig file. Required only when running out of cluster.")
+	resync        = flag.Duration("resync", 10*time.Minute, "Resync interval of the controller.")
+	csiAddress    = flag.String("csi-address", "/run/csi/socket", "Address of the CSI driver socket.")
+	showVersion   = flag.Bool("version", false, "Show version.")
+	timeout       = flag.Duration("timeout", 15*time.Second, "Timeout for waiting for attaching or detaching the volume.")
+	workerThreads = flag.Uint("worker-threads", 10, "Number of attacher worker threads")
 
 	retryIntervalStart = flag.Duration("retry-interval-start", time.Second, "Initial retry interval of failed create volume or deletion. It doubles with each failure, up to retry-interval-max.")
 	retryIntervalMax   = flag.Duration("retry-interval-max", 5*time.Minute, "Maximum retry interval of failed create volume or deletion.")
@@ -89,6 +88,11 @@ func main() {
 	config, err := buildConfig(*kubeconfig)
 	if err != nil {
 		klog.Error(err.Error())
+		os.Exit(1)
+	}
+
+	if *workerThreads == 0 {
+		klog.Error("option -worker-threads must be greater than zero")
 		os.Exit(1)
 	}
 
@@ -165,7 +169,7 @@ func main() {
 	run := func(ctx context.Context) {
 		stopCh := ctx.Done()
 		factory.Start(stopCh)
-		ctrl.Run(threads, stopCh)
+		ctrl.Run(int(*workerThreads), stopCh)
 	}
 
 	if !*enableLeaderElection {
