@@ -13,6 +13,7 @@ The version 2.0 is not compatible with v1.x. See Action Required section and upd
 ## Bug Fixes
 
 - Fixed issue to actually translate backwards compatible access modes for CSI Migration ([#163](https://github.com/kubernetes-csi/external-attacher/pull/163), [@davidz627](https://github.com/davidz627))
+- The external attacher now exits when it loses the connection to a CSI driver. This speeds up re-election of a new attacher leader that has connection to the driver. ([182](https://github.com/kubernetes-csi/external-attacher/pull/182), [@jsafrane](https://github.com/jsafrane))
 
 
 ## Other Notable Changes
