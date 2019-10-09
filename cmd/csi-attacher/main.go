@@ -28,6 +28,7 @@ import (
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
 	"k8s.io/client-go/util/workqueue"
+	csitrans "k8s.io/csi-translation-lib"
 	"k8s.io/klog"
 
 	"github.com/container-storage-interface/spec/lib/go/csi"
@@ -148,7 +149,7 @@ func main() {
 			vaLister := factory.Storage().V1beta1().VolumeAttachments().Lister()
 			csiNodeLister := factory.Storage().V1beta1().CSINodes().Lister()
 			attacher := attacher.NewAttacher(csiConn)
-			handler = controller.NewCSIHandler(clientset, csiAttacher, attacher, pvLister, nodeLister, csiNodeLister, vaLister, timeout, supportsReadOnly)
+			handler = controller.NewCSIHandler(clientset, csiAttacher, attacher, pvLister, nodeLister, csiNodeLister, vaLister, timeout, supportsReadOnly, csitrans.New())
 			klog.V(2).Infof("CSI driver supports ControllerPublishUnpublish, using real CSI handler")
 		} else {
 			handler = controller.NewTrivialHandler(clientset)
