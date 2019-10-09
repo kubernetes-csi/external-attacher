@@ -34,6 +34,7 @@ import (
 	"k8s.io/client-go/informers"
 	"k8s.io/client-go/kubernetes"
 	core "k8s.io/client-go/testing"
+	csitrans "k8s.io/csi-translation-lib"
 	"k8s.io/klog"
 )
 
@@ -61,6 +62,7 @@ func csiHandlerFactory(client kubernetes.Interface, informerFactory informers.Sh
 		informerFactory.Storage().V1beta1().VolumeAttachments().Lister(),
 		&timeout,
 		true, /* supports PUBLISH_READONLY */
+		csitrans.New(),
 	)
 }
 
@@ -75,6 +77,7 @@ func csiHandlerFactoryNoReadOnly(client kubernetes.Interface, informerFactory in
 		informerFactory.Storage().V1beta1().VolumeAttachments().Lister(),
 		&timeout,
 		false, /* does not support PUBLISH_READONLY */
+		csitrans.New(),
 	)
 }
 

@@ -34,8 +34,13 @@ import (
 	corelisters "k8s.io/client-go/listers/core/v1"
 	storagelisters "k8s.io/client-go/listers/storage/v1beta1"
 	"k8s.io/client-go/util/workqueue"
-	csitranslationlib "k8s.io/csi-translation-lib"
 )
+
+type AttacherCSITranslator interface {
+	TranslateInTreePVToCSI(pv *v1.PersistentVolume) (*v1.PersistentVolume, error)
+	IsPVMigratable(pv *v1.PersistentVolume) bool
+	RepairVolumeHandle(pluginName, volumeHandle, nodeID string) (string, error)
+}
 
 // csiHandler is a handler that calls CSI to attach/detach volume.
 // It adds finalizer to VolumeAttachment instance to make sure they're detached
@@ -51,6 +56,7 @@ type csiHandler struct {
 	vaQueue, pvQueue        workqueue.RateLimitingInterface
 	timeout                 time.Duration
 	supportsPublishReadOnly bool
+	translator              AttacherCSITranslator
 }
 
 var _ Handler = &csiHandler{}
@@ -65,7 +71,8 @@ func NewCSIHandler(
 	csiNodeLister storagelisters.CSINodeLister,
 	vaLister storagelisters.VolumeAttachmentLister,
 	timeout *time.Duration,
-	supportsPublishReadOnly bool) Handler {
+	supportsPublishReadOnly bool,
+	translator AttacherCSITranslator) Handler {
 
 	return &csiHandler{
 		client:                  client,
@@ -77,6 +84,7 @@ func NewCSIHandler(
 		vaLister:                vaLister,
 		timeout:                 *timeout,
 		supportsPublishReadOnly: supportsPublishReadOnly,
+		translator:              translator,
 	}
 }
 
@@ -269,8 +277,8 @@ func (h *csiHandler) csiAttach(va *storage.VolumeAttachment) (*storage.VolumeAtt
 			return va, nil, fmt.Errorf("could not add PersistentVolume finalizer: %s", err)
 		}
 
-		if csitranslationlib.IsPVMigratable(pv) {
-			pv, err = csitranslationlib.TranslateInTreePVToCSI(pv)
+		if h.translator.IsPVMigratable(pv) {
+			pv, err = h.translator.TranslateInTreePVToCSI(pv)
 			if err != nil {
 				return va, nil, fmt.Errorf("failed to translate in tree pv to CSI: %v", err)
 			}
@@ -357,8 +365,8 @@ func (h *csiHandler) csiDetach(va *storage.VolumeAttachment) (*storage.VolumeAtt
 		if err != nil {
 			return va, err
 		}
-		if csitranslationlib.IsPVMigratable(pv) {
-			pv, err = csitranslationlib.TranslateInTreePVToCSI(pv)
+		if h.translator.IsPVMigratable(pv) {
+			pv, err = h.translator.TranslateInTreePVToCSI(pv)
 			if err != nil {
 				return va, fmt.Errorf("failed to translate in tree pv to CSI: %v", err)
 			}
