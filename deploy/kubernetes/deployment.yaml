@@ -38,7 +38,6 @@ spec:
             - "--v=5"
             - "--csi-address=$(ADDRESS)"
             - "--leader-election"
-            - "--leader-election-type=leases"
           env:
             - name: MY_NAME
               valueFrom:

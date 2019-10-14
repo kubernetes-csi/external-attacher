@@ -29,6 +29,7 @@ import (
 	"github.com/kubernetes-csi/external-attacher/pkg/attacher"
 	"k8s.io/klog"
 
+	"encoding/json"
 	"k8s.io/api/core/v1"
 	storage "k8s.io/api/storage/v1beta1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -37,6 +38,7 @@ import (
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/kubernetes/fake"
 	core "k8s.io/client-go/testing"
+	"k8s.io/client-go/util/workqueue"
 )
 
 // This is an unit test framework. It is heavily inspired by serviceaccount
@@ -175,7 +177,7 @@ func runTests(t *testing.T, handlerFactory handlerFactory, tests []testCase) {
 		// Construct controller
 		csiConnection := &fakeCSIConnection{t: t, calls: test.expectedCSICalls}
 		handler := handlerFactory(client, informers, csiConnection)
-		ctrl := NewCSIAttachController(client, testAttacherName, handler, vaInformer, pvInformer)
+		ctrl := NewCSIAttachController(client, testAttacherName, handler, vaInformer, pvInformer, workqueue.DefaultControllerRateLimiter(), workqueue.DefaultControllerRateLimiter())
 
 		// Start the test by enqueueing the right event
 		if test.addedVA != nil {
@@ -243,6 +245,30 @@ func runTests(t *testing.T, handlerFactory handlerFactory, tests []testCase) {
 				}
 			}
 
+			if action.GetVerb() == "patch" && action.GetResource().Resource == "volumeattachments" {
+				patchAction := action.(core.PatchActionImpl)
+				patch := patchAction.GetPatch()
+				var va storage.VolumeAttachment
+				err := json.Unmarshal(patch, &va)
+				if va.Status.AttachError != nil {
+					va.Status.AttachError.Time = metav1.Time{}
+				}
+				if va.Status.DetachError != nil {
+					va.Status.DetachError.Time = metav1.Time{}
+				}
+
+				if va.Status.AttachError != nil || va.Status.DetachError != nil {
+
+					patch, err = createMergePatch(storage.VolumeAttachment{}, va)
+					if err != nil {
+						t.Errorf("Test %q create patch failed", t.Name())
+					}
+					patchAction.Patch = patch
+					action = patchAction
+				}
+
+			}
+
 			expectedAction := test.expectedActions[i]
 			if !reflect.DeepEqual(expectedAction, action) {
 				t.Errorf("Test %q: action %d\nExpected:\n%s\ngot:\n%s", test.name, i, spew.Sdump(expectedAction), spew.Sdump(action))
@@ -305,13 +331,32 @@ func deleted(va *storage.VolumeAttachment) *storage.VolumeAttachment {
 	return va
 }
 
+func vaAddInlineSpec(va *storage.VolumeAttachment) *storage.VolumeAttachment {
+	va.Spec.Source.InlineVolumeSpec = &v1.PersistentVolumeSpec{
+		AccessModes: []v1.PersistentVolumeAccessMode{v1.ReadWriteOnce},
+		PersistentVolumeSource: v1.PersistentVolumeSource{
+			CSI: &v1.CSIPersistentVolumeSource{
+				Driver:       "com.test.foo",
+				VolumeHandle: testVolumeHandle,
+			},
+		},
+	}
+	return va
+}
+
+func vaWithInlineSpec(va *storage.VolumeAttachment) *storage.VolumeAttachment {
+	va.Spec.Source.PersistentVolumeName = nil
+	return vaAddInlineSpec(va)
+}
+
 func vaWithMetadata(va *storage.VolumeAttachment, metadata map[string]string) *storage.VolumeAttachment {
 	va.Status.AttachmentMetadata = metadata
 	return va
 }
 
-func vaWithNoPVReference(va *storage.VolumeAttachment) *storage.VolumeAttachment {
+func vaWithNoPVReferenceNorInlineVolumeSpec(va *storage.VolumeAttachment) *storage.VolumeAttachment {
 	va.Spec.Source.PersistentVolumeName = nil
+	va.Spec.Source.InlineVolumeSpec = nil
 	return va
 }
 
