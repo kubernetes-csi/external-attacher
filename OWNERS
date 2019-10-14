@@ -1,4 +1,5 @@
 approvers:
+- openshift-storage-maintainers
 - jsafrane
 - lpabon
 - msau42
