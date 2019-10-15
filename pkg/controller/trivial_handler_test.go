@@ -27,6 +27,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
+	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/informers"
 	"k8s.io/client-go/kubernetes"
 	core "k8s.io/client-go/testing"
@@ -48,14 +49,20 @@ func TestTrivialHandler(t *testing.T) {
 			name:    "add -> successful write",
 			addedVA: va(false, "", nil),
 			expectedActions: []core.Action{
-				core.NewUpdateAction(vaGroupResourceVersion, metav1.NamespaceNone, va(true, "", nil)),
+				core.NewPatchAction(vaGroupResourceVersion, metav1.NamespaceNone, testPVName+"-"+testNodeName,
+					types.MergePatchType, patch(
+						va(false, "", nil),
+						va(true, "", nil))),
 			},
 		},
 		{
 			name:      "update -> successful write",
 			updatedVA: va(false, "", nil),
 			expectedActions: []core.Action{
-				core.NewUpdateAction(vaGroupResourceVersion, metav1.NamespaceNone, va(true, "", nil)),
+				core.NewPatchAction(vaGroupResourceVersion, metav1.NamespaceNone, testPVName+"-"+testNodeName,
+					types.MergePatchType, patch(
+						va(false, "", nil),
+						va(true, "", nil))),
 			},
 		},
 		{
@@ -68,7 +75,7 @@ func TestTrivialHandler(t *testing.T) {
 			addedVA: va(false, "", nil),
 			reactors: []reaction{
 				{
-					verb:     "update",
+					verb:     "patch",
 					resource: "volumeattachments",
 					reactor: func(t *testing.T) core.ReactionFunc {
 						i := 0
@@ -85,9 +92,18 @@ func TestTrivialHandler(t *testing.T) {
 				},
 			},
 			expectedActions: []core.Action{
-				core.NewUpdateAction(vaGroupResourceVersion, metav1.NamespaceNone, va(true, "", nil)),
-				core.NewUpdateAction(vaGroupResourceVersion, metav1.NamespaceNone, va(true, "", nil)),
-				core.NewUpdateAction(vaGroupResourceVersion, metav1.NamespaceNone, va(true, "", nil)),
+				core.NewPatchAction(vaGroupResourceVersion, metav1.NamespaceNone, testPVName+"-"+testNodeName,
+					types.MergePatchType, patch(
+						va(false, "", nil),
+						va(true, "", nil))),
+				core.NewPatchAction(vaGroupResourceVersion, metav1.NamespaceNone, testPVName+"-"+testNodeName,
+					types.MergePatchType, patch(
+						va(false, "", nil),
+						va(true, "", nil))),
+				core.NewPatchAction(vaGroupResourceVersion, metav1.NamespaceNone, testPVName+"-"+testNodeName,
+					types.MergePatchType, patch(
+						va(false, "", nil),
+						va(true, "", nil))),
 			},
 		},
 	}

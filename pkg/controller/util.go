@@ -18,12 +18,15 @@ package controller
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"regexp"
 
 	"github.com/container-storage-interface/spec/lib/go/csi"
+	"github.com/evanphx/json-patch"
 	"k8s.io/api/core/v1"
 	storage "k8s.io/api/storage/v1beta1"
+	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/klog"
 )
@@ -34,8 +37,11 @@ func markAsAttached(client kubernetes.Interface, va *storage.VolumeAttachment, m
 	clone.Status.Attached = true
 	clone.Status.AttachmentMetadata = metadata
 	clone.Status.AttachError = nil
-	// TODO: use patch to save us from VersionError
-	newVA, err := client.StorageV1beta1().VolumeAttachments().Update(clone)
+	patch, err := createMergePatch(va, clone)
+	if err != nil {
+		return va, err
+	}
+	newVA, err := client.StorageV1beta1().VolumeAttachments().Patch(va.Name, types.MergePatchType, patch)
 	if err != nil {
 		return va, err
 	}
@@ -73,8 +79,11 @@ func markAsDetached(client kubernetes.Interface, va *storage.VolumeAttachment) (
 	clone.Status.Attached = false
 	clone.Status.DetachError = nil
 	clone.Status.AttachmentMetadata = nil
-	// TODO: use patch to save us from VersionError
-	newVA, err := client.StorageV1beta1().VolumeAttachments().Update(clone)
+	patch, err := createMergePatch(va, clone)
+	if err != nil {
+		return va, err
+	}
+	newVA, err := client.StorageV1beta1().VolumeAttachments().Patch(va.Name, types.MergePatchType, patch)
 	if err != nil {
 		return va, err
 	}
@@ -135,18 +144,18 @@ func GetNodeIDFromCSINode(driver string, csiNode *storage.CSINode) (string, bool
 }
 
 // GetVolumeCapabilities returns volumecapability from PV spec
-func GetVolumeCapabilities(pv *v1.PersistentVolume, csiSource *v1.CSIPersistentVolumeSource) (*csi.VolumeCapability, error) {
+func GetVolumeCapabilities(pvSpec *v1.PersistentVolumeSpec) (*csi.VolumeCapability, error) {
 	m := map[v1.PersistentVolumeAccessMode]bool{}
-	for _, mode := range pv.Spec.AccessModes {
+	for _, mode := range pvSpec.AccessModes {
 		m[mode] = true
 	}
 
-	if csiSource == nil {
-		return nil, fmt.Errorf("CSI volume source was nil")
+	if pvSpec.CSI == nil {
+		return nil, errors.New("CSI volume source was nil")
 	}
 
 	var cap *csi.VolumeCapability
-	if pv.Spec.VolumeMode != nil && *pv.Spec.VolumeMode == v1.PersistentVolumeBlock {
+	if pvSpec.VolumeMode != nil && *pvSpec.VolumeMode == v1.PersistentVolumeBlock {
 		cap = &csi.VolumeCapability{
 			AccessType: &csi.VolumeCapability_Block{
 				Block: &csi.VolumeCapability_BlockVolume{},
@@ -155,7 +164,7 @@ func GetVolumeCapabilities(pv *v1.PersistentVolume, csiSource *v1.CSIPersistentV
 		}
 
 	} else {
-		fsType := csiSource.FSType
+		fsType := pvSpec.CSI.FSType
 		if len(fsType) == 0 {
 			fsType = defaultFSType
 		}
@@ -164,7 +173,7 @@ func GetVolumeCapabilities(pv *v1.PersistentVolume, csiSource *v1.CSIPersistentV
 			AccessType: &csi.VolumeCapability_Mount{
 				Mount: &csi.VolumeCapability_MountVolume{
 					FsType:     fsType,
-					MountFlags: pv.Spec.MountOptions,
+					MountFlags: pvSpec.MountOptions,
 				},
 			},
 			AccessMode: &csi.VolumeCapability_AccessMode{},
@@ -190,7 +199,7 @@ func GetVolumeCapabilities(pv *v1.PersistentVolume, csiSource *v1.CSIPersistentV
 		cap.AccessMode.Mode = csi.VolumeCapability_AccessMode_SINGLE_NODE_WRITER
 
 	default:
-		return nil, fmt.Errorf("unsupported AccessMode combination: %+v", pv.Spec.AccessModes)
+		return nil, fmt.Errorf("unsupported AccessMode combination: %+v", pvSpec.AccessModes)
 	}
 	return cap, nil
 }
@@ -209,4 +218,21 @@ func GetVolumeAttributes(csiSource *v1.CSIPersistentVolumeSource) (map[string]st
 		return nil, fmt.Errorf("csi source was nil")
 	}
 	return csiSource.VolumeAttributes, nil
+}
+
+// createMergePatch return patch generated from original and new interfaces
+func createMergePatch(original, new interface{}) ([]byte, error) {
+	pvByte, err := json.Marshal(original)
+	if err != nil {
+		return nil, err
+	}
+	cloneByte, err := json.Marshal(new)
+	if err != nil {
+		return nil, err
+	}
+	patch, err := jsonpatch.CreateMergePatch(pvByte, cloneByte)
+	if err != nil {
+		return nil, err
+	}
+	return patch, nil
 }

@@ -18,7 +18,7 @@ Trivial handler will be used for CSI drivers that don't support `ControllerPubli
 
 ### Real attacher
 
-"Real" attacher talks to CSI over socket (`/run/csi/socket` by default, configurable by `-csi-address`). The attacher tries to connect for `-connection-timeout` (1 minute by default), allowing CSI driver to start and create its server socket a bit later.
+"Real" attacher talks to CSI over socket (`/run/csi/socket` by default, configurable by `-csi-address`).
 
 The attacher then:
 

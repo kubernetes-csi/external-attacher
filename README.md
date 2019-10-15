@@ -21,7 +21,7 @@ This information reflects the head of this branch.
 
 | Compatible with CSI Version                                                                | Container Image             | Min K8s Version |
 | ------------------------------------------------------------------------------------------ | ----------------------------| --------------- |
-| [CSI Spec v1.0.0](https://github.com/container-storage-interface/spec/releases/tag/v1.0.0) | quay.io/k8scsi/csi-attacher | 1.14            |
+| [CSI Spec v1.0.0](https://github.com/container-storage-interface/spec/releases/tag/v1.0.0) | quay.io/k8scsi/csi-attacher | 1.15            |
 
 ## Feature Status
 
@@ -61,10 +61,13 @@ Note that the external-attacher does not scale with more replicas. Only one exte
 
 * `--timeout <duration>`: Timeout of all calls to CSI driver. It should be set to value that accommodates majority of `ControllerPublish` and `ControllerUnpublish` calls. See [CSI error and timeout handling](#csi-error-and-timeout-handling) for details. 15 seconds is used by default.
 
+* `--worker-threads`: The number of goroutines for processing VolumeAttachments. 10 workers is used by default.
+
+* `--retry-interval-start`: The exponential backoff for failures. See [CSI error and timeout handling](#csi-error-and-timeout-handling) for details. 1 second is used by default.
+
+* `--retry-interval-max`: The exponential backoff maximum value. See [CSI error and timeout handling](#csi-error-and-timeout-handling) for details. 5 minutes is used by default.
+
 #### Other recognized arguments
-
-* `--dummy`: Runs the external-attacher in dummy mode, i.e. without any CSI driver. All volumes are immediately reported as attached / detached as controller-manager requires. This option can be used for debugging of other CSI components such as Kubernetes Attach / Detach controller.
-
 * `--kubeconfig <path>`: Path to Kubernetes client configuration that the external-attacher uses to connect to Kubernetes API server. When omitted, default token provided by Kubernetes will be used. This option is useful only when the external-attacher does not run as a Kubernetes pod, e.g. for debugging.
 
 * `--resync <duration>`: Internal resync interval when the external-attacher re-evaluates all existing `VolumeAttachment` instances and tries to fulfill them, i.e. attach / detach corresponding volumes. It does not affect re-tries of failed CSI calls! It should be used only when there is a bug in Kubernetes watch logic.
@@ -72,13 +75,6 @@ Note that the external-attacher does not scale with more replicas. Only one exte
 * `--version`: Prints current external-attacher version and quits.
 
 * All glog / klog arguments are supported, such as `-v <log level>` or `-alsologtostderr`.
-
-#### Deprecated arguments
-* `--connection-timeout <duration>`: This option was used to limit establishing connection to CSI driver. Currently, the option does not have any effect and the external-attacher tries to connect to CSI driver socket indefinitely. It is recommended to run ReadinessProbe on the driver to ensure that the driver comes up in reasonable time.
-
-* `--leader-election-type`: This option was used to choose which leader election resource type to use. Currently, the option defaults to `configmaps`, but will be removed in the future to only support `leases` based leader election.
-
-* `--leader-election-identity <id>`: This option is deprecated and has no effect since external-attacher will now use the pod hostname as the leader election identity
 
 ### CSI error and timeout handling
 The external-attacher invokes all gRPC calls to CSI driver with timeout provided by `--timeout` command line argument (15 seconds by default).
@@ -88,7 +84,7 @@ The external-attacher invokes all gRPC calls to CSI driver with timeout provided
 * `Probe`: The external-attacher re-tries calling Probe until the driver reports it's ready. It re-tries also when it receives timeout from `Probe` call. The external-attacher has no limit of retries. It is expected that ReadinessProbe on the driver container will catch case when the driver takes too long time to get ready.
 * `GetPluginInfo`, `GetPluginCapabilitiesRequest`, `ControllerGetCapabilities`: The external-attacher expects that these calls are quick and does not retry them on any error, including timeout. Instead, it assumes that the driver is faulty and exits. Note that Kubernetes will likely start a new attacher container and it will start with `Probe` call.
 
-Correct timeout value depends on the storage backend and how quickly it is able to processes `ControllerPublish` and `ControllerUnpublish` calls. The value should be set to accommodate majority of them. It is fine if some calls time out - such calls will be re-tried after exponential backoff (starting with 5ms), however, this backoff will introduce delay when the call times out several times for a single volume.
+Correct timeout value depends on the storage backend and how quickly it is able to processes `ControllerPublish` and `ControllerUnpublish` calls. The value should be set to accommodate majority of them. It is fine if some calls time out - such calls will be re-tried after exponential backoff (starting with `--retry-interval-start`), however, this backoff will introduce delay when the call times out several times for a single volume (up to `--retry-interval-max`).
 
 ## Community, discussion, contribution, and support
 
