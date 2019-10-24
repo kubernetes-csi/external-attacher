@@ -3,7 +3,7 @@ module github.com/kubernetes-csi/external-attacher
 go 1.12
 
 require (
-	github.com/container-storage-interface/spec v1.1.0
+	github.com/container-storage-interface/spec v1.2.0
 	github.com/davecgh/go-spew v1.1.1
 	github.com/evanphx/json-patch v4.2.0+incompatible
 	github.com/golang/groupcache v0.0.0-20190129154638-5b532d6fd5ef // indirect
