@@ -131,6 +131,12 @@ func gcePDPVWithFinalizer() *v1.PersistentVolume {
 	return pv
 }
 
+func pvWithDriverName(driver string) *v1.PersistentVolume {
+	pv := pv()
+	pv.Spec.CSI.Driver = driver
+	return pv
+}
+
 func pvWithFinalizer() *v1.PersistentVolume {
 	pv := pv()
 	pv.Finalizers = []string{fin}
@@ -1257,6 +1263,12 @@ func TestCSIHandler(t *testing.T) {
 			name:            "VA exists -> ignored",
 			initialObjects:  []runtime.Object{pvDeleted(pvWithFinalizer()), va(false, "", nil)},
 			deletedVA:       va(false, "", nil),
+			expectedActions: []core.Action{},
+		},
+		{
+			name:            "PV created by other CSI drivers or in-tree provisioners -> ignored",
+			initialObjects:  []runtime.Object{},
+			updatedPV:       pvWithDriverName("dummy"),
 			expectedActions: []core.Action{},
 		},
 	}
