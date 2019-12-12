@@ -154,12 +154,18 @@ func (ctrl *CSIAttachController) vaDeleted(obj interface{}) {
 // pvAdded reacts to a PV creation
 func (ctrl *CSIAttachController) pvAdded(obj interface{}) {
 	pv := obj.(*v1.PersistentVolume)
+	if !ctrl.processFinalizers(pv) {
+		return
+	}
 	ctrl.pvQueue.Add(pv.Name)
 }
 
 // pvUpdated reacts to a PV update
 func (ctrl *CSIAttachController) pvUpdated(old, new interface{}) {
 	pv := new.(*v1.PersistentVolume)
+	if !ctrl.processFinalizers(pv) {
+		return
+	}
 	ctrl.pvQueue.Add(pv.Name)
 }
 
@@ -191,6 +197,13 @@ func (ctrl *CSIAttachController) syncVA() {
 		return
 	}
 	ctrl.handler.SyncNewOrUpdatedVolumeAttachment(va)
+}
+
+func (ctrl *CSIAttachController) processFinalizers(pv *v1.PersistentVolume) bool {
+	if pv.Spec.CSI != nil && pv.Spec.CSI.Driver == ctrl.attacherName {
+		return true
+	}
+	return false
 }
 
 // syncPV deals with one key off the queue.  It returns false when it's time to quit.
