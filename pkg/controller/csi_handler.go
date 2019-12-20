@@ -20,6 +20,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"sync"
 	"time"
 
 	"k8s.io/klog"
@@ -42,6 +43,16 @@ type AttacherCSITranslator interface {
 	RepairVolumeHandle(pluginName, volumeHandle, nodeID string) (string, error)
 }
 
+// Lister implements list operations against a remote CSI driver.
+type VolumeLister interface {
+	// ListVolumes calls ListVolumes on the driver and returns a map with keys
+	// of VolumeID and values of the list of Node IDs that volume is published
+	// on
+	ListVolumes(ctx context.Context) (map[string][]string, error)
+}
+
+var _ VolumeLister = &attacher.CSIVolumeLister{}
+
 // csiHandler is a handler that calls CSI to attach/detach volume.
 // It adds finalizer to VolumeAttachment instance to make sure they're detached
 // before deletion.
@@ -49,11 +60,14 @@ type csiHandler struct {
 	client                  kubernetes.Interface
 	attacherName            string
 	attacher                attacher.Attacher
+	CSIVolumeLister         VolumeLister
 	pvLister                corelisters.PersistentVolumeLister
 	nodeLister              corelisters.NodeLister
 	csiNodeLister           storagelisters.CSINodeLister
 	vaLister                storagelisters.VolumeAttachmentLister
 	vaQueue, pvQueue        workqueue.RateLimitingInterface
+	forceSync               map[string]bool
+	forceSyncMux            sync.Mutex
 	timeout                 time.Duration
 	supportsPublishReadOnly bool
 	translator              AttacherCSITranslator
@@ -66,6 +80,7 @@ func NewCSIHandler(
 	client kubernetes.Interface,
 	attacherName string,
 	attacher attacher.Attacher,
+	CSIVolumeLister VolumeLister,
 	pvLister corelisters.PersistentVolumeLister,
 	nodeLister corelisters.NodeLister,
 	csiNodeLister storagelisters.CSINodeLister,
@@ -78,6 +93,7 @@ func NewCSIHandler(
 		client:                  client,
 		attacherName:            attacherName,
 		attacher:                attacher,
+		CSIVolumeLister:         CSIVolumeLister,
 		pvLister:                pvLister,
 		nodeLister:              nodeLister,
 		csiNodeLister:           csiNodeLister,
@@ -85,12 +101,111 @@ func NewCSIHandler(
 		timeout:                 *timeout,
 		supportsPublishReadOnly: supportsPublishReadOnly,
 		translator:              translator,
+		forceSync:               map[string]bool{},
+		forceSyncMux:            sync.Mutex{},
 	}
 }
 
 func (h *csiHandler) Init(vaQueue workqueue.RateLimitingInterface, pvQueue workqueue.RateLimitingInterface) {
 	h.vaQueue = vaQueue
 	h.pvQueue = pvQueue
+}
+
+// ReconcileVA lists volumes from the CSI Driver and reconciles the attachment
+// status with the corresponding VolumeAttachment object. If the attachment
+// status of the volume is different from the state on the VolumeAttachment the
+// VolumeAttachment object is patched to the correct state.
+func (h *csiHandler) ReconcileVA() error {
+	klog.V(4).Info("Reconciling VolumeAttachments with driver backend state")
+
+	ctx, cancel := context.WithTimeout(context.Background(), h.timeout)
+	defer cancel()
+
+	// Loop over all volume attachment objects
+	vas, err := h.vaLister.List(labels.Everything())
+	if err != nil {
+		return errors.New("failed to list all VolumeAttachment objects")
+	}
+
+	published, err := h.CSIVolumeLister.ListVolumes(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to ListVolumes: %v", err)
+	}
+
+	for _, va := range vas {
+		nodeID, ok := va.Annotations[vaNodeIDAnnotation]
+		if !ok {
+			klog.Warningf("Failed to find node ID in VolumeAttachment %s annotation", va.Name)
+			continue
+		}
+		pvSpec, err := h.getProcessedPVSpec(va)
+		if err != nil {
+			klog.Warningf("Failed to get PV Spec: %v", err)
+			continue
+		}
+
+		source, err := getCSISource(pvSpec)
+		if err != nil {
+			klog.Warningf("Failed to get CSI Source: %v", err)
+			continue
+		}
+
+		volumeHandle, _, err := GetVolumeHandle(source)
+		if err != nil {
+			klog.Warningf("Failed to get volume handle: %v", err)
+			continue
+		}
+		attachedStatus := va.Status.Attached
+
+		volumeHandle, err = h.translator.RepairVolumeHandle(source.Driver, volumeHandle, nodeID)
+		if err != nil {
+			klog.Warningf("Failed to repair volume handle %s for driver %s: %v", volumeHandle, source.Driver, err)
+			continue
+		}
+
+		// Check whether the volume is published to this node
+		found := false
+		for _, gotNodeID := range published[volumeHandle] {
+			if gotNodeID == nodeID {
+				found = true
+				break
+			}
+		}
+
+		// If ListVolumes Attached Status is different, add to shared workQueue.
+		if attachedStatus != found {
+			klog.Warningf("VA %s for volume %s has attached status %v but actual state %v. Adding back to VA queue for forced reprocessing", va.Name, volumeHandle, attachedStatus, found)
+			// Add this item to the vaQueue with forceSync so that it is force
+			// processed again, we avoid UPDATE on the VA or forcing a direct
+			// attach/detach as to avoid race conditions with the main attacher
+			// queue
+			h.setForceSync(va.Name)
+			h.vaQueue.Add(va.Name)
+		}
+	}
+	return nil
+}
+
+// setForceSync sets the intention that next time the VolumeAttachment
+// referenced by vaName is processed on the VA queue that attach or detach will
+// proceed even when the VA.Status.Attached mayalready show the desired state
+func (h *csiHandler) setForceSync(vaName string) {
+	h.forceSyncMux.Lock()
+	defer h.forceSyncMux.Unlock()
+	h.forceSync[vaName] = true
+}
+
+// consumeForceSync is used to check whether forceSync was set for the VA
+// referenced by vaName. It will then remove the forceSync intention so that the
+// VA will only be forceSync-ed once per request
+func (h *csiHandler) consumeForceSync(vaName string) bool {
+	h.forceSyncMux.Lock()
+	defer h.forceSyncMux.Unlock()
+	s, ok := h.forceSync[vaName]
+	if ok {
+		delete(h.forceSync, vaName)
+	}
+	return s
 }
 
 func (h *csiHandler) SyncNewOrUpdatedVolumeAttachment(va *storage.VolumeAttachment) {
@@ -114,8 +229,8 @@ func (h *csiHandler) SyncNewOrUpdatedVolumeAttachment(va *storage.VolumeAttachme
 }
 
 func (h *csiHandler) syncAttach(va *storage.VolumeAttachment) error {
-	if va.Status.Attached {
-		// Volume is attached, there is nothing to be done.
+	if !h.consumeForceSync(va.Name) && va.Status.Attached {
+		// Volume is attached and no force sync, there is nothing to be done.
 		klog.V(4).Infof("%q is already attached", va.Name)
 		return nil
 	}
@@ -146,7 +261,7 @@ func (h *csiHandler) syncAttach(va *storage.VolumeAttachment) error {
 
 func (h *csiHandler) syncDetach(va *storage.VolumeAttachment) error {
 	klog.V(4).Infof("Starting detach operation for %q", va.Name)
-	if !h.hasVAFinalizer(va) {
+	if !h.consumeForceSync(va.Name) && !h.hasVAFinalizer(va) {
 		klog.V(4).Infof("%q is already detached", va.Name)
 		return nil
 	}
@@ -243,14 +358,41 @@ func (h *csiHandler) hasVAFinalizer(va *storage.VolumeAttachment) bool {
 	return false
 }
 
-func getCSISource(pv *v1.PersistentVolume) (*v1.CSIPersistentVolumeSource, error) {
-	if pv == nil {
-		return nil, fmt.Errorf("could not get CSI source, pv was nil")
+func getCSISource(pvSpec *v1.PersistentVolumeSpec) (*v1.CSIPersistentVolumeSource, error) {
+	if pvSpec == nil {
+		return nil, errors.New("could not get CSI source, pv spec was nil")
 	}
-	if pv.Spec.CSI != nil {
-		return pv.Spec.CSI, nil
+	if pvSpec.CSI != nil {
+		return pvSpec.CSI, nil
 	}
-	return nil, fmt.Errorf("pv contained non-csi source that was not migrated")
+	return nil, errors.New("pv spec contained non-csi source that was not migrated")
+}
+
+func (h *csiHandler) getProcessedPVSpec(va *storage.VolumeAttachment) (*v1.PersistentVolumeSpec, error) {
+	if va.Spec.Source.PersistentVolumeName != nil {
+		if va.Spec.Source.InlineVolumeSpec != nil {
+			return nil, errors.New("both InlineCSIVolumeSource and PersistentVolumeName specified in VA source")
+		}
+		pv, err := h.pvLister.Get(*va.Spec.Source.PersistentVolumeName)
+		if err != nil {
+			return nil, err
+		}
+		if h.translator.IsPVMigratable(pv) {
+			pv, err = h.translator.TranslateInTreePVToCSI(pv)
+			if err != nil {
+				return nil, fmt.Errorf("failed to TranslateInTreePVToCSI(%v): %v", pv, err)
+			}
+		}
+		return &pv.Spec, nil
+	} else if va.Spec.Source.InlineVolumeSpec != nil {
+		if va.Spec.Source.InlineVolumeSpec.CSI == nil {
+			return nil, errors.New("inline volume spec contains nil CSI source")
+		}
+
+		return va.Spec.Source.InlineVolumeSpec, nil
+	} else {
+		return nil, errors.New("neither InlineCSIVolumeSource nor PersistentVolumeName specified in VA source")
+	}
 }
 
 func (h *csiHandler) csiAttach(va *storage.VolumeAttachment) (*storage.VolumeAttachment, map[string]string, error) {
@@ -286,7 +428,7 @@ func (h *csiHandler) csiAttach(va *storage.VolumeAttachment) (*storage.VolumeAtt
 
 		// Both csiSource and pvSpec could be translated here if the PV was
 		// migrated
-		csiSource, err = getCSISource(pv)
+		csiSource, err = getCSISource(&pv.Spec)
 		if err != nil {
 			return va, nil, err
 		}
@@ -371,7 +513,7 @@ func (h *csiHandler) csiDetach(va *storage.VolumeAttachment) (*storage.VolumeAtt
 				return va, fmt.Errorf("failed to translate in tree pv to CSI: %v", err)
 			}
 		}
-		csiSource, err = getCSISource(pv)
+		csiSource, err = getCSISource(&pv.Spec)
 		if err != nil {
 			return va, err
 		}

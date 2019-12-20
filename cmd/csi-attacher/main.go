@@ -63,6 +63,8 @@ var (
 
 	enableLeaderElection    = flag.Bool("leader-election", false, "Enable leader election.")
 	leaderElectionNamespace = flag.String("leader-election-namespace", "", "Namespace where the leader election resource lives. Defaults to the pod namespace if not set.")
+
+	reconcileSync = flag.Duration("reconcile-sync", 1*time.Minute, "Resync interval of the VolumeAttachment reconciler.")
 )
 
 var (
@@ -148,13 +150,23 @@ func main() {
 			nodeLister := factory.Core().V1().Nodes().Lister()
 			vaLister := factory.Storage().V1beta1().VolumeAttachments().Lister()
 			csiNodeLister := factory.Storage().V1beta1().CSINodes().Lister()
-			attacher := attacher.NewAttacher(csiConn)
-			handler = controller.NewCSIHandler(clientset, csiAttacher, attacher, pvLister, nodeLister, csiNodeLister, vaLister, timeout, supportsReadOnly, csitrans.New())
+			volAttacher := attacher.NewAttacher(csiConn)
+			CSIVolumeLister := attacher.NewVolumeLister(csiConn)
+			handler = controller.NewCSIHandler(clientset, csiAttacher, volAttacher, CSIVolumeLister, pvLister, nodeLister, csiNodeLister, vaLister, timeout, supportsReadOnly, csitrans.New())
 			klog.V(2).Infof("CSI driver supports ControllerPublishUnpublish, using real CSI handler")
 		} else {
 			handler = controller.NewTrivialHandler(clientset)
 			klog.V(2).Infof("CSI driver does not support ControllerPublishUnpublish, using trivial handler")
 		}
+	}
+
+	slvpn, err := supportsListVolumesPublishedNodes(ctx, csiConn)
+	if err != nil {
+		klog.Errorf("Failed to check if driver supports ListVolumesPublishedNodes, assuming it does not: %v", err)
+	}
+
+	if slvpn {
+		klog.V(2).Infof("CSI driver supports list volumes published nodes. Using capability to reconcile volume attachment objects with actual backend state")
 	}
 
 	ctrl := controller.NewCSIAttachController(
@@ -165,6 +177,8 @@ func main() {
 		factory.Core().V1().PersistentVolumes(),
 		workqueue.NewItemExponentialFailureRateLimiter(*retryIntervalStart, *retryIntervalMax),
 		workqueue.NewItemExponentialFailureRateLimiter(*retryIntervalStart, *retryIntervalMax),
+		slvpn,
+		*reconcileSync,
 	)
 
 	run := func(ctx context.Context) {
@@ -206,6 +220,15 @@ func supportsControllerPublish(ctx context.Context, csiConn *grpc.ClientConn) (s
 	supportsControllerPublish = caps[csi.ControllerServiceCapability_RPC_PUBLISH_UNPUBLISH_VOLUME]
 	supportsPublishReadOnly = caps[csi.ControllerServiceCapability_RPC_PUBLISH_READONLY]
 	return supportsControllerPublish, supportsPublishReadOnly, nil
+}
+
+func supportsListVolumesPublishedNodes(ctx context.Context, csiConn *grpc.ClientConn) (bool, error) {
+	caps, err := rpc.GetControllerCapabilities(ctx, csiConn)
+	if err != nil {
+		return false, fmt.Errorf("failed to get controller capabilities: %v", err)
+	}
+
+	return caps[csi.ControllerServiceCapability_RPC_LIST_VOLUMES] && caps[csi.ControllerServiceCapability_RPC_LIST_VOLUMES_PUBLISHED_NODES], nil
 }
 
 func supportsPluginControllerService(ctx context.Context, csiConn *grpc.ClientConn) (bool, error) {
