@@ -32,7 +32,7 @@ The following table reflects the head of this branch.
 | Feature       | Status  | Default | Description                                                                                   |
 | ------------- | ------- | ------- | --------------------------------------------------------------------------------------------- |
 | CSINode*      | Beta    | On      | external-attacher uses the CSINode object to get the driver's node name instead of the Node annotation. |
-| CSIMigration* | Alpha   | On      | [Migrating in-tree volume plugins to CSI](https://kubernetes.io/docs/concepts/storage/volumes/#csi-migration). |
+| CSIMigration* | Beta    | On      | [Migrating in-tree volume plugins to CSI](https://kubernetes.io/docs/concepts/storage/volumes/#csi-migration). |
 
 *) There are no special feature gates for these features. They are enabled by turning on the corresponding features in Kubernetes.
 
