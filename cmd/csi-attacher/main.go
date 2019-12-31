@@ -34,6 +34,7 @@ import (
 	"github.com/container-storage-interface/spec/lib/go/csi"
 	"github.com/kubernetes-csi/csi-lib-utils/connection"
 	"github.com/kubernetes-csi/csi-lib-utils/leaderelection"
+	"github.com/kubernetes-csi/csi-lib-utils/metrics"
 	"github.com/kubernetes-csi/csi-lib-utils/rpc"
 	"github.com/kubernetes-csi/external-attacher/pkg/attacher"
 	"github.com/kubernetes-csi/external-attacher/pkg/controller"
@@ -65,6 +66,9 @@ var (
 	leaderElectionNamespace = flag.String("leader-election-namespace", "", "Namespace where the leader election resource lives. Defaults to the pod namespace if not set.")
 
 	reconcileSync = flag.Duration("reconcile-sync", 1*time.Minute, "Resync interval of the VolumeAttachment reconciler.")
+
+	metricsAddress = flag.String("metrics-address", "", "The TCP network address address where the prometheus metrics endpoint will listen (example: `:8080`). The default is empty string, which means metrics endpoint is disabled.")
+	metricsPath    = flag.String("metrics-path", "/metrics", "The HTTP path where prometheus metrics will be exposed. Default is `/metrics`.")
 )
 
 var (
@@ -107,8 +111,10 @@ func main() {
 
 	factory := informers.NewSharedInformerFactory(clientset, *resync)
 	var handler controller.Handler
+	metricsManager := metrics.NewCSIMetricsManager("" /* driverName */)
+
 	// Connect to CSI.
-	csiConn, err := connection.Connect(*csiAddress, connection.OnConnectionLoss(connection.ExitOnConnectionLoss()))
+	csiConn, err := connection.Connect(*csiAddress, metricsManager, connection.OnConnectionLoss(connection.ExitOnConnectionLoss()))
 	if err != nil {
 		klog.Error(err.Error())
 		os.Exit(1)
@@ -129,6 +135,8 @@ func main() {
 		os.Exit(1)
 	}
 	klog.V(2).Infof("CSI driver name: %q", csiAttacher)
+	metricsManager.SetDriverName(csiAttacher)
+	metricsManager.StartMetricsEndpoint(*metricsAddress, *metricsPath)
 
 	supportsService, err := supportsPluginControllerService(ctx, csiConn)
 	if err != nil {
