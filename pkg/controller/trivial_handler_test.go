@@ -40,7 +40,7 @@ func trivialHandlerFactory(client kubernetes.Interface, informerFactory informer
 func TestTrivialHandler(t *testing.T) {
 	vaGroupResourceVersion := schema.GroupVersionResource{
 		Group:    storage.GroupName,
-		Version:  "v1beta1",
+		Version:  "v1",
 		Resource: "volumeattachments",
 	}
 
@@ -49,20 +49,20 @@ func TestTrivialHandler(t *testing.T) {
 			name:    "add -> successful write",
 			addedVA: va(false, "", nil),
 			expectedActions: []core.Action{
-				core.NewPatchAction(vaGroupResourceVersion, metav1.NamespaceNone, testPVName+"-"+testNodeName,
+				core.NewPatchSubresourceAction(vaGroupResourceVersion, metav1.NamespaceNone, testPVName+"-"+testNodeName,
 					types.MergePatchType, patch(
 						va(false, "", nil),
-						va(true, "", nil))),
+						va(true, "", nil)), "status"),
 			},
 		},
 		{
 			name:      "update -> successful write",
 			updatedVA: va(false, "", nil),
 			expectedActions: []core.Action{
-				core.NewPatchAction(vaGroupResourceVersion, metav1.NamespaceNone, testPVName+"-"+testNodeName,
+				core.NewPatchSubresourceAction(vaGroupResourceVersion, metav1.NamespaceNone, testPVName+"-"+testNodeName,
 					types.MergePatchType, patch(
 						va(false, "", nil),
-						va(true, "", nil))),
+						va(true, "", nil)), "status"),
 			},
 		},
 		{
@@ -92,18 +92,18 @@ func TestTrivialHandler(t *testing.T) {
 				},
 			},
 			expectedActions: []core.Action{
-				core.NewPatchAction(vaGroupResourceVersion, metav1.NamespaceNone, testPVName+"-"+testNodeName,
+				core.NewPatchSubresourceAction(vaGroupResourceVersion, metav1.NamespaceNone, testPVName+"-"+testNodeName,
 					types.MergePatchType, patch(
 						va(false, "", nil),
-						va(true, "", nil))),
-				core.NewPatchAction(vaGroupResourceVersion, metav1.NamespaceNone, testPVName+"-"+testNodeName,
+						va(true, "", nil)), "status"),
+				core.NewPatchSubresourceAction(vaGroupResourceVersion, metav1.NamespaceNone, testPVName+"-"+testNodeName,
 					types.MergePatchType, patch(
 						va(false, "", nil),
-						va(true, "", nil))),
-				core.NewPatchAction(vaGroupResourceVersion, metav1.NamespaceNone, testPVName+"-"+testNodeName,
+						va(true, "", nil)), "status"),
+				core.NewPatchSubresourceAction(vaGroupResourceVersion, metav1.NamespaceNone, testPVName+"-"+testNodeName,
 					types.MergePatchType, patch(
 						va(false, "", nil),
-						va(true, "", nil))),
+						va(true, "", nil)), "status"),
 			},
 		},
 	}

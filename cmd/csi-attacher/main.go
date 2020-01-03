@@ -154,7 +154,7 @@ func main() {
 		}
 		if supportsAttach {
 			pvLister := factory.Core().V1().PersistentVolumes().Lister()
-			vaLister := factory.Storage().V1beta1().VolumeAttachments().Lister()
+			vaLister := factory.Storage().V1().VolumeAttachments().Lister()
 			csiNodeLister := factory.Storage().V1beta1().CSINodes().Lister()
 			volAttacher := attacher.NewAttacher(csiConn)
 			CSIVolumeLister := attacher.NewVolumeLister(csiConn)
@@ -179,7 +179,7 @@ func main() {
 		clientset,
 		csiAttacher,
 		handler,
-		factory.Storage().V1beta1().VolumeAttachments(),
+		factory.Storage().V1().VolumeAttachments(),
 		factory.Core().V1().PersistentVolumes(),
 		workqueue.NewItemExponentialFailureRateLimiter(*retryIntervalStart, *retryIntervalMax),
 		workqueue.NewItemExponentialFailureRateLimiter(*retryIntervalStart, *retryIntervalMax),

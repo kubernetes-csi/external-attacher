@@ -25,13 +25,14 @@ import (
 
 	"github.com/kubernetes-csi/external-attacher/v2/pkg/attacher"
 	v1 "k8s.io/api/core/v1"
-	storage "k8s.io/api/storage/v1beta1"
+	storage "k8s.io/api/storage/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/kubernetes"
 	corelisters "k8s.io/client-go/listers/core/v1"
-	storagelisters "k8s.io/client-go/listers/storage/v1beta1"
+	storagelisters "k8s.io/client-go/listers/storage/v1"
+	storagelistersv1beta1 "k8s.io/client-go/listers/storage/v1beta1"
 	"k8s.io/client-go/util/workqueue"
 	"k8s.io/klog"
 )
@@ -61,7 +62,7 @@ type csiHandler struct {
 	attacher                attacher.Attacher
 	CSIVolumeLister         VolumeLister
 	pvLister                corelisters.PersistentVolumeLister
-	csiNodeLister           storagelisters.CSINodeLister
+	csiNodeLister           storagelistersv1beta1.CSINodeLister
 	vaLister                storagelisters.VolumeAttachmentLister
 	vaQueue, pvQueue        workqueue.RateLimitingInterface
 	forceSync               map[string]bool
@@ -80,7 +81,7 @@ func NewCSIHandler(
 	attacher attacher.Attacher,
 	CSIVolumeLister VolumeLister,
 	pvLister corelisters.PersistentVolumeLister,
-	csiNodeLister storagelisters.CSINodeLister,
+	csiNodeLister storagelistersv1beta1.CSINodeLister,
 	vaLister storagelisters.VolumeAttachmentLister,
 	timeout *time.Duration,
 	supportsPublishReadOnly bool,
@@ -312,7 +313,7 @@ func (h *csiHandler) prepareVANodeID(va *storage.VolumeAttachment, nodeID string
 }
 
 func (h *csiHandler) saveVA(va *storage.VolumeAttachment, patch []byte) (*storage.VolumeAttachment, error) {
-	newVA, err := h.client.StorageV1beta1().VolumeAttachments().Patch(context.TODO(), va.Name, types.MergePatchType, patch, metav1.PatchOptions{})
+	newVA, err := h.client.StorageV1().VolumeAttachments().Patch(context.TODO(), va.Name, types.MergePatchType, patch, metav1.PatchOptions{})
 	if err != nil {
 		return va, err
 	}
@@ -563,7 +564,7 @@ func (h *csiHandler) saveAttachError(va *storage.VolumeAttachment, err error) (*
 	}
 
 	var newVa *storage.VolumeAttachment
-	if newVa, err = h.patchVA(va, clone); err != nil {
+	if newVa, err = h.patchVA(va, clone, "status"); err != nil {
 		return va, err
 	}
 	klog.V(4).Infof("Saved attach error to %q", va.Name)
@@ -579,7 +580,7 @@ func (h *csiHandler) saveDetachError(va *storage.VolumeAttachment, err error) (*
 	}
 
 	var newVa *storage.VolumeAttachment
-	if newVa, err = h.patchVA(va, clone); err != nil {
+	if newVa, err = h.patchVA(va, clone, "status"); err != nil {
 		return va, err
 	}
 	klog.V(4).Infof("Saved detach error to %q", va.Name)
@@ -709,13 +710,15 @@ func (h *csiHandler) getNodeID(driver string, nodeName string, va *storage.Volum
 	return "", err
 }
 
-func (h *csiHandler) patchVA(va, clone *storage.VolumeAttachment) (*storage.VolumeAttachment, error) {
+func (h *csiHandler) patchVA(va, clone *storage.VolumeAttachment, subresources ...string) (*storage.VolumeAttachment,
+	error) {
 	patch, err := createMergePatch(va, clone)
 	if err != nil {
 		return va, err
 	}
 
-	newVa, err := h.client.StorageV1beta1().VolumeAttachments().Patch(context.TODO(), va.Name, types.MergePatchType, patch, metav1.PatchOptions{})
+	newVa, err := h.client.StorageV1().VolumeAttachments().Patch(context.TODO(), va.Name, types.MergePatchType, patch,
+		metav1.PatchOptions{}, subresources...)
 	if err != nil {
 		return va, err
 	}

@@ -30,7 +30,8 @@ import (
 	"github.com/kubernetes-csi/external-attacher/v2/pkg/attacher"
 
 	v1 "k8s.io/api/core/v1"
-	storage "k8s.io/api/storage/v1beta1"
+	storage "k8s.io/api/storage/v1"
+	storagev1beta1 "k8s.io/api/storage/v1beta1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/informers"
@@ -123,7 +124,7 @@ func runTests(t *testing.T, handlerFactory handlerFactory, tests []testCase) {
 		csiObjs := []runtime.Object{}
 		for _, obj := range objs {
 			switch obj.(type) {
-			case *storage.CSINode:
+			case *storagev1beta1.CSINode:
 				csiObjs = append(csiObjs, obj)
 			default:
 				coreObjs = append(coreObjs, obj)
@@ -133,7 +134,7 @@ func runTests(t *testing.T, handlerFactory handlerFactory, tests []testCase) {
 		// Create client and informers
 		client := fake.NewSimpleClientset(coreObjs...)
 		informers := informers.NewSharedInformerFactory(client, time.Hour /* disable resync*/)
-		vaInformer := informers.Storage().V1beta1().VolumeAttachments()
+		vaInformer := informers.Storage().V1().VolumeAttachments()
 		pvInformer := informers.Core().V1().PersistentVolumes()
 		nodeInformer := informers.Core().V1().Nodes()
 		csiNodeInformer := informers.Storage().V1beta1().CSINodes()
@@ -148,7 +149,7 @@ func runTests(t *testing.T, handlerFactory handlerFactory, tests []testCase) {
 				vaInformer.Informer().GetStore().Add(obj)
 			case *v1.Secret:
 				// Secrets are not cached in any informer
-			case *storage.CSINode:
+			case *storagev1beta1.CSINode:
 				csiNodeInformer.Informer().GetStore().Add(obj)
 			default:
 				t.Fatalf("Unknown initalObject type: %+v", obj)
