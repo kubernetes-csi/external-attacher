@@ -18,6 +18,7 @@ package controller
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"reflect"
 	"strings"
@@ -27,10 +28,8 @@ import (
 	"github.com/container-storage-interface/spec/lib/go/csi"
 	"github.com/davecgh/go-spew/spew"
 	"github.com/kubernetes-csi/external-attacher/pkg/attacher"
-	"k8s.io/klog"
 
-	"encoding/json"
-	"k8s.io/api/core/v1"
+	v1 "k8s.io/api/core/v1"
 	storage "k8s.io/api/storage/v1beta1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -39,6 +38,8 @@ import (
 	"k8s.io/client-go/kubernetes/fake"
 	core "k8s.io/client-go/testing"
 	"k8s.io/client-go/util/workqueue"
+	csitrans "k8s.io/csi-translation-lib"
+	"k8s.io/klog"
 )
 
 // This is an unit test framework. It is heavily inspired by serviceaccount
@@ -72,6 +73,8 @@ type testCase struct {
 	expectedActions []core.Action
 	// List of expected CSI calls
 	expectedCSICalls []csiCall
+	// Expected lister response
+	listerResponse map[string][]string
 	// Function to perform additional checks after the test finishes
 	additionalCheck func(t *testing.T, test testCase)
 }
@@ -100,7 +103,7 @@ type csiCall struct {
 	delay time.Duration
 }
 
-type handlerFactory func(client kubernetes.Interface, informerFactory informers.SharedInformerFactory, csi attacher.Attacher) Handler
+type handlerFactory func(client kubernetes.Interface, informerFactory informers.SharedInformerFactory, csi attacher.Attacher, lister VolumeLister) Handler
 
 func runTests(t *testing.T, handlerFactory handlerFactory, tests []testCase) {
 	for _, test := range tests {
@@ -176,8 +179,9 @@ func runTests(t *testing.T, handlerFactory handlerFactory, tests []testCase) {
 
 		// Construct controller
 		csiConnection := &fakeCSIConnection{t: t, calls: test.expectedCSICalls}
-		handler := handlerFactory(client, informers, csiConnection)
-		ctrl := NewCSIAttachController(client, testAttacherName, handler, vaInformer, pvInformer, workqueue.DefaultControllerRateLimiter(), workqueue.DefaultControllerRateLimiter())
+		lister := &fakeLister{t: t, publishedNodes: test.listerResponse}
+		handler := handlerFactory(client, informers, csiConnection, lister)
+		ctrl := NewCSIAttachController(client, testAttacherName, handler, vaInformer, pvInformer, workqueue.DefaultControllerRateLimiter(), workqueue.DefaultControllerRateLimiter(), test.listerResponse != nil, 1*time.Minute)
 
 		// Start the test by enqueueing the right event
 		if test.addedVA != nil {
@@ -212,6 +216,13 @@ func runTests(t *testing.T, handlerFactory handlerFactory, tests []testCase) {
 			if ctrl.vaQueue.Len() > 0 || ctrl.pvQueue.Len() > 0 {
 				// There is still some work in the queue, process it now
 				continue
+			}
+			if test.listerResponse != nil {
+				// Reconcile VA with the actual state
+				err := ctrl.handler.ReconcileVA()
+				if err != nil {
+					t.Errorf("Failed to reconcile Volume Attachment objects: %v", err)
+				}
 			}
 			currentActionCount := len(client.Actions())
 			if currentActionCount < len(test.expectedActions) {
@@ -380,6 +391,15 @@ func vaWithDetachError(va *storage.VolumeAttachment, message string) *storage.Vo
 	return va
 }
 
+type fakeLister struct {
+	t              *testing.T
+	publishedNodes map[string][]string
+}
+
+func (l *fakeLister) ListVolumes(ctx context.Context) (map[string][]string, error) {
+	return l.publishedNodes, nil
+}
+
 // Fake CSIConnection implementation that check that Attach/Detach is called
 // with the right parameters and it returns proper error code and metadata.
 type fakeCSIConnection struct {
@@ -493,4 +513,18 @@ func (f *fakeCSIConnection) Close() error {
 
 func (f *fakeCSIConnection) Probe(timeout time.Duration) error {
 	return nil
+}
+
+// TODO: Remove hardcoding for GCE tests and make more general
+type fakeInTreeToCSITranslator struct{}
+
+func (f fakeInTreeToCSITranslator) TranslateInTreePVToCSI(pv *v1.PersistentVolume) (*v1.PersistentVolume, error) {
+	t := csitrans.New()
+	return t.TranslateInTreePVToCSI(pv)
+}
+func (f fakeInTreeToCSITranslator) IsPVMigratable(pv *v1.PersistentVolume) bool {
+	return pv.Spec.GCEPersistentDisk != nil
+}
+func (f fakeInTreeToCSITranslator) RepairVolumeHandle(pluginName, volumeHandle, nodeID string) (string, error) {
+	return volumeHandle, nil
 }

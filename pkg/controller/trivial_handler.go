@@ -17,7 +17,7 @@ limitations under the License.
 package controller
 
 import (
-	"k8s.io/api/core/v1"
+	v1 "k8s.io/api/core/v1"
 	storage "k8s.io/api/storage/v1beta1"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/util/workqueue"
@@ -43,6 +43,10 @@ func NewTrivialHandler(client kubernetes.Interface) Handler {
 func (h *trivialHandler) Init(vaQueue workqueue.RateLimitingInterface, pvQueue workqueue.RateLimitingInterface) {
 	h.vaQueue = vaQueue
 	h.pvQueue = pvQueue
+}
+
+func (h *trivialHandler) ReconcileVA() error {
+	return nil
 }
 
 func (h *trivialHandler) SyncNewOrUpdatedVolumeAttachment(va *storage.VolumeAttachment) {

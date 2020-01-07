@@ -50,31 +50,35 @@ var (
 
 var timeout = 10 * time.Millisecond
 
-func csiHandlerFactory(client kubernetes.Interface, informerFactory informers.SharedInformerFactory, csi attacher.Attacher) Handler {
+func csiHandlerFactory(client kubernetes.Interface, informerFactory informers.SharedInformerFactory, csi attacher.Attacher, lister VolumeLister) Handler {
 	return NewCSIHandler(
 		client,
 		testAttacherName,
 		csi,
+		lister,
 		informerFactory.Core().V1().PersistentVolumes().Lister(),
 		informerFactory.Core().V1().Nodes().Lister(),
 		informerFactory.Storage().V1beta1().CSINodes().Lister(),
 		informerFactory.Storage().V1beta1().VolumeAttachments().Lister(),
 		&timeout,
 		true, /* supports PUBLISH_READONLY */
+		fakeInTreeToCSITranslator{},
 	)
 }
 
-func csiHandlerFactoryNoReadOnly(client kubernetes.Interface, informerFactory informers.SharedInformerFactory, csi attacher.Attacher) Handler {
+func csiHandlerFactoryNoReadOnly(client kubernetes.Interface, informerFactory informers.SharedInformerFactory, csi attacher.Attacher, lister VolumeLister) Handler {
 	return NewCSIHandler(
 		client,
 		testAttacherName,
 		csi,
+		lister,
 		informerFactory.Core().V1().PersistentVolumes().Lister(),
 		informerFactory.Core().V1().Nodes().Lister(),
 		informerFactory.Storage().V1beta1().CSINodes().Lister(),
 		informerFactory.Storage().V1beta1().VolumeAttachments().Lister(),
 		&timeout,
 		false, /* does not support PUBLISH_READONLY */
+		fakeInTreeToCSITranslator{},
 	)
 }
 
@@ -125,6 +129,12 @@ func gcePDPV() *v1.PersistentVolume {
 func gcePDPVWithFinalizer() *v1.PersistentVolume {
 	pv := gcePDPV()
 	pv.Finalizers = []string{fin}
+	return pv
+}
+
+func pvWithDriverName(driver string) *v1.PersistentVolume {
+	pv := pv()
+	pv.Spec.CSI.Driver = driver
 	return pv
 }
 
@@ -1256,8 +1266,72 @@ func TestCSIHandler(t *testing.T) {
 			deletedVA:       va(false, "", nil),
 			expectedActions: []core.Action{},
 		},
+		{
+			name:            "PV created by other CSI drivers or in-tree provisioners -> ignored",
+			initialObjects:  []runtime.Object{},
+			updatedPV:       pvWithDriverName("dummy"),
+			expectedActions: []core.Action{},
+		},
 	}
 
+	runTests(t, csiHandlerFactory, tests)
+}
+
+func TestCSIHandlerReconcileVA(t *testing.T) {
+	nID := map[string]string{
+		vaNodeIDAnnotation: testNodeName,
+	}
+
+	tests := []testCase{
+		{
+			name: "va attached actual state not attached",
+			initialObjects: []runtime.Object{
+				va(true /*attached*/, "" /*finalizer*/, nID /*annotations*/),
+				pvWithFinalizer(),
+			},
+			listerResponse: map[string][]string{
+				// Intentionally empty
+			},
+			expectedCSICalls: []csiCall{
+				{"attach", testVolumeHandle, testNodeID, nil, nil, false, nil, false, nil, 0},
+			},
+		},
+		{
+			name: "va attached actual state attached",
+			initialObjects: []runtime.Object{
+				va(true /*attached*/, "" /*finalizer*/, nID /*annotations*/),
+				pvWithFinalizer(),
+			},
+			listerResponse: map[string][]string{
+				testVolumeHandle: []string{testNodeName},
+			},
+			expectedActions: []core.Action{
+				// Intentionally empty
+			},
+		},
+		{
+			name: "va not attached actual state attached",
+			initialObjects: []runtime.Object{
+				va(false /*attached*/, "" /*finalizer*/, nID /*annotations*/),
+				pvWithFinalizer(),
+			},
+			listerResponse: map[string][]string{
+				testVolumeHandle: []string{testNodeName},
+			},
+			expectedActions: []core.Action{},
+			expectedCSICalls: []csiCall{
+				{"detach", testVolumeHandle, testNodeID, nil, nil, false, nil, true, nil, 0},
+			},
+		},
+		{
+			name:           "no volume attachments but existing lister response results in no action",
+			initialObjects: []runtime.Object{},
+			listerResponse: map[string][]string{
+				testVolumeHandle: []string{testNodeName},
+			},
+			expectedActions: []core.Action{},
+		},
+	}
 	runTests(t, csiHandlerFactory, tests)
 }
 
