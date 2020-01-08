@@ -18,6 +18,7 @@ package controller
 
 import (
 	"fmt"
+	"time"
 
 	"k8s.io/klog"
 
@@ -51,6 +52,9 @@ type CSIAttachController struct {
 	vaListerSynced cache.InformerSynced
 	pvLister       corelisters.PersistentVolumeLister
 	pvListerSynced cache.InformerSynced
+
+	shouldReconcileVolumeAttachment bool
+	reconcileSync                   time.Duration
 }
 
 // Handler is responsible for handling VolumeAttachment events from informer.
@@ -67,22 +71,26 @@ type Handler interface {
 	SyncNewOrUpdatedVolumeAttachment(va *storage.VolumeAttachment)
 
 	SyncNewOrUpdatedPersistentVolume(pv *v1.PersistentVolume)
+
+	ReconcileVA() error
 }
 
 // NewCSIAttachController returns a new *CSIAttachController
-func NewCSIAttachController(client kubernetes.Interface, attacherName string, handler Handler, volumeAttachmentInformer storageinformers.VolumeAttachmentInformer, pvInformer coreinformers.PersistentVolumeInformer, vaRateLimiter, paRateLimiter workqueue.RateLimiter) *CSIAttachController {
+func NewCSIAttachController(client kubernetes.Interface, attacherName string, handler Handler, volumeAttachmentInformer storageinformers.VolumeAttachmentInformer, pvInformer coreinformers.PersistentVolumeInformer, vaRateLimiter, paRateLimiter workqueue.RateLimiter, shouldReconcileVolumeAttachment bool, reconcileSync time.Duration) *CSIAttachController {
 	broadcaster := record.NewBroadcaster()
 	broadcaster.StartRecordingToSink(&corev1.EventSinkImpl{Interface: client.CoreV1().Events(v1.NamespaceAll)})
 	var eventRecorder record.EventRecorder
 	eventRecorder = broadcaster.NewRecorder(scheme.Scheme, v1.EventSource{Component: fmt.Sprintf("csi-attacher %s", attacherName)})
 
 	ctrl := &CSIAttachController{
-		client:        client,
-		attacherName:  attacherName,
-		handler:       handler,
-		eventRecorder: eventRecorder,
-		vaQueue:       workqueue.NewNamedRateLimitingQueue(vaRateLimiter, "csi-attacher-va"),
-		pvQueue:       workqueue.NewNamedRateLimitingQueue(paRateLimiter, "csi-attacher-pv"),
+		client:                          client,
+		attacherName:                    attacherName,
+		handler:                         handler,
+		eventRecorder:                   eventRecorder,
+		vaQueue:                         workqueue.NewNamedRateLimitingQueue(vaRateLimiter, "csi-attacher-va"),
+		pvQueue:                         workqueue.NewNamedRateLimitingQueue(paRateLimiter, "csi-attacher-pv"),
+		shouldReconcileVolumeAttachment: shouldReconcileVolumeAttachment,
+		reconcileSync:                   reconcileSync,
 	}
 
 	volumeAttachmentInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
@@ -122,6 +130,15 @@ func (ctrl *CSIAttachController) Run(workers int, stopCh <-chan struct{}) {
 		go wait.Until(ctrl.syncPV, 0, stopCh)
 	}
 
+	if ctrl.shouldReconcileVolumeAttachment {
+		go wait.Until(func() {
+			err := ctrl.handler.ReconcileVA()
+			if err != nil {
+				klog.Errorf("Failed to reconcile volume attachments: %v", err)
+			}
+		}, ctrl.reconcileSync, stopCh)
+	}
+
 	<-stopCh
 }
 
@@ -154,12 +171,18 @@ func (ctrl *CSIAttachController) vaDeleted(obj interface{}) {
 // pvAdded reacts to a PV creation
 func (ctrl *CSIAttachController) pvAdded(obj interface{}) {
 	pv := obj.(*v1.PersistentVolume)
+	if !ctrl.processFinalizers(pv) {
+		return
+	}
 	ctrl.pvQueue.Add(pv.Name)
 }
 
 // pvUpdated reacts to a PV update
 func (ctrl *CSIAttachController) pvUpdated(old, new interface{}) {
 	pv := new.(*v1.PersistentVolume)
+	if !ctrl.processFinalizers(pv) {
+		return
+	}
 	ctrl.pvQueue.Add(pv.Name)
 }
 
@@ -191,6 +214,13 @@ func (ctrl *CSIAttachController) syncVA() {
 		return
 	}
 	ctrl.handler.SyncNewOrUpdatedVolumeAttachment(va)
+}
+
+func (ctrl *CSIAttachController) processFinalizers(pv *v1.PersistentVolume) bool {
+	if pv.Spec.CSI != nil && pv.Spec.CSI.Driver == ctrl.attacherName {
+		return true
+	}
+	return false
 }
 
 // syncPV deals with one key off the queue.  It returns false when it's time to quit.

@@ -19,9 +19,9 @@ The external-attacher is an external controller that monitors `VolumeAttachment`
 
 This information reflects the head of this branch.
 
-| Compatible with CSI Version                                                                | Container Image             | Min K8s Version |
-| ------------------------------------------------------------------------------------------ | ----------------------------| --------------- |
-| [CSI Spec v1.0.0](https://github.com/container-storage-interface/spec/releases/tag/v1.0.0) | quay.io/k8scsi/csi-attacher | 1.15            |
+| Compatible with CSI Version                                                                | Container Image             | Min K8s Version | Recommended K8s Version |
+| ------------------------------------------------------------------------------------------ | ----------------------------| --------------- | ----------------------- |
+| [CSI Spec v1.2.0](https://github.com/container-storage-interface/spec/releases/tag/v1.2.0) | quay.io/k8scsi/csi-attacher | 1.15            | 1.17                    |
 
 ## Feature Status
 
@@ -32,7 +32,7 @@ The following table reflects the head of this branch.
 | Feature       | Status  | Default | Description                                                                                   |
 | ------------- | ------- | ------- | --------------------------------------------------------------------------------------------- |
 | CSINode*      | Beta    | On      | external-attacher uses the CSINode object to get the driver's node name instead of the Node annotation. |
-| CSIMigration* | Alpha   | On      | [Migrating in-tree volume plugins to CSI](https://kubernetes.io/docs/concepts/storage/volumes/#csi-migration). |
+| CSIMigration* | Beta    | On      | [Migrating in-tree volume plugins to CSI](https://kubernetes.io/docs/concepts/storage/volumes/#csi-migration). |
 
 *) There are no special feature gates for these features. They are enabled by turning on the corresponding features in Kubernetes.
 
@@ -67,6 +67,12 @@ Note that the external-attacher does not scale with more replicas. Only one exte
 
 * `--retry-interval-max`: The exponential backoff maximum value. See [CSI error and timeout handling](#csi-error-and-timeout-handling) for details. 5 minutes is used by default.
 
+* `--metrics-address`: The TCP network address where the prometheus metrics endpoint will run (example: `:8080` which corresponds to port 8080 on local host). The default is empty string, which means metrics endpoint is disabled.
+
+* `--metrics-path`: The HTTP path where prometheus metrics will be exposed. Default is `/metrics`.
+
+* `--reconcile-sync`: Resync frequency of the attached volumes with the driver. See [Periodic re-sync](#periodic-re-sync) for details. 1 minute is used by default.
+
 #### Other recognized arguments
 * `--kubeconfig <path>`: Path to Kubernetes client configuration that the external-attacher uses to connect to Kubernetes API server. When omitted, default token provided by Kubernetes will be used. This option is useful only when the external-attacher does not run as a Kubernetes pod, e.g. for debugging.
 
@@ -85,6 +91,9 @@ The external-attacher invokes all gRPC calls to CSI driver with timeout provided
 * `GetPluginInfo`, `GetPluginCapabilitiesRequest`, `ControllerGetCapabilities`: The external-attacher expects that these calls are quick and does not retry them on any error, including timeout. Instead, it assumes that the driver is faulty and exits. Note that Kubernetes will likely start a new attacher container and it will start with `Probe` call.
 
 Correct timeout value depends on the storage backend and how quickly it is able to processes `ControllerPublish` and `ControllerUnpublish` calls. The value should be set to accommodate majority of them. It is fine if some calls time out - such calls will be re-tried after exponential backoff (starting with `--retry-interval-start`), however, this backoff will introduce delay when the call times out several times for a single volume (up to `--retry-interval-max`).
+
+### Periodic re-sync
+When CSI driver supports `LIST_VOLUMES` and `LIST_VOLUMES_PUBLISHED_NODES` capabilities, the external attacher periodically syncs volume attachments requested by Kubernetes with the actual state reported by CSI driver. Volumes detached by any 3rd party, but still required to be attached by Kubernetes, will be re-attached back. Frequency of this re-sync is controlled by `--reconcile-sync` command line parameter.
 
 ## Community, discussion, contribution, and support
 

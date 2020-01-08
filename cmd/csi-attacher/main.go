@@ -28,11 +28,13 @@ import (
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
 	"k8s.io/client-go/util/workqueue"
+	csitrans "k8s.io/csi-translation-lib"
 	"k8s.io/klog"
 
 	"github.com/container-storage-interface/spec/lib/go/csi"
 	"github.com/kubernetes-csi/csi-lib-utils/connection"
 	"github.com/kubernetes-csi/csi-lib-utils/leaderelection"
+	"github.com/kubernetes-csi/csi-lib-utils/metrics"
 	"github.com/kubernetes-csi/csi-lib-utils/rpc"
 	"github.com/kubernetes-csi/external-attacher/pkg/attacher"
 	"github.com/kubernetes-csi/external-attacher/pkg/controller"
@@ -62,6 +64,11 @@ var (
 
 	enableLeaderElection    = flag.Bool("leader-election", false, "Enable leader election.")
 	leaderElectionNamespace = flag.String("leader-election-namespace", "", "Namespace where the leader election resource lives. Defaults to the pod namespace if not set.")
+
+	reconcileSync = flag.Duration("reconcile-sync", 1*time.Minute, "Resync interval of the VolumeAttachment reconciler.")
+
+	metricsAddress = flag.String("metrics-address", "", "The TCP network address where the prometheus metrics endpoint will listen (example: `:8080`). The default is empty string, which means metrics endpoint is disabled.")
+	metricsPath    = flag.String("metrics-path", "/metrics", "The HTTP path where prometheus metrics will be exposed. Default is `/metrics`.")
 )
 
 var (
@@ -104,8 +111,10 @@ func main() {
 
 	factory := informers.NewSharedInformerFactory(clientset, *resync)
 	var handler controller.Handler
+	metricsManager := metrics.NewCSIMetricsManager("" /* driverName */)
+
 	// Connect to CSI.
-	csiConn, err := connection.Connect(*csiAddress, connection.OnConnectionLoss(connection.ExitOnConnectionLoss()))
+	csiConn, err := connection.Connect(*csiAddress, metricsManager, connection.OnConnectionLoss(connection.ExitOnConnectionLoss()))
 	if err != nil {
 		klog.Error(err.Error())
 		os.Exit(1)
@@ -126,6 +135,8 @@ func main() {
 		os.Exit(1)
 	}
 	klog.V(2).Infof("CSI driver name: %q", csiAttacher)
+	metricsManager.SetDriverName(csiAttacher)
+	metricsManager.StartMetricsEndpoint(*metricsAddress, *metricsPath)
 
 	supportsService, err := supportsPluginControllerService(ctx, csiConn)
 	if err != nil {
@@ -147,13 +158,23 @@ func main() {
 			nodeLister := factory.Core().V1().Nodes().Lister()
 			vaLister := factory.Storage().V1beta1().VolumeAttachments().Lister()
 			csiNodeLister := factory.Storage().V1beta1().CSINodes().Lister()
-			attacher := attacher.NewAttacher(csiConn)
-			handler = controller.NewCSIHandler(clientset, csiAttacher, attacher, pvLister, nodeLister, csiNodeLister, vaLister, timeout, supportsReadOnly)
+			volAttacher := attacher.NewAttacher(csiConn)
+			CSIVolumeLister := attacher.NewVolumeLister(csiConn)
+			handler = controller.NewCSIHandler(clientset, csiAttacher, volAttacher, CSIVolumeLister, pvLister, nodeLister, csiNodeLister, vaLister, timeout, supportsReadOnly, csitrans.New())
 			klog.V(2).Infof("CSI driver supports ControllerPublishUnpublish, using real CSI handler")
 		} else {
 			handler = controller.NewTrivialHandler(clientset)
 			klog.V(2).Infof("CSI driver does not support ControllerPublishUnpublish, using trivial handler")
 		}
+	}
+
+	slvpn, err := supportsListVolumesPublishedNodes(ctx, csiConn)
+	if err != nil {
+		klog.Errorf("Failed to check if driver supports ListVolumesPublishedNodes, assuming it does not: %v", err)
+	}
+
+	if slvpn {
+		klog.V(2).Infof("CSI driver supports list volumes published nodes. Using capability to reconcile volume attachment objects with actual backend state")
 	}
 
 	ctrl := controller.NewCSIAttachController(
@@ -164,6 +185,8 @@ func main() {
 		factory.Core().V1().PersistentVolumes(),
 		workqueue.NewItemExponentialFailureRateLimiter(*retryIntervalStart, *retryIntervalMax),
 		workqueue.NewItemExponentialFailureRateLimiter(*retryIntervalStart, *retryIntervalMax),
+		slvpn,
+		*reconcileSync,
 	)
 
 	run := func(ctx context.Context) {
@@ -205,6 +228,15 @@ func supportsControllerPublish(ctx context.Context, csiConn *grpc.ClientConn) (s
 	supportsControllerPublish = caps[csi.ControllerServiceCapability_RPC_PUBLISH_UNPUBLISH_VOLUME]
 	supportsPublishReadOnly = caps[csi.ControllerServiceCapability_RPC_PUBLISH_READONLY]
 	return supportsControllerPublish, supportsPublishReadOnly, nil
+}
+
+func supportsListVolumesPublishedNodes(ctx context.Context, csiConn *grpc.ClientConn) (bool, error) {
+	caps, err := rpc.GetControllerCapabilities(ctx, csiConn)
+	if err != nil {
+		return false, fmt.Errorf("failed to get controller capabilities: %v", err)
+	}
+
+	return caps[csi.ControllerServiceCapability_RPC_LIST_VOLUMES] && caps[csi.ControllerServiceCapability_RPC_LIST_VOLUMES_PUBLISHED_NODES], nil
 }
 
 func supportsPluginControllerService(ctx context.Context, csiConn *grpc.ClientConn) (bool, error) {

@@ -33,7 +33,7 @@ import (
 	core "k8s.io/client-go/testing"
 )
 
-func trivialHandlerFactory(client kubernetes.Interface, informerFactory informers.SharedInformerFactory, csi attacher.Attacher) Handler {
+func trivialHandlerFactory(client kubernetes.Interface, informerFactory informers.SharedInformerFactory, csi attacher.Attacher, lister VolumeLister) Handler {
 	return NewTrivialHandler(client)
 }
 

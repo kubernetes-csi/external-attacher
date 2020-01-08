@@ -29,6 +29,7 @@ import (
 	"github.com/golang/mock/gomock"
 	"github.com/golang/protobuf/proto"
 	"github.com/kubernetes-csi/csi-lib-utils/connection"
+	"github.com/kubernetes-csi/csi-lib-utils/metrics"
 	"github.com/kubernetes-csi/csi-test/driver"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
@@ -70,6 +71,7 @@ func createMockServer(t *testing.T, tmpdir string) (*gomock.Controller, *driver.
 	mockController := gomock.NewController(t)
 	identityServer := driver.NewMockIdentityServer(mockController)
 	controllerServer := driver.NewMockControllerServer(mockController)
+	metricsManager := metrics.NewCSIMetricsManager("test.csi.driver.io" /* driverName */)
 	drv := driver.NewMockCSIDriver(&driver.MockCSIDriverServers{
 		Identity:   identityServer,
 		Controller: controllerServer,
@@ -79,7 +81,7 @@ func createMockServer(t *testing.T, tmpdir string) (*gomock.Controller, *driver.
 	// Create a client connection to it
 	addr := drv.Address()
 	t.Logf("adds: %s", addr)
-	csiConn, err := connection.Connect(addr)
+	csiConn, err := connection.Connect(addr, metricsManager)
 	if err != nil {
 		return nil, nil, nil, nil, nil, err
 	}
