@@ -46,8 +46,7 @@ const (
 	// Default timeout of short CSI calls like GetPluginInfo
 	csiTimeout = time.Second
 
-	leaderElectionTypeLeases     = "leases"
-	leaderElectionTypeConfigMaps = "configmaps"
+	leaderElectionTypeLeases = "leases"
 )
 
 // Command line flags
