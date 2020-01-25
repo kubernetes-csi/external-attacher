@@ -36,8 +36,8 @@ import (
 	"github.com/kubernetes-csi/csi-lib-utils/leaderelection"
 	"github.com/kubernetes-csi/csi-lib-utils/metrics"
 	"github.com/kubernetes-csi/csi-lib-utils/rpc"
-	"github.com/kubernetes-csi/external-attacher/pkg/attacher"
-	"github.com/kubernetes-csi/external-attacher/pkg/controller"
+	"github.com/kubernetes-csi/external-attacher/v2/pkg/attacher"
+	"github.com/kubernetes-csi/external-attacher/v2/pkg/controller"
 	"google.golang.org/grpc"
 )
 

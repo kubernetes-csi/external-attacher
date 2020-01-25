@@ -1,4 +1,4 @@
-module github.com/kubernetes-csi/external-attacher
+module github.com/kubernetes-csi/external-attacher/v2
 
 go 1.13
 
