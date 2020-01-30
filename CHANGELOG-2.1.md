@@ -1,3 +1,11 @@
+# Changelog since v2.1.0
+
+## Breaking Changes
+
+- Cherry pick PR &#35;209: fix: go module requirements for semantic versioning.
+  Update package path to v2. Vendoring with dep depends on https://github.com/golang/dep/pull/1963 or the workaround described in v2/README.md.
+  ([#210](https://github.com/kubernetes-csi/external-attacher/pull/210), [@alex1989hu](https://github.com/alex1989hu))
+
 # Changelog since v2.0.0
 
 The attacher now supports CSI version 1.2.0, namely LIST_VOLUMES_PUBLISHED_NODES capability. When the capability is supported by CSI driver, the attacher periodically syncs volume attachments requested by Kubernetes with actual state reported by CSI driver.
