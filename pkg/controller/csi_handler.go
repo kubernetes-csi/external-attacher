@@ -692,19 +692,14 @@ func (h *csiHandler) getNodeID(driver string, nodeName string, va *storage.Volum
 			klog.V(4).Infof("Found NodeID %s in CSINode %s", nodeID, nodeName)
 			return nodeID, nil
 		}
-		klog.V(4).Infof("CSINode %s does not contain driver %s", nodeName, driver)
 		// CSINode exists, but does not have the requested driver.
-		// Fall through to Node annotation.
-	} else {
-		// Can't get CSINode, fall through to Node annotation.
-		klog.V(4).Infof("Can't get CSINode %s: %s", nodeName, err)
+		errMessage := fmt.Sprintf("CSINode %s does not contain driver %s", nodeName, driver)
+		klog.V(4).Info(errMessage)
+		return "", errors.New(errMessage)
 	}
 
-	// Check Node annotation.
-	node, err := h.nodeLister.Get(nodeName)
-	if err == nil {
-		return GetNodeIDFromNode(driver, node)
-	}
+	// Can't get CSINode, check Volume Attachment.
+	klog.V(4).Infof("Can't get CSINode %s: %s", nodeName, err)
 
 	// Check VolumeAttachment annotation as the last resort if caller wants so (i.e. has provided one).
 	if va == nil {
