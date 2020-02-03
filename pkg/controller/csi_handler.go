@@ -62,7 +62,6 @@ type csiHandler struct {
 	attacher                attacher.Attacher
 	CSIVolumeLister         VolumeLister
 	pvLister                corelisters.PersistentVolumeLister
-	nodeLister              corelisters.NodeLister
 	csiNodeLister           storagelisters.CSINodeLister
 	vaLister                storagelisters.VolumeAttachmentLister
 	vaQueue, pvQueue        workqueue.RateLimitingInterface
@@ -82,7 +81,6 @@ func NewCSIHandler(
 	attacher attacher.Attacher,
 	CSIVolumeLister VolumeLister,
 	pvLister corelisters.PersistentVolumeLister,
-	nodeLister corelisters.NodeLister,
 	csiNodeLister storagelisters.CSINodeLister,
 	vaLister storagelisters.VolumeAttachmentLister,
 	timeout *time.Duration,
@@ -95,7 +93,6 @@ func NewCSIHandler(
 		attacher:                attacher,
 		CSIVolumeLister:         CSIVolumeLister,
 		pvLister:                pvLister,
-		nodeLister:              nodeLister,
 		csiNodeLister:           csiNodeLister,
 		vaLister:                vaLister,
 		timeout:                 *timeout,
@@ -682,7 +679,7 @@ func (h *csiHandler) getCredentialsFromPV(csiSource *v1.CSIPersistentVolumeSourc
 	return credentials, nil
 }
 
-// getNodeID finds node ID from Node API object. If caller wants, it can find
+// getNodeID finds node ID from CSINode API object. If caller wants, it can find
 // node ID stored in VolumeAttachment annotation.
 func (h *csiHandler) getNodeID(driver string, nodeName string, va *storage.VolumeAttachment) (string, error) {
 	// Try to find CSINode first.
@@ -709,7 +706,7 @@ func (h *csiHandler) getNodeID(driver string, nodeName string, va *storage.Volum
 		return nodeID, nil
 	}
 
-	// return nodeLister.Get error
+	// return csiNodeLister.Get error
 	return "", err
 }
 
