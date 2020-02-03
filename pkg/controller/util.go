@@ -23,8 +23,8 @@ import (
 	"regexp"
 
 	"github.com/container-storage-interface/spec/lib/go/csi"
-	"github.com/evanphx/json-patch"
-	"k8s.io/api/core/v1"
+	jsonpatch "github.com/evanphx/json-patch"
+	v1 "k8s.io/api/core/v1"
 	storage "k8s.io/api/storage/v1beta1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/kubernetes"
@@ -93,7 +93,6 @@ func markAsDetached(client kubernetes.Interface, va *storage.VolumeAttachment) (
 
 const (
 	defaultFSType              = "ext4"
-	nodeIDAnnotation           = "csi.volume.kubernetes.io/nodeid"
 	csiVolAttribsAnnotationKey = "csi.volume.kubernetes.io/volume-attributes"
 	vaNodeIDAnnotation         = "csi.alpha.kubernetes.io/node-id"
 )
@@ -112,25 +111,6 @@ func SanitizeDriverName(driver string) string {
 // GetFinalizerName returns Attacher name suitable to be used as finalizer
 func GetFinalizerName(driver string) string {
 	return "external-attacher/" + SanitizeDriverName(driver)
-}
-
-// GetNodeIDFromNode returns nodeID string from node annotations.
-func GetNodeIDFromNode(driver string, node *v1.Node) (string, error) {
-	nodeIDJSON, ok := node.Annotations[nodeIDAnnotation]
-	if !ok {
-		return "", fmt.Errorf("node %q has no NodeID annotation", node.Name)
-	}
-
-	var nodeIDs map[string]string
-	if err := json.Unmarshal([]byte(nodeIDJSON), &nodeIDs); err != nil {
-		return "", fmt.Errorf("cannot parse NodeID annotation on node %q: %s", node.Name, err)
-	}
-	nodeID, ok := nodeIDs[driver]
-	if !ok {
-		return "", fmt.Errorf("cannot find NodeID for driver %q for node %q", driver, node.Name)
-	}
-
-	return nodeID, nil
 }
 
 // GetNodeIDFromCSINode returns nodeID from CSIDriverInfoSpec

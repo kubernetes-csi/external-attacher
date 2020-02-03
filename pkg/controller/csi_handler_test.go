@@ -57,7 +57,6 @@ func csiHandlerFactory(client kubernetes.Interface, informerFactory informers.Sh
 		csi,
 		lister,
 		informerFactory.Core().V1().PersistentVolumes().Lister(),
-		informerFactory.Core().V1().Nodes().Lister(),
 		informerFactory.Storage().V1beta1().CSINodes().Lister(),
 		informerFactory.Storage().V1beta1().VolumeAttachments().Lister(),
 		&timeout,
@@ -73,7 +72,6 @@ func csiHandlerFactoryNoReadOnly(client kubernetes.Interface, informerFactory in
 		csi,
 		lister,
 		informerFactory.Core().V1().PersistentVolumes().Lister(),
-		informerFactory.Core().V1().Nodes().Lister(),
 		informerFactory.Storage().V1beta1().CSINodes().Lister(),
 		informerFactory.Storage().V1beta1().VolumeAttachments().Lister(),
 		&timeout,
@@ -194,17 +192,16 @@ func node() *v1.Node {
 	return &v1.Node{
 		ObjectMeta: metav1.ObjectMeta{
 			Name: testNodeName,
-			Annotations: map[string]string{
-				"csi.volume.kubernetes.io/nodeid": fmt.Sprintf("{ %q: %q }", testAttacherName, testNodeID),
-			},
 		},
 	}
 }
 
-func nodeWithoutAnnotations() *v1.Node {
-	n := node()
-	n.Annotations = nil
-	return n
+func nodeWithAnnotations() *v1.Node {
+	node := node()
+	node.Annotations = map[string]string{
+		"csi.volume.kubernetes.io/nodeid": fmt.Sprintf("{ %q: %q }", testAttacherName, testNodeID),
+	}
+	return node
 }
 
 func csiNode() *storage.CSINode {
@@ -295,7 +292,7 @@ func TestCSIHandler(t *testing.T) {
 		//
 		{
 			name:           "VolumeAttachment added -> successful attachment",
-			initialObjects: []runtime.Object{pvWithFinalizer(), node()},
+			initialObjects: []runtime.Object{pvWithFinalizer(), csiNode()},
 			addedVA:        va(false /*attached*/, "" /*finalizer*/, nil /* annotations */),
 			expectedActions: []core.Action{
 				// Finalizer is saved first
@@ -312,7 +309,7 @@ func TestCSIHandler(t *testing.T) {
 		},
 		{
 			name:           "VolumeAttachment with InlineVolumeSpec -> successful attachment",
-			initialObjects: []runtime.Object{node()},
+			initialObjects: []runtime.Object{csiNode()},
 			addedVA:        vaWithInlineSpec(va(false /*attached*/, "" /*finalizer*/, nil /* annotations */)),
 			expectedActions: []core.Action{
 				core.NewPatchAction(vaGroupResourceVersion, metav1.NamespaceNone, testPVName+"-"+testNodeName,
@@ -328,7 +325,7 @@ func TestCSIHandler(t *testing.T) {
 		},
 		{
 			name:           "readOnly VolumeAttachment added -> successful attachment",
-			initialObjects: []runtime.Object{pvReadOnly(pvWithFinalizer()), node()},
+			initialObjects: []runtime.Object{pvReadOnly(pvWithFinalizer()), csiNode()},
 			addedVA:        va(false /*attached*/, "" /*finalizer*/, nil /* annotations */),
 			expectedActions: []core.Action{
 				// Finalizer is saved first
@@ -345,7 +342,7 @@ func TestCSIHandler(t *testing.T) {
 		},
 		{
 			name:           "readOnly VolumeAttachment with InlineVolumeSpec -> successful attachment",
-			initialObjects: []runtime.Object{node()},
+			initialObjects: []runtime.Object{csiNode()},
 			addedVA:        vaInlineSpecReadOnly(vaWithInlineSpec(va(false /*attached*/, "" /*finalizer*/, nil /* annotations */))),
 			expectedActions: []core.Action{
 				core.NewPatchAction(vaGroupResourceVersion, metav1.NamespaceNone, testPVName+"-"+testNodeName,
@@ -361,7 +358,7 @@ func TestCSIHandler(t *testing.T) {
 		},
 		{
 			name:           "VolumeAttachment updated -> successful attachment",
-			initialObjects: []runtime.Object{pvWithFinalizer(), node()},
+			initialObjects: []runtime.Object{pvWithFinalizer(), csiNode()},
 			updatedVA:      va(false, "", nil),
 			expectedActions: []core.Action{
 				// Finalizer is saved first
@@ -378,7 +375,7 @@ func TestCSIHandler(t *testing.T) {
 		},
 		{
 			name:           "VolumeAttachment with InlineVolumeSpec updated -> successful attachment",
-			initialObjects: []runtime.Object{node()},
+			initialObjects: []runtime.Object{csiNode()},
 			updatedVA:      vaWithInlineSpec(va(false /*attached*/, "" /*finalizer*/, nil /* annotations */)),
 			expectedActions: []core.Action{
 				// Finalizer is saved first
@@ -395,7 +392,7 @@ func TestCSIHandler(t *testing.T) {
 		},
 		{
 			name:           "VolumeAttachment with attributes -> successful attachment",
-			initialObjects: []runtime.Object{pvWithAttributes(pvWithFinalizer(), map[string]string{"foo": "bar"}), node()},
+			initialObjects: []runtime.Object{pvWithAttributes(pvWithFinalizer(), map[string]string{"foo": "bar"}), csiNode()},
 			updatedVA:      va(false, "", nil),
 			expectedActions: []core.Action{
 				// Finalizer is saved first
@@ -412,7 +409,7 @@ func TestCSIHandler(t *testing.T) {
 		},
 		{
 			name:           "VolumeAttachment with InlineVolumeSpec and attributes -> successful attachment",
-			initialObjects: []runtime.Object{node()},
+			initialObjects: []runtime.Object{csiNode()},
 			updatedVA:      vaInlineSpecWithAttributes(vaWithInlineSpec(va(false, "", nil)) /*va*/, map[string]string{"foo": "bar"} /*attributes*/),
 			expectedActions: []core.Action{
 				// Finalizer is saved first
@@ -429,7 +426,7 @@ func TestCSIHandler(t *testing.T) {
 		},
 		{
 			name:           "VolumeAttachment with secrets -> successful attachment",
-			initialObjects: []runtime.Object{pvWithSecret(pvWithFinalizer(), "secret"), node(), secret()},
+			initialObjects: []runtime.Object{pvWithSecret(pvWithFinalizer(), "secret"), secret(), csiNode()},
 			updatedVA:      va(false, "", nil),
 			expectedActions: []core.Action{
 				core.NewGetAction(secretGroupResourceVersion, "default", "secret"),
@@ -447,7 +444,7 @@ func TestCSIHandler(t *testing.T) {
 		},
 		{
 			name:           "VolumeAttachment with InlineVolumeSpec and secrets -> successful attachment",
-			initialObjects: []runtime.Object{node(), secret()},
+			initialObjects: []runtime.Object{secret(), csiNode()},
 			updatedVA:      vaInlineSpecWithSecret(vaWithInlineSpec(va(false, "", nil)) /*va*/, "secret" /*secret*/),
 			expectedActions: []core.Action{
 				core.NewGetAction(secretGroupResourceVersion, "default", "secret"),
@@ -465,7 +462,7 @@ func TestCSIHandler(t *testing.T) {
 		},
 		{
 			name:           "VolumeAttachment with empty secrets -> successful attachment",
-			initialObjects: []runtime.Object{pvWithSecret(pvWithFinalizer(), "emptySecret"), node(), emptySecret()},
+			initialObjects: []runtime.Object{pvWithSecret(pvWithFinalizer(), "emptySecret"), emptySecret(), csiNode()},
 			updatedVA:      va(false, "", nil),
 			expectedActions: []core.Action{
 				core.NewGetAction(secretGroupResourceVersion, "default", "emptySecret"),
@@ -483,7 +480,7 @@ func TestCSIHandler(t *testing.T) {
 		},
 		{
 			name:           "VolumeAttachment with InlineVolumeSpec and empty secrets -> successful attachment",
-			initialObjects: []runtime.Object{node(), emptySecret()},
+			initialObjects: []runtime.Object{emptySecret(), csiNode()},
 			updatedVA:      vaInlineSpecWithSecret(vaWithInlineSpec(va(false, "", nil)) /*va*/, "emptySecret" /*secret*/),
 			expectedActions: []core.Action{
 				core.NewGetAction(secretGroupResourceVersion, "default", "emptySecret"),
@@ -501,7 +498,7 @@ func TestCSIHandler(t *testing.T) {
 		},
 		{
 			name:           "VolumeAttachment with missing secrets -> error",
-			initialObjects: []runtime.Object{pvWithSecret(pvWithFinalizer(), "unknownSecret"), node()},
+			initialObjects: []runtime.Object{pvWithSecret(pvWithFinalizer(), "unknownSecret"), csiNode()},
 			updatedVA:      va(false, "", nil),
 			expectedActions: []core.Action{
 				core.NewGetAction(secretGroupResourceVersion, "default", "unknownSecret"),
@@ -513,7 +510,7 @@ func TestCSIHandler(t *testing.T) {
 		},
 		{
 			name:           "VolumeAttachment updated -> PV finalizer is added",
-			initialObjects: []runtime.Object{pv(), node()},
+			initialObjects: []runtime.Object{pv(), csiNode()},
 			updatedVA:      va(false, "", nil),
 			expectedActions: []core.Action{
 				// PV Finalizer after VA
@@ -534,7 +531,7 @@ func TestCSIHandler(t *testing.T) {
 		},
 		{
 			name:           "error saving PV finalizer -> controller retries",
-			initialObjects: []runtime.Object{pv(), node()},
+			initialObjects: []runtime.Object{pv(), csiNode()},
 			updatedVA:      va(false, "", nil),
 			reactors: []reaction{
 				{
@@ -586,14 +583,14 @@ func TestCSIHandler(t *testing.T) {
 		},
 		{
 			name:             "already attached volume -> ignored",
-			initialObjects:   []runtime.Object{pvWithFinalizer(), node()},
+			initialObjects:   []runtime.Object{pvWithFinalizer(), csiNode()},
 			updatedVA:        va(true, fin, ann),
 			expectedActions:  []core.Action{},
 			expectedCSICalls: []csiCall{},
 		},
 		{
 			name:           "PV with deletion timestamp -> ignored with error",
-			initialObjects: []runtime.Object{pvDeleted(pv()), node()},
+			initialObjects: []runtime.Object{pvDeleted(pv()), csiNode()},
 			updatedVA:      va(false, fin, ann),
 			expectedActions: []core.Action{
 				core.NewPatchAction(vaGroupResourceVersion, metav1.NamespaceNone, testPVName+"-"+testNodeName,
@@ -604,7 +601,7 @@ func TestCSIHandler(t *testing.T) {
 		},
 		{
 			name:           "VolumeAttachment added -> successful attachment incl. metadata",
-			initialObjects: []runtime.Object{pvWithFinalizer(), node()},
+			initialObjects: []runtime.Object{pvWithFinalizer(), csiNode()},
 			addedVA:        va(false, "", nil),
 			expectedActions: []core.Action{
 				// Finalizer is saved first
@@ -620,13 +617,13 @@ func TestCSIHandler(t *testing.T) {
 		},
 		{
 			name:            "unknown driver -> ignored",
-			initialObjects:  []runtime.Object{pvWithFinalizer(), node()},
+			initialObjects:  []runtime.Object{pvWithFinalizer(), csiNode()},
 			addedVA:         vaWithInvalidDriver(va(false, fin, ann)),
 			expectedActions: []core.Action{},
 		},
 		{
 			name:           "unknown PV -> error",
-			initialObjects: []runtime.Object{node()},
+			initialObjects: []runtime.Object{csiNode()},
 			addedVA:        va(false, fin, ann),
 			expectedActions: []core.Action{
 				core.NewPatchAction(vaGroupResourceVersion, metav1.NamespaceNone, testPVName+"-"+testNodeName,
@@ -636,7 +633,7 @@ func TestCSIHandler(t *testing.T) {
 		},
 		{
 			name:           "unknown PV -> error + error saving the error",
-			initialObjects: []runtime.Object{node()},
+			initialObjects: []runtime.Object{csiNode()},
 			addedVA:        va(false, fin, ann),
 			reactors: []reaction{
 				{
@@ -670,7 +667,7 @@ func TestCSIHandler(t *testing.T) {
 		},
 		{
 			name:           "neither PV nor InlineVolumeSpec reference-> error",
-			initialObjects: []runtime.Object{pvWithFinalizer(), node()},
+			initialObjects: []runtime.Object{pvWithFinalizer(), csiNode()},
 			addedVA:        vaWithNoPVReferenceNorInlineVolumeSpec(va(false, fin, ann)),
 			expectedActions: []core.Action{
 				core.NewPatchAction(vaGroupResourceVersion, metav1.NamespaceNone, testPVName+"-"+testNodeName,
@@ -680,7 +677,7 @@ func TestCSIHandler(t *testing.T) {
 		},
 		{
 			name:           "both PV and InlineVolumeSpec reference-> error",
-			initialObjects: []runtime.Object{pvWithFinalizer(), node()},
+			initialObjects: []runtime.Object{pvWithFinalizer(), csiNode()},
 			addedVA:        vaAddInlineSpec(va(false, fin, ann)),
 			expectedActions: []core.Action{
 				core.NewPatchAction(vaGroupResourceVersion, metav1.NamespaceNone, testPVName+"-"+testNodeName,
@@ -695,12 +692,12 @@ func TestCSIHandler(t *testing.T) {
 			expectedActions: []core.Action{
 				core.NewPatchAction(vaGroupResourceVersion, metav1.NamespaceNone, testPVName+"-"+testNodeName,
 					types.MergePatchType, patch(va(false, fin, ann), vaWithAttachError(va(false, fin, ann),
-						"node \"node1\" not found"))),
+						"csinode.storage.k8s.io \"node1\" not found"))),
 			},
 		},
 		{
 			name:           "failed write with VA finializers -> controller retries",
-			initialObjects: []runtime.Object{pvWithFinalizer(), node()},
+			initialObjects: []runtime.Object{pvWithFinalizer(), csiNode()},
 			addedVA:        va(false, "", nil),
 			reactors: []reaction{
 				{
@@ -744,7 +741,7 @@ func TestCSIHandler(t *testing.T) {
 		},
 		{
 			name:           "failed write with attached=true -> controller retries",
-			initialObjects: []runtime.Object{pvWithFinalizer(), node()},
+			initialObjects: []runtime.Object{pvWithFinalizer(), csiNode()},
 			addedVA:        va(false, "", nil),
 			reactors: []reaction{
 				{
@@ -788,7 +785,7 @@ func TestCSIHandler(t *testing.T) {
 		},
 		{
 			name:           "CSI attach fails -> controller retries",
-			initialObjects: []runtime.Object{pvWithFinalizer(), node()},
+			initialObjects: []runtime.Object{pvWithFinalizer(), csiNode()},
 			addedVA:        va(false, "", nil),
 			expectedActions: []core.Action{
 				// Finalizer is saved first
@@ -815,7 +812,7 @@ func TestCSIHandler(t *testing.T) {
 		},
 		{
 			name:           "CSI attach times out -> controller retries",
-			initialObjects: []runtime.Object{pvWithFinalizer(), node()},
+			initialObjects: []runtime.Object{pvWithFinalizer(), csiNode()},
 			addedVA:        va(false, "", nil),
 			expectedActions: []core.Action{
 				// Finalizer is saved first
@@ -832,28 +829,38 @@ func TestCSIHandler(t *testing.T) {
 			},
 		},
 		{
-			name:           "Node without annotations -> error",
-			initialObjects: []runtime.Object{pvWithFinalizer(), nodeWithoutAnnotations()},
+			name:           "Node without CSINode -> error",
+			initialObjects: []runtime.Object{pvWithFinalizer(), node()},
 			addedVA:        va(false, fin, ann),
 			expectedActions: []core.Action{
 				core.NewPatchAction(vaGroupResourceVersion, metav1.NamespaceNone, testPVName+"-"+testNodeName,
 					types.MergePatchType, patch(va(false /*attached*/, fin, ann),
-						vaWithAttachError(va(false, fin, ann), "node \"node1\" has no NodeID annotation"))),
+						vaWithAttachError(va(false, fin, ann), "csinode.storage.k8s.io \"node1\" not found"))),
 			},
 		},
 		{
-			name:           "CSINode exists without the driver, Node without annotations -> error",
-			initialObjects: []runtime.Object{pvWithFinalizer(), nodeWithoutAnnotations(), csiNodeEmpty()},
+			name:           "Node with annotations, CSINode is absent -> error",
+			initialObjects: []runtime.Object{pvWithFinalizer(), nodeWithAnnotations()},
 			addedVA:        va(false, fin, ann),
 			expectedActions: []core.Action{
 				core.NewPatchAction(vaGroupResourceVersion, metav1.NamespaceNone, testPVName+"-"+testNodeName,
 					types.MergePatchType, patch(va(false /*attached*/, fin, ann),
-						vaWithAttachError(va(false, fin, ann), "node \"node1\" has no NodeID annotation"))),
+						vaWithAttachError(va(false, fin, ann), "csinode.storage.k8s.io \"node1\" not found"))),
+			},
+		},
+		{
+			name:           "CSINode exists without the driver -> error",
+			initialObjects: []runtime.Object{pvWithFinalizer(), csiNodeEmpty()},
+			addedVA:        va(false, fin, ann),
+			expectedActions: []core.Action{
+				core.NewPatchAction(vaGroupResourceVersion, metav1.NamespaceNone, testPVName+"-"+testNodeName,
+					types.MergePatchType, patch(va(false /*attached*/, fin, ann),
+						vaWithAttachError(va(false, fin, ann), "CSINode node1 does not contain driver csi/test"))),
 			},
 		},
 		{
 			name:           "CSINode exists with the driver, Node without annotations -> success",
-			initialObjects: []runtime.Object{pvWithFinalizer(), nodeWithoutAnnotations(), csiNode()},
+			initialObjects: []runtime.Object{pvWithFinalizer(), csiNode()},
 			addedVA:        va(false /*attached*/, "" /*finalizer*/, nil),
 			expectedActions: []core.Action{
 				// Finalizer is saved first
@@ -870,7 +877,7 @@ func TestCSIHandler(t *testing.T) {
 		},
 		{
 			name:           "VolumeAttachment with GCEPersistentDiskVolumeSource -> successful attachment",
-			initialObjects: []runtime.Object{gcePDPVWithFinalizer(), node()},
+			initialObjects: []runtime.Object{gcePDPVWithFinalizer(), csiNode()},
 			addedVA:        va(false /*attached*/, "" /*finalizer*/, nil),
 			expectedActions: []core.Action{
 				// Finalizer is saved first
@@ -891,7 +898,7 @@ func TestCSIHandler(t *testing.T) {
 
 		{
 			name:           "VolumeAttachment marked for deletion -> successful detach",
-			initialObjects: []runtime.Object{pvWithFinalizer(), node()},
+			initialObjects: []runtime.Object{pvWithFinalizer(), csiNode()},
 			addedVA:        deleted(va(true, fin, ann)),
 			expectedActions: []core.Action{
 				core.NewPatchAction(vaGroupResourceVersion, metav1.NamespaceNone, testPVName+"-"+testNodeName,
@@ -904,7 +911,7 @@ func TestCSIHandler(t *testing.T) {
 		},
 		{
 			name:           "VolumeAttachment with InlineVolumeSpec marked for deletion -> successful detach",
-			initialObjects: []runtime.Object{node()},
+			initialObjects: []runtime.Object{csiNode()},
 			addedVA:        deleted(vaWithInlineSpec(va(true, fin, ann))),
 			expectedActions: []core.Action{
 				core.NewPatchAction(vaGroupResourceVersion, metav1.NamespaceNone, testPVName+"-"+testNodeName,
@@ -917,7 +924,7 @@ func TestCSIHandler(t *testing.T) {
 		},
 		{
 			name:           "volume with secrets -> successful detach",
-			initialObjects: []runtime.Object{pvWithSecret(pvWithFinalizer(), "secret"), node(), secret()},
+			initialObjects: []runtime.Object{pvWithSecret(pvWithFinalizer(), "secret"), secret()},
 			addedVA:        deleted(va(true, fin, ann)),
 			expectedActions: []core.Action{
 				core.NewGetAction(secretGroupResourceVersion, "default", "secret"),
@@ -931,7 +938,7 @@ func TestCSIHandler(t *testing.T) {
 		},
 		{
 			name:           "volume attachment with InlineVolumeSpec and secrets -> successful detach",
-			initialObjects: []runtime.Object{node(), secret()},
+			initialObjects: []runtime.Object{secret()},
 			addedVA:        deleted(vaInlineSpecWithSecret(vaWithInlineSpec(va(true, fin, ann)), "secret")),
 			expectedActions: []core.Action{
 				core.NewGetAction(secretGroupResourceVersion, "default", "secret"),
@@ -945,7 +952,7 @@ func TestCSIHandler(t *testing.T) {
 		},
 		{
 			name:           "volume with empty secrets -> successful detach",
-			initialObjects: []runtime.Object{pvWithSecret(pvWithFinalizer(), "emptySecret"), node(), emptySecret()},
+			initialObjects: []runtime.Object{pvWithSecret(pvWithFinalizer(), "emptySecret"), emptySecret()},
 			addedVA:        deleted(va(true, fin, ann)),
 			expectedActions: []core.Action{
 				core.NewGetAction(secretGroupResourceVersion, "default", "emptySecret"),
@@ -959,7 +966,7 @@ func TestCSIHandler(t *testing.T) {
 		},
 		{
 			name:           "volume attachment with InlineVolumeSpec and empty secrets -> successful detach",
-			initialObjects: []runtime.Object{node(), emptySecret()},
+			initialObjects: []runtime.Object{emptySecret()},
 			addedVA:        deleted(vaInlineSpecWithSecret(vaWithInlineSpec(va(true, fin, ann)), "emptySecret")),
 			expectedActions: []core.Action{
 				core.NewGetAction(secretGroupResourceVersion, "default", "emptySecret"),
@@ -973,7 +980,7 @@ func TestCSIHandler(t *testing.T) {
 		},
 		{
 			name:           "volume with missing secrets -> error",
-			initialObjects: []runtime.Object{pvWithSecret(pvWithFinalizer(), "unknownSecret"), node()},
+			initialObjects: []runtime.Object{pvWithSecret(pvWithFinalizer(), "unknownSecret"), csiNode()},
 			addedVA:        deleted(va(true, fin, ann)),
 			expectedActions: []core.Action{
 				core.NewGetAction(secretGroupResourceVersion, "default", "unknownSecret"),
@@ -986,7 +993,7 @@ func TestCSIHandler(t *testing.T) {
 		},
 		{
 			name:           "CSI detach fails with an error -> controller retries",
-			initialObjects: []runtime.Object{pvWithFinalizer(), node()},
+			initialObjects: []runtime.Object{pvWithFinalizer(), csiNode()},
 			addedVA:        deleted(va(true, fin, ann)),
 			expectedActions: []core.Action{
 				core.NewPatchAction(vaGroupResourceVersion, metav1.NamespaceNone, testPVName+"-"+testNodeName,
@@ -1003,7 +1010,7 @@ func TestCSIHandler(t *testing.T) {
 		},
 		{
 			name:           "CSI detach times out -> controller retries",
-			initialObjects: []runtime.Object{pvWithFinalizer(), node()},
+			initialObjects: []runtime.Object{pvWithFinalizer(), csiNode()},
 			addedVA:        deleted(va(true, fin, ann)),
 			expectedActions: []core.Action{
 				core.NewPatchAction(vaGroupResourceVersion, metav1.NamespaceNone, testPVName+"-"+testNodeName,
@@ -1017,14 +1024,14 @@ func TestCSIHandler(t *testing.T) {
 		},
 		{
 			name:             "already detached volume -> ignored",
-			initialObjects:   []runtime.Object{pvWithFinalizer(), node()},
+			initialObjects:   []runtime.Object{pvWithFinalizer(), csiNode()},
 			updatedVA:        deleted(va(false, "", nil)),
 			expectedActions:  []core.Action{},
 			expectedCSICalls: []csiCall{},
 		},
 		{
 			name:           "detach unknown PV -> error",
-			initialObjects: []runtime.Object{node()},
+			initialObjects: []runtime.Object{csiNode()},
 			addedVA:        deleted(va(true, fin, ann)),
 			expectedActions: []core.Action{
 				core.NewPatchAction(vaGroupResourceVersion, metav1.NamespaceNone, testPVName+"-"+testNodeName,
@@ -1034,7 +1041,7 @@ func TestCSIHandler(t *testing.T) {
 		},
 		{
 			name:           "detach unknown PV -> error + error saving the error",
-			initialObjects: []runtime.Object{node()},
+			initialObjects: []runtime.Object{csiNode()},
 			addedVA:        deleted(va(true, fin, ann)),
 			reactors: []reaction{
 				{
@@ -1068,7 +1075,7 @@ func TestCSIHandler(t *testing.T) {
 		},
 		{
 			name:           "detach VA with neither PV nor InlineCSIVolumeSource reference-> error",
-			initialObjects: []runtime.Object{pvWithFinalizer(), node()},
+			initialObjects: []runtime.Object{pvWithFinalizer(), csiNode()},
 			addedVA:        deleted(vaWithNoPVReferenceNorInlineVolumeSpec(va(true, fin, ann))),
 			expectedActions: []core.Action{
 				core.NewPatchAction(vaGroupResourceVersion, metav1.NamespaceNone, testPVName+"-"+testNodeName,
@@ -1079,7 +1086,7 @@ func TestCSIHandler(t *testing.T) {
 		},
 		{
 			name:           "detach VA with both PV and InlineCSIVolumeSource reference-> error",
-			initialObjects: []runtime.Object{pvWithFinalizer(), node()},
+			initialObjects: []runtime.Object{pvWithFinalizer(), csiNode()},
 			addedVA:        deleted(vaAddInlineSpec(va(true, fin, ann))),
 			expectedActions: []core.Action{
 				core.NewPatchAction(vaGroupResourceVersion, metav1.NamespaceNone, testPVName+"-"+testNodeName,
@@ -1095,7 +1102,7 @@ func TestCSIHandler(t *testing.T) {
 			expectedActions: []core.Action{
 				core.NewPatchAction(vaGroupResourceVersion, metav1.NamespaceNone, testPVName+"-"+testNodeName,
 					types.MergePatchType, patch(deleted(va(true, fin, nil)),
-						deleted(vaWithDetachError(va(true, fin, nil), "node \"node1\" not found")))),
+						deleted(vaWithDetachError(va(true, fin, nil), "csinode.storage.k8s.io \"node1\" not found")))),
 			},
 		},
 		{
@@ -1113,21 +1120,8 @@ func TestCSIHandler(t *testing.T) {
 			},
 		},
 		{
-			name:           "VolumeAttachment marked for deletion -> node is preferred over VA annotation for NodeID",
-			initialObjects: []runtime.Object{pvWithFinalizer(), node()},
-			addedVA:        deleted(va(true, fin, map[string]string{vaNodeIDAnnotation: "annotatedNodeID"})),
-			expectedActions: []core.Action{
-				core.NewPatchAction(vaGroupResourceVersion, metav1.NamespaceNone, testPVName+"-"+testNodeName,
-					types.MergePatchType, patch(deleted(va(true, fin, map[string]string{vaNodeIDAnnotation: "annotatedNodeID"})),
-						deleted(va(false /*attached*/, "", map[string]string{vaNodeIDAnnotation: "annotatedNodeID"})))),
-			},
-			expectedCSICalls: []csiCall{
-				{"detach", testVolumeHandle, testNodeID, noAttrs, noSecrets, readWrite, success, detached, noMetadata, 0},
-			},
-		},
-		{
 			name:           "failed write with attached=false -> controller retries",
-			initialObjects: []runtime.Object{pvWithFinalizer(), node()},
+			initialObjects: []runtime.Object{pvWithFinalizer(), csiNode()},
 			addedVA:        deleted(va(false, fin, ann)),
 			reactors: []reaction{
 				{
@@ -1170,7 +1164,7 @@ func TestCSIHandler(t *testing.T) {
 		},
 		{
 			name:           "VolumeAttachment with GCEPersistentDiskVolumeSource marked for deletion -> successful detach",
-			initialObjects: []runtime.Object{gcePDPVWithFinalizer(), node()},
+			initialObjects: []runtime.Object{gcePDPVWithFinalizer(), csiNode()},
 			addedVA:        deleted(va(true /*attached*/, fin /*finalizer*/, ann)),
 			expectedActions: []core.Action{
 				// Finalizer is saved first
@@ -1354,7 +1348,7 @@ func TestCSIHandlerReadOnly(t *testing.T) {
 		//
 		{
 			name:           "read-write PV -> attached as read-write",
-			initialObjects: []runtime.Object{pvWithFinalizer(), node()},
+			initialObjects: []runtime.Object{pvWithFinalizer(), csiNode()},
 			addedVA:        va(false /*attached*/, "" /*finalizer*/, nil /* annotations */),
 			expectedActions: []core.Action{
 				// Finalizer is saved first
@@ -1371,7 +1365,7 @@ func TestCSIHandlerReadOnly(t *testing.T) {
 		},
 		{
 			name:           "read-only PV -> attached as read-write",
-			initialObjects: []runtime.Object{pvReadOnly(pvWithFinalizer()), node()},
+			initialObjects: []runtime.Object{pvReadOnly(pvWithFinalizer()), csiNode()},
 			addedVA:        va(false /*attached*/, "" /*finalizer*/, nil /* annotations */),
 			expectedActions: []core.Action{
 				// Finalizer is saved first
