@@ -1192,6 +1192,26 @@ func TestCSIHandler(t *testing.T) {
 			},
 		},
 		{
+			name:           "VA deleted -> PV finalizer removed (GCE PD PV)",
+			initialObjects: []runtime.Object{pvDeleted(gcePDPVWithFinalizer())},
+			deletedVA:      va(false, "", nil),
+			expectedActions: []core.Action{
+				core.NewPatchAction(pvGroupResourceVersion, metav1.NamespaceNone, testPVName,
+					types.MergePatchType, patch(pvDeleted(gcePDPVWithFinalizer()),
+						pvDeleted(gcePDPV()))),
+			},
+		},
+		{
+			name:           "VA deleted -> PV finalizer not removed",
+			initialObjects: []runtime.Object{pvDeleted(pv())},
+			deletedVA:      va(false, "", nil),
+		},
+		{
+			name:           "VA deleted -> PV finalizer not removed (GCE PD PV)",
+			initialObjects: []runtime.Object{pvDeleted(gcePDPV())},
+			deletedVA:      va(false, "", nil),
+		},
+		{
 			name:           "PV updated -> PV finalizer removed",
 			initialObjects: []runtime.Object{},
 			updatedPV:      pvDeleted(pvWithFinalizer()),
