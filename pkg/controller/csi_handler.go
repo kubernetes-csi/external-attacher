@@ -185,7 +185,7 @@ func (h *csiHandler) ReconcileVA() error {
 
 // setForceSync sets the intention that next time the VolumeAttachment
 // referenced by vaName is processed on the VA queue that attach or detach will
-// proceed even when the VA.Status.Attached mayalready show the desired state
+// proceed even when the VA.Status.Attached may already show the desired state
 func (h *csiHandler) setForceSync(vaName string) {
 	h.forceSyncMux.Lock()
 	defer h.forceSyncMux.Unlock()

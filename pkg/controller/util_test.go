@@ -106,7 +106,7 @@ func TestGetVolumeCapabilities(t *testing.T) {
 			expectError:        false,
 		},
 		{
-			name:               "RWX + anytyhing",
+			name:               "RWX + anything",
 			modes:              []v1.PersistentVolumeAccessMode{v1.ReadWriteMany, v1.ReadOnlyMany, v1.ReadWriteOnce},
 			expectedCapability: createMountCapability(defaultFSType, csi.VolumeCapability_AccessMode_MULTI_NODE_MULTI_WRITER, nil),
 			expectError:        false,
