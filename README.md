@@ -21,7 +21,7 @@ This information reflects the head of this branch.
 
 | Compatible with CSI Version                                                                | Container Image             | Min K8s Version | Recommended K8s Version |
 | ------------------------------------------------------------------------------------------ | ----------------------------| --------------- | ----------------------- |
-| [CSI Spec v1.2.0](https://github.com/container-storage-interface/spec/releases/tag/v1.2.0) | quay.io/k8scsi/csi-attacher | 1.15            | 1.17                    |
+| [CSI Spec v1.2.0](https://github.com/container-storage-interface/spec/releases/tag/v1.2.0) | quay.io/k8scsi/csi-attacher | 1.14            | 1.18                    |
 
 ## Feature Status
 
@@ -31,10 +31,9 @@ The following table reflects the head of this branch.
 
 | Feature       | Status  | Default | Description                                                                                   |
 | ------------- | ------- | ------- | --------------------------------------------------------------------------------------------- |
-| CSINode*      | Beta    | On      | external-attacher uses the CSINode object to get the driver's node name instead of the Node annotation. |
 | CSIMigration* | Beta    | On      | [Migrating in-tree volume plugins to CSI](https://kubernetes.io/docs/concepts/storage/volumes/#csi-migration). |
 
-*) There are no special feature gates for these features. They are enabled by turning on the corresponding features in Kubernetes.
+*) There is no special feature gate for this feature. It is enabled by turning on the corresponding features in Kubernetes.
 
 All other external-attacher features and the external-attacher itself is considered GA and fully supported.
 
