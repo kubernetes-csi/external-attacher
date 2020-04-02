@@ -10,7 +10,7 @@ require (
 	github.com/golang/protobuf v1.3.5
 	github.com/imdario/mergo v0.3.9 // indirect
 	github.com/kubernetes-csi/csi-lib-utils v0.7.0
-	github.com/kubernetes-csi/csi-test v2.0.0+incompatible
+	github.com/kubernetes-csi/csi-test/v3 v3.1.0
 	google.golang.org/grpc v1.28.0
 	k8s.io/api v0.18.0
 	k8s.io/apimachinery v0.18.0
