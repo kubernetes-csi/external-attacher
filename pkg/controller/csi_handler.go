@@ -23,8 +23,6 @@ import (
 	"sync"
 	"time"
 
-	"k8s.io/klog"
-
 	"github.com/kubernetes-csi/external-attacher/v2/pkg/attacher"
 	v1 "k8s.io/api/core/v1"
 	storage "k8s.io/api/storage/v1beta1"
@@ -35,6 +33,7 @@ import (
 	corelisters "k8s.io/client-go/listers/core/v1"
 	storagelisters "k8s.io/client-go/listers/storage/v1beta1"
 	"k8s.io/client-go/util/workqueue"
+	"k8s.io/klog"
 )
 
 type AttacherCSITranslator interface {
@@ -313,7 +312,7 @@ func (h *csiHandler) prepareVANodeID(va *storage.VolumeAttachment, nodeID string
 }
 
 func (h *csiHandler) saveVA(va *storage.VolumeAttachment, patch []byte) (*storage.VolumeAttachment, error) {
-	newVA, err := h.client.StorageV1beta1().VolumeAttachments().Patch(va.Name, types.MergePatchType, patch)
+	newVA, err := h.client.StorageV1beta1().VolumeAttachments().Patch(ctx, va.Name, types.MergePatchType, patch, metav1.PatchOptions{})
 	if err != nil {
 		return va, err
 	}
@@ -667,7 +666,7 @@ func (h *csiHandler) getCredentialsFromPV(csiSource *v1.CSIPersistentVolumeSourc
 		return nil, nil
 	}
 
-	secret, err := h.client.CoreV1().Secrets(secretRef.Namespace).Get(secretRef.Name, metav1.GetOptions{})
+	secret, err := h.client.CoreV1().Secrets(secretRef.Namespace).Get(ctx, secretRef.Name, metav1.GetOptions{})
 	if err != nil {
 		return nil, fmt.Errorf("failed to load secret \"%s/%s\": %s", secretRef.Namespace, secretRef.Name, err)
 	}
@@ -716,7 +715,7 @@ func (h *csiHandler) patchVA(va, clone *storage.VolumeAttachment) (*storage.Volu
 		return va, err
 	}
 
-	newVa, err := h.client.StorageV1beta1().VolumeAttachments().Patch(va.Name, types.MergePatchType, patch)
+	newVa, err := h.client.StorageV1beta1().VolumeAttachments().Patch(ctx, va.Name, types.MergePatchType, patch, metav1.PatchOptions{})
 	if err != nil {
 		return va, err
 	}
@@ -729,7 +728,7 @@ func (h *csiHandler) patchPV(pv, clone *v1.PersistentVolume) (*v1.PersistentVolu
 		return pv, err
 	}
 
-	newPV, err := h.client.CoreV1().PersistentVolumes().Patch(pv.Name, types.MergePatchType, patch)
+	newPV, err := h.client.CoreV1().PersistentVolumes().Patch(ctx, pv.Name, types.MergePatchType, patch, metav1.PatchOptions{})
 	if err != nil {
 		return pv, err
 	}

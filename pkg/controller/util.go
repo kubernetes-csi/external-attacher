@@ -17,6 +17,7 @@ limitations under the License.
 package controller
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -26,10 +27,13 @@ import (
 	jsonpatch "github.com/evanphx/json-patch"
 	v1 "k8s.io/api/core/v1"
 	storage "k8s.io/api/storage/v1beta1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/klog"
 )
+
+var ctx context.Context = context.Background()
 
 func markAsAttached(client kubernetes.Interface, va *storage.VolumeAttachment, metadata map[string]string) (*storage.VolumeAttachment, error) {
 	klog.V(4).Infof("Marking as attached %q", va.Name)
@@ -41,7 +45,7 @@ func markAsAttached(client kubernetes.Interface, va *storage.VolumeAttachment, m
 	if err != nil {
 		return va, err
 	}
-	newVA, err := client.StorageV1beta1().VolumeAttachments().Patch(va.Name, types.MergePatchType, patch)
+	newVA, err := client.StorageV1beta1().VolumeAttachments().Patch(ctx, va.Name, types.MergePatchType, patch, metav1.PatchOptions{})
 	if err != nil {
 		return va, err
 	}
@@ -83,7 +87,7 @@ func markAsDetached(client kubernetes.Interface, va *storage.VolumeAttachment) (
 	if err != nil {
 		return va, err
 	}
-	newVA, err := client.StorageV1beta1().VolumeAttachments().Patch(va.Name, types.MergePatchType, patch)
+	newVA, err := client.StorageV1beta1().VolumeAttachments().Patch(ctx, va.Name, types.MergePatchType, patch, metav1.PatchOptions{})
 	if err != nil {
 		return va, err
 	}
