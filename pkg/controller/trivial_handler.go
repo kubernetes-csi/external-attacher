@@ -25,7 +25,7 @@ import (
 )
 
 // trivialHandler is a handler that marks all VolumeAttachments as attached.
-// It's used for CSI drivers that don't support ControllerPulishVolume call.
+// It's used for CSI drivers that don't support ControllerPublishVolume call.
 // It uses no finalizer, deletion of VolumeAttachment is instant (as there is
 // nothing to detach).
 type trivialHandler struct {

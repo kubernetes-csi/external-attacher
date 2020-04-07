@@ -20,77 +20,12 @@ import (
 	"testing"
 
 	"github.com/container-storage-interface/spec/lib/go/csi"
-	"k8s.io/api/core/v1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	v1 "k8s.io/api/core/v1"
 )
 
 const (
 	driverName = "foo/bar"
 )
-
-func TestGetNodeIDFromNode(t *testing.T) {
-	tests := []struct {
-		name        string
-		annotations map[string]string
-		expectedID  string
-		expectError bool
-	}{
-		{
-			name:        "single key",
-			annotations: map[string]string{"csi.volume.kubernetes.io/nodeid": "{\"foo/bar\": \"MyNodeID\"}"},
-			expectedID:  "MyNodeID",
-			expectError: false,
-		},
-		{
-			name: "multiple keys",
-			annotations: map[string]string{
-				"csi.volume.kubernetes.io/nodeid": "{\"foo/bar\": \"MyNodeID\", \"-foo/bar\": \"MyNodeID2\", \"foo/bar-\": \"MyNodeID3\"}",
-			},
-			expectedID:  "MyNodeID",
-			expectError: false,
-		},
-		{
-			name:        "no annotations",
-			annotations: nil,
-			expectedID:  "",
-			expectError: true,
-		},
-		{
-			name:        "invalid JSON",
-			annotations: map[string]string{"csi.volume.kubernetes.io/nodeid": "\"foo/bar\": \"MyNodeID\""},
-			expectedID:  "",
-			expectError: true,
-		},
-		{
-			name: "annotations for another driver",
-			annotations: map[string]string{
-				"csi.volume.kubernetes.io/nodeid": "{\"-foo/bar\": \"MyNodeID2\", \"foo/bar-\": \"MyNodeID3\"}",
-			},
-			expectedID:  "",
-			expectError: true,
-		},
-	}
-
-	for _, test := range tests {
-		node := &v1.Node{
-			ObjectMeta: metav1.ObjectMeta{
-				Name:        "abc",
-				Annotations: test.annotations,
-			},
-		}
-		nodeID, err := GetNodeIDFromNode(driverName, node)
-
-		if err == nil && test.expectError {
-			t.Errorf("test %s: expected error, got none", test.name)
-		}
-		if err != nil && !test.expectError {
-			t.Errorf("test %s: got error: %s", test.name, err)
-		}
-		if !test.expectError && nodeID != test.expectedID {
-			t.Errorf("test %s: unexpected NodeID: %s", test.name, nodeID)
-		}
-	}
-}
 
 func createBlockCapability(mode csi.VolumeCapability_AccessMode_Mode) *csi.VolumeCapability {
 	return &csi.VolumeCapability{
@@ -171,7 +106,7 @@ func TestGetVolumeCapabilities(t *testing.T) {
 			expectError:        false,
 		},
 		{
-			name:               "RWX + anytyhing",
+			name:               "RWX + anything",
 			modes:              []v1.PersistentVolumeAccessMode{v1.ReadWriteMany, v1.ReadOnlyMany, v1.ReadWriteOnce},
 			expectedCapability: createMountCapability(defaultFSType, csi.VolumeCapability_AccessMode_MULTI_NODE_MULTI_WRITER, nil),
 			expectError:        false,
