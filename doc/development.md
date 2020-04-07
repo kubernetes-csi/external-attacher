@@ -8,7 +8,7 @@ csi-attacher -kubeconfig ~/.kube/config -v 5 -csi-address /run/csi/socket
 
 ## Implementation details
 
-The external-attacher follows [controller](https://github.com/kubernetes/community/blob/master/contributors/devel/controllers.md) pattern and uses informers to watch for `VolumeAttachment` and `PersistentVolume` create/update/delete events. It filters out `VolumeAttachment` instances with `Attacher==<CSI driver name>` and processes these events in workqueues with exponential backoff. Real handling is deferred to `Handler` interface.
+The external-attacher follows [controller](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-api-machinery/controllers.md) pattern and uses informers to watch for `VolumeAttachment` and `PersistentVolume` create/update/delete events. It filters out `VolumeAttachment` instances with `Attacher==<CSI driver name>` and processes these events in workqueues with exponential backoff. Real handling is deferred to `Handler` interface.
 
 `Handler` interface has two implementations, trivial and real one.
 
