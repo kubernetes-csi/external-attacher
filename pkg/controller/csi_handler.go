@@ -312,7 +312,7 @@ func (h *csiHandler) prepareVANodeID(va *storage.VolumeAttachment, nodeID string
 }
 
 func (h *csiHandler) saveVA(va *storage.VolumeAttachment, patch []byte) (*storage.VolumeAttachment, error) {
-	newVA, err := h.client.StorageV1beta1().VolumeAttachments().Patch(ctx, va.Name, types.MergePatchType, patch, metav1.PatchOptions{})
+	newVA, err := h.client.StorageV1beta1().VolumeAttachments().Patch(context.TODO(), va.Name, types.MergePatchType, patch, metav1.PatchOptions{})
 	if err != nil {
 		return va, err
 	}
@@ -666,7 +666,7 @@ func (h *csiHandler) getCredentialsFromPV(csiSource *v1.CSIPersistentVolumeSourc
 		return nil, nil
 	}
 
-	secret, err := h.client.CoreV1().Secrets(secretRef.Namespace).Get(ctx, secretRef.Name, metav1.GetOptions{})
+	secret, err := h.client.CoreV1().Secrets(secretRef.Namespace).Get(context.TODO(), secretRef.Name, metav1.GetOptions{})
 	if err != nil {
 		return nil, fmt.Errorf("failed to load secret \"%s/%s\": %s", secretRef.Namespace, secretRef.Name, err)
 	}
@@ -715,7 +715,7 @@ func (h *csiHandler) patchVA(va, clone *storage.VolumeAttachment) (*storage.Volu
 		return va, err
 	}
 
-	newVa, err := h.client.StorageV1beta1().VolumeAttachments().Patch(ctx, va.Name, types.MergePatchType, patch, metav1.PatchOptions{})
+	newVa, err := h.client.StorageV1beta1().VolumeAttachments().Patch(context.TODO(), va.Name, types.MergePatchType, patch, metav1.PatchOptions{})
 	if err != nil {
 		return va, err
 	}
@@ -728,7 +728,7 @@ func (h *csiHandler) patchPV(pv, clone *v1.PersistentVolume) (*v1.PersistentVolu
 		return pv, err
 	}
 
-	newPV, err := h.client.CoreV1().PersistentVolumes().Patch(ctx, pv.Name, types.MergePatchType, patch, metav1.PatchOptions{})
+	newPV, err := h.client.CoreV1().PersistentVolumes().Patch(context.TODO(), pv.Name, types.MergePatchType, patch, metav1.PatchOptions{})
 	if err != nil {
 		return pv, err
 	}

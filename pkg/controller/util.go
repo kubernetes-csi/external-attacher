@@ -33,8 +33,6 @@ import (
 	"k8s.io/klog"
 )
 
-var ctx context.Context = context.Background()
-
 func markAsAttached(client kubernetes.Interface, va *storage.VolumeAttachment, metadata map[string]string) (*storage.VolumeAttachment, error) {
 	klog.V(4).Infof("Marking as attached %q", va.Name)
 	clone := va.DeepCopy()
@@ -45,7 +43,7 @@ func markAsAttached(client kubernetes.Interface, va *storage.VolumeAttachment, m
 	if err != nil {
 		return va, err
 	}
-	newVA, err := client.StorageV1beta1().VolumeAttachments().Patch(ctx, va.Name, types.MergePatchType, patch, metav1.PatchOptions{})
+	newVA, err := client.StorageV1beta1().VolumeAttachments().Patch(context.TODO(), va.Name, types.MergePatchType, patch, metav1.PatchOptions{})
 	if err != nil {
 		return va, err
 	}
@@ -87,7 +85,7 @@ func markAsDetached(client kubernetes.Interface, va *storage.VolumeAttachment) (
 	if err != nil {
 		return va, err
 	}
-	newVA, err := client.StorageV1beta1().VolumeAttachments().Patch(ctx, va.Name, types.MergePatchType, patch, metav1.PatchOptions{})
+	newVA, err := client.StorageV1beta1().VolumeAttachments().Patch(context.TODO(), va.Name, types.MergePatchType, patch, metav1.PatchOptions{})
 	if err != nil {
 		return va, err
 	}
