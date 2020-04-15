@@ -19,9 +19,9 @@ The external-attacher is an external controller that monitors `VolumeAttachment`
 
 This information reflects the head of this branch.
 
-| Compatible with CSI Version                                                                | Container Image             | Min K8s Version | Recommended K8s Version |
-| ------------------------------------------------------------------------------------------ | ----------------------------| --------------- | ----------------------- |
-| [CSI Spec v1.2.0](https://github.com/container-storage-interface/spec/releases/tag/v1.2.0) | quay.io/k8scsi/csi-attacher | 1.14            | 1.17                    |
+| Compatible with CSI Version                                                                | Container Image             | [Min K8s Version](https://kubernetes-csi.github.io/docs/kubernetes-compatibility.html#minimum-version) | [Recommended K8s Version](https://kubernetes-csi.github.io/docs/kubernetes-compatibility.html#recommended-version) |
+| ------------------------------------------------------------------------------------------ | ----------------------------| ---- | ---- |
+| [CSI Spec v1.2.0](https://github.com/container-storage-interface/spec/releases/tag/v1.2.0) | quay.io/k8scsi/csi-attacher | 1.14 | 1.17 |
 
 ## Feature Status
 
