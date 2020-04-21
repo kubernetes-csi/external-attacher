@@ -31,7 +31,6 @@ import (
 
 	v1 "k8s.io/api/core/v1"
 	storage "k8s.io/api/storage/v1"
-	storagev1beta1 "k8s.io/api/storage/v1beta1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/informers"
@@ -124,7 +123,7 @@ func runTests(t *testing.T, handlerFactory handlerFactory, tests []testCase) {
 		csiObjs := []runtime.Object{}
 		for _, obj := range objs {
 			switch obj.(type) {
-			case *storagev1beta1.CSINode:
+			case *storage.CSINode:
 				csiObjs = append(csiObjs, obj)
 			default:
 				coreObjs = append(coreObjs, obj)
@@ -137,7 +136,7 @@ func runTests(t *testing.T, handlerFactory handlerFactory, tests []testCase) {
 		vaInformer := informers.Storage().V1().VolumeAttachments()
 		pvInformer := informers.Core().V1().PersistentVolumes()
 		nodeInformer := informers.Core().V1().Nodes()
-		csiNodeInformer := informers.Storage().V1beta1().CSINodes()
+		csiNodeInformer := informers.Storage().V1().CSINodes()
 		// Fill the informers with initial objects so controller can Get() them
 		for _, obj := range objs {
 			switch obj.(type) {
@@ -149,7 +148,7 @@ func runTests(t *testing.T, handlerFactory handlerFactory, tests []testCase) {
 				vaInformer.Informer().GetStore().Add(obj)
 			case *v1.Secret:
 				// Secrets are not cached in any informer
-			case *storagev1beta1.CSINode:
+			case *storage.CSINode:
 				csiNodeInformer.Informer().GetStore().Add(obj)
 			default:
 				t.Fatalf("Unknown initalObject type: %+v", obj)

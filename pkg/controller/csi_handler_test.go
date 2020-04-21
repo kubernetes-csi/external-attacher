@@ -26,7 +26,6 @@ import (
 
 	v1 "k8s.io/api/core/v1"
 	storage "k8s.io/api/storage/v1"
-	storagev1beta1 "k8s.io/api/storage/v1beta1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -58,7 +57,7 @@ func csiHandlerFactory(client kubernetes.Interface, informerFactory informers.Sh
 		csi,
 		lister,
 		informerFactory.Core().V1().PersistentVolumes().Lister(),
-		informerFactory.Storage().V1beta1().CSINodes().Lister(),
+		informerFactory.Storage().V1().CSINodes().Lister(),
 		informerFactory.Storage().V1().VolumeAttachments().Lister(),
 		&timeout,
 		true, /* supports PUBLISH_READONLY */
@@ -73,7 +72,7 @@ func csiHandlerFactoryNoReadOnly(client kubernetes.Interface, informerFactory in
 		csi,
 		lister,
 		informerFactory.Core().V1().PersistentVolumes().Lister(),
-		informerFactory.Storage().V1beta1().CSINodes().Lister(),
+		informerFactory.Storage().V1().CSINodes().Lister(),
 		informerFactory.Storage().V1().VolumeAttachments().Lister(),
 		&timeout,
 		false, /* does not support PUBLISH_READONLY */
@@ -205,13 +204,13 @@ func nodeWithAnnotations() *v1.Node {
 	return node
 }
 
-func csiNode() *storagev1beta1.CSINode {
-	return &storagev1beta1.CSINode{
+func csiNode() *storage.CSINode {
+	return &storage.CSINode{
 		ObjectMeta: metav1.ObjectMeta{
 			Name: testNodeName,
 		},
-		Spec: storagev1beta1.CSINodeSpec{
-			Drivers: []storagev1beta1.CSINodeDriver{
+		Spec: storage.CSINodeSpec{
+			Drivers: []storage.CSINodeDriver{
 				{
 					Name:   testAttacherName,
 					NodeID: testNodeID,
@@ -221,12 +220,12 @@ func csiNode() *storagev1beta1.CSINode {
 	}
 }
 
-func csiNodeEmpty() *storagev1beta1.CSINode {
-	return &storagev1beta1.CSINode{
+func csiNodeEmpty() *storage.CSINode {
+	return &storage.CSINode{
 		ObjectMeta: metav1.ObjectMeta{
 			Name: testNodeName,
 		},
-		Spec: storagev1beta1.CSINodeSpec{Drivers: []storagev1beta1.CSINodeDriver{}},
+		Spec: storage.CSINodeSpec{Drivers: []storage.CSINodeDriver{}},
 	}
 }
 

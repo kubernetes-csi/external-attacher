@@ -24,10 +24,9 @@ import (
 	"regexp"
 
 	"github.com/container-storage-interface/spec/lib/go/csi"
-	"github.com/evanphx/json-patch"
-	"k8s.io/api/core/v1"
+	jsonpatch "github.com/evanphx/json-patch"
+	v1 "k8s.io/api/core/v1"
 	storage "k8s.io/api/storage/v1"
-	storagev1beta1 "k8s.io/api/storage/v1beta1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/kubernetes"
@@ -119,7 +118,7 @@ func GetFinalizerName(driver string) string {
 }
 
 // GetNodeIDFromCSINode returns nodeID from CSIDriverInfoSpec
-func GetNodeIDFromCSINode(driver string, csiNode *storagev1beta1.CSINode) (string, bool) {
+func GetNodeIDFromCSINode(driver string, csiNode *storage.CSINode) (string, bool) {
 	for _, d := range csiNode.Spec.Drivers {
 		if d.Name == driver {
 			return d.NodeID, true
