@@ -27,7 +27,7 @@ import (
 
 	"github.com/container-storage-interface/spec/lib/go/csi"
 	"github.com/davecgh/go-spew/spew"
-	"github.com/kubernetes-csi/external-attacher/v2/pkg/attacher"
+	"github.com/kubernetes-csi/external-attacher/pkg/attacher"
 
 	v1 "k8s.io/api/core/v1"
 	storage "k8s.io/api/storage/v1"
