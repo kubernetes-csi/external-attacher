@@ -39,7 +39,7 @@ import (
 	core "k8s.io/client-go/testing"
 	"k8s.io/client-go/util/workqueue"
 	csitrans "k8s.io/csi-translation-lib"
-	"k8s.io/klog"
+	"k8s.io/klog/v2"
 )
 
 // This is an unit test framework. It is heavily inspired by serviceaccount
