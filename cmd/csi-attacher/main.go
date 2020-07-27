@@ -196,9 +196,17 @@ func main() {
 	if !*enableLeaderElection {
 		run(context.TODO())
 	} else {
+		// Create a new clientset for leader election. When the attacher
+		// gets busy and its client gets throttled, the leader election
+		// can proceed without issues.
+		leClientset, err := kubernetes.NewForConfig(config)
+		if err != nil {
+			klog.Fatalf("Failed to create leaderelection client: %v", err)
+		}
+
 		// Name of config map with leader election lock
 		lockName := "external-attacher-leader-" + csiAttacher
-		le := leaderelection.NewLeaderElection(clientset, lockName, run)
+		le := leaderelection.NewLeaderElection(leClientset, lockName, run)
 
 		if *leaderElectionNamespace != "" {
 			le.WithNamespace(*leaderElectionNamespace)
