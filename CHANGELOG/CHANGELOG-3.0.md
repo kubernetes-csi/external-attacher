@@ -10,13 +10,13 @@
 
 - Update volumeAttachment to v1.
 - RBAC policy was updated to allow the external-attacher to patch VolumeAttachment.Status ([#200](https://github.com/kubernetes-csi/external-attacher/pull/200), [@cwdsuzhou](https://github.com/cwdsuzhou))
+- Use GA version of CSINode object. The external-attacher now requires Kubernetes 1.17. ([#193](https://github.com/kubernetes-csi/external-attacher/pull/193), [@bertinatto](https://github.com/bertinatto))
 
 ## Changes by Kind
 
 ### Feature
 
 - Added support for migration of Kubernetes in-tree VMware volumes to CSI. ([#236](https://github.com/kubernetes-csi/external-attacher/pull/236), [@divyenpatel](https://github.com/divyenpatel))
-- Use GA version of CSINode object. The external-attacher now requires Kubernetes 1.17. ([#193](https://github.com/kubernetes-csi/external-attacher/pull/193), [@bertinatto](https://github.com/bertinatto))
 
 ### Bug or Regression
 
