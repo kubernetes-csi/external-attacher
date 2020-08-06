@@ -153,10 +153,18 @@ func (h *csiHandler) ReconcileVA() error {
 		}
 		attachedStatus := va.Status.Attached
 
-		volumeHandle, err = h.translator.RepairVolumeHandle(source.Driver, volumeHandle, nodeID)
+		// If volume driver has corresponding in-tree plugin, generate a correct volumehandle
+		isMig, err := h.isMigratable(va)
 		if err != nil {
-			klog.Warningf("Failed to repair volume handle %s for driver %s: %v", volumeHandle, source.Driver, err)
+			klog.Warningf("Failed to check if migratable for volume handle %s (driver %s): %v", volumeHandle, source.Driver, err)
 			continue
+		}
+		if isMig {
+			volumeHandle, err = h.translator.RepairVolumeHandle(source.Driver, volumeHandle, nodeID)
+			if err != nil {
+				klog.Warningf("Failed to repair volume handle %s for driver %s: %v", volumeHandle, source.Driver, err)
+				continue
+			}
 		}
 
 		// Check whether the volume is published to this node
@@ -352,6 +360,25 @@ func (h *csiHandler) hasVAFinalizer(va *storage.VolumeAttachment) bool {
 		}
 	}
 	return false
+}
+
+// Checks if the PV (or) the inline-volume corresponding to the VA could have migrated from
+// in-tree to CSI.
+func (h *csiHandler) isMigratable(va *storage.VolumeAttachment) (bool, error) {
+	if va.Spec.Source.PersistentVolumeName != nil {
+		pv, err := h.pvLister.Get(*va.Spec.Source.PersistentVolumeName)
+		if err != nil {
+			return false, err
+		}
+		return h.translator.IsPVMigratable(pv), nil
+	} else if va.Spec.Source.InlineVolumeSpec != nil {
+		if va.Spec.Source.InlineVolumeSpec.CSI == nil {
+			return false, errors.New("inline volume spec contains nil CSI source")
+		}
+		return true, nil
+	} else {
+		return false, nil
+	}
 }
 
 func getCSISource(pvSpec *v1.PersistentVolumeSpec) (*v1.CSIPersistentVolumeSource, error) {

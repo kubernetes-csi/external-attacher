@@ -34,6 +34,7 @@ import (
 	"k8s.io/client-go/informers"
 	"k8s.io/client-go/kubernetes"
 	core "k8s.io/client-go/testing"
+	csitranslator "k8s.io/csi-translation-lib"
 	"k8s.io/klog/v2"
 )
 
@@ -61,7 +62,7 @@ func csiHandlerFactory(client kubernetes.Interface, informerFactory informers.Sh
 		informerFactory.Storage().V1().VolumeAttachments().Lister(),
 		&timeout,
 		true, /* supports PUBLISH_READONLY */
-		fakeInTreeToCSITranslator{},
+		csitranslator.New(),
 	)
 }
 
@@ -76,7 +77,7 @@ func csiHandlerFactoryNoReadOnly(client kubernetes.Interface, informerFactory in
 		informerFactory.Storage().V1().VolumeAttachments().Lister(),
 		&timeout,
 		false, /* does not support PUBLISH_READONLY */
-		fakeInTreeToCSITranslator{},
+		csitranslator.New(),
 	)
 }
 
@@ -833,8 +834,18 @@ func TestCSIHandler(t *testing.T) {
 				core.NewPatchAction(vaGroupResourceVersion, metav1.NamespaceNone, testPVName+"-"+testNodeName,
 					types.MergePatchType, patch(va(false /*attached*/, "" /*finalizer*/, nil /* annotations */),
 						va(false /*attached*/, fin, ann))),
-				core.NewPatchSubresourceAction(vaGroupResourceVersion, metav1.NamespaceNone, testPVName+"-"+testNodeName,
-					types.MergePatchType, patch(va(false /*attached*/, fin, ann),
+				// Add finalizer again (see: https://github.com/kubernetes-csi/external-attacher/issues/228)
+				core.NewPatchSubresourceAction(vaGroupResourceVersion, metav1.NamespaceNone,
+					testPVName+"-"+testNodeName,
+					types.MergePatchType, patch(va(false /*attached*/, fin /*finalizer*/, ann /* annotations */),
+						vaWithAttachError(va(false, fin, ann), "context deadline exceeded")),
+					"status"),
+				core.NewPatchAction(vaGroupResourceVersion, metav1.NamespaceNone, testPVName+"-"+testNodeName,
+					types.MergePatchType, patch(va(false /*attached*/, "" /*finalizer*/, nil /* annotations */),
+						va(false /*attached*/, fin, ann))),
+				core.NewPatchSubresourceAction(vaGroupResourceVersion, metav1.NamespaceNone,
+					testPVName+"-"+testNodeName,
+					types.MergePatchType, patch(vaWithAttachError(va(false, fin, ann), "context deadline exceeded"),
 						va(true /*attached*/, fin, ann)), "status"),
 			},
 			expectedCSICalls: []csiCall{
@@ -1059,6 +1070,10 @@ func TestCSIHandler(t *testing.T) {
 			initialObjects: []runtime.Object{pvWithFinalizer(), csiNode()},
 			addedVA:        deleted(va(true, fin, ann)),
 			expectedActions: []core.Action{
+				core.NewPatchSubresourceAction(vaGroupResourceVersion, metav1.NamespaceNone,
+					testPVName+"-"+testNodeName,
+					types.MergePatchType, patch(deleted(va(true, "", ann)),
+						deleted(vaWithDetachError(va(true, "", ann), "context deadline exceeded"))), "status"),
 				core.NewPatchSubresourceAction(vaGroupResourceVersion, metav1.NamespaceNone, testPVName+"-"+testNodeName,
 					types.MergePatchType, patch(deleted(va(true, "", ann)),
 						deleted(va(false /*attached*/, "", ann))), "status"),
@@ -1381,18 +1396,30 @@ func TestCSIHandler(t *testing.T) {
 
 func TestCSIHandlerReconcileVA(t *testing.T) {
 	nID := map[string]string{
-		vaNodeIDAnnotation: testNodeName,
+		vaNodeIDAnnotation: testNodeID,
 	}
-
+	vaGroupResourceVersion := schema.GroupVersionResource{
+		Group:    storage.GroupName,
+		Version:  "v1",
+		Resource: "volumeattachments",
+	}
 	tests := []testCase{
+		// TODO: Add a test with volume type that supports migration
+		// (Ref: https://github.com/kubernetes-csi/external-attacher/issues/247)
 		{
 			name: "va attached actual state not attached",
 			initialObjects: []runtime.Object{
-				va(true /*attached*/, "" /*finalizer*/, nID /*annotations*/),
+				va(true /*attached*/, fin /* Finalizer*/, nID /*annotations*/),
 				pvWithFinalizer(),
+				csiNode(),
 			},
 			listerResponse: map[string][]string{
 				// Intentionally empty
+			},
+			expectedActions: []core.Action{
+				core.NewPatchSubresourceAction(vaGroupResourceVersion, metav1.NamespaceNone, testPVName+"-"+testNodeName,
+					types.MergePatchType, patch(va(true /*attached*/, "", nil),
+						va(true, "", nil)), "status"),
 			},
 			expectedCSICalls: []csiCall{
 				{"attach", testVolumeHandle, testNodeID, nil, nil, false, nil, false, nil, 0},
@@ -1405,7 +1432,7 @@ func TestCSIHandlerReconcileVA(t *testing.T) {
 				pvWithFinalizer(),
 			},
 			listerResponse: map[string][]string{
-				testVolumeHandle: []string{testNodeName},
+				testVolumeHandle: []string{testNodeID},
 			},
 			expectedActions: []core.Action{
 				// Intentionally empty
@@ -1414,11 +1441,11 @@ func TestCSIHandlerReconcileVA(t *testing.T) {
 		{
 			name: "va not attached actual state attached",
 			initialObjects: []runtime.Object{
-				va(false /*attached*/, "" /*finalizer*/, nID /*annotations*/),
+				deleted(va(false /*attached*/, "" /*finalizer*/, nID /*annotations*/)),
 				pvWithFinalizer(),
 			},
 			listerResponse: map[string][]string{
-				testVolumeHandle: []string{testNodeName},
+				testVolumeHandle: []string{testNodeID},
 			},
 			expectedActions: []core.Action{},
 			expectedCSICalls: []csiCall{
@@ -1429,7 +1456,7 @@ func TestCSIHandlerReconcileVA(t *testing.T) {
 			name:           "no volume attachments but existing lister response results in no action",
 			initialObjects: []runtime.Object{},
 			listerResponse: map[string][]string{
-				testVolumeHandle: []string{testNodeName},
+				testVolumeHandle: []string{testNodeID},
 			},
 			expectedActions: []core.Action{},
 		},
