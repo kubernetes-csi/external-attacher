@@ -2,7 +2,7 @@
 
 # CSI attacher
 
-The external-attacher is a sidecar container that attaches volumes to nodes by calling `ControllerPublish` and `ControlerUnpublish` functions of CSI drivers. It is necessary because internal Attach/Detach controller running in Kubernetes controller-manager does not have any direct interfaces to CSI drivers.
+The external-attacher is a sidecar container that attaches volumes to nodes by calling `ControllerPublish` and `ControllerUnpublish` functions of CSI drivers. It is necessary because internal Attach/Detach controller running in Kubernetes controller-manager does not have any direct interfaces to CSI drivers.
 
 ## Terminology
 
@@ -13,6 +13,7 @@ In Kubernetes, the term *attach* means 3rd party volume attachment to a node. Th
 It is **not** an attach/detach operation performed by a code running on a node, such as an attachment of iSCSI or Fibre Channel volumes. These are typically performed during `NodeStage` and `NodeUnstage` CSI calls and are not done by the external-attacher.
 
 ## Overview
+
 The external-attacher is an external controller that monitors `VolumeAttachment` objects created by controller-manager and attaches/detaches volumes to/from nodes (i.e. calls `ControllerPublish`/`ControllerUnpublish`. Full design can be found at Kubernetes proposal at [container-storage-interface.md](https://github.com/kubernetes/community/blob/master/contributors/design-proposals/storage/container-storage-interface.md)
 
 ## Compatibility
@@ -52,6 +53,7 @@ Note that the external-attacher does not scale with more replicas. Only one exte
 ### Command line options
 
 #### Important optional arguments that are highly recommended to be used
+
 * `--csi-address <path to CSI socket>`: This is the path to the CSI driver socket inside the pod that the external-attacher container will use to issue CSI operations (`/run/csi/socket` is used by default).
 
 * `--leader-election`: Enables leader election. This is useful when there are multiple replicas of the same external-attacher running for one CSI driver. Only one of them may be active (=leader). A new leader will be re-elected when current leader dies or becomes unresponsive for ~15 seconds.
@@ -73,6 +75,7 @@ Note that the external-attacher does not scale with more replicas. Only one exte
 * `--reconcile-sync`: Resync frequency of the attached volumes with the driver. See [Periodic re-sync](#periodic-re-sync) for details. 1 minute is used by default.
 
 #### Other recognized arguments
+
 * `--kubeconfig <path>`: Path to Kubernetes client configuration that the external-attacher uses to connect to Kubernetes API server. When omitted, default token provided by Kubernetes will be used. This option is useful only when the external-attacher does not run as a Kubernetes pod, e.g. for debugging.
 
 * `--resync <duration>`: Internal resync interval when the external-attacher re-evaluates all existing `VolumeAttachment` instances and tries to fulfill them, i.e. attach / detach corresponding volumes. It does not affect re-tries of failed CSI calls! It should be used only when there is a bug in Kubernetes watch logic.
@@ -82,6 +85,7 @@ Note that the external-attacher does not scale with more replicas. Only one exte
 * All glog / klog arguments are supported, such as `-v <log level>` or `-alsologtostderr`.
 
 ### CSI error and timeout handling
+
 The external-attacher invokes all gRPC calls to CSI driver with timeout provided by `--timeout` command line argument (15 seconds by default).
 
 * `ControllerPublish`: The call might have timed out just before the driver attached a volume and was sending a response. From that reason, timeouts from `ControllerPublish` is considered as "*volume may be attached*" or "*volume is being attached in the background*." The external-attacher will re-try calling `ControllerPublish` after exponential backoff until it gets either successful response or final (non-timeout) error that the volume cannot be attached.
@@ -92,6 +96,7 @@ The external-attacher invokes all gRPC calls to CSI driver with timeout provided
 Correct timeout value depends on the storage backend and how quickly it is able to processes `ControllerPublish` and `ControllerUnpublish` calls. The value should be set to accommodate majority of them. It is fine if some calls time out - such calls will be re-tried after exponential backoff (starting with `--retry-interval-start`), however, this backoff will introduce delay when the call times out several times for a single volume (up to `--retry-interval-max`).
 
 ### Periodic re-sync
+
 When CSI driver supports `LIST_VOLUMES` and `LIST_VOLUMES_PUBLISHED_NODES` capabilities, the external attacher periodically syncs volume attachments requested by Kubernetes with the actual state reported by CSI driver. Volumes detached by any 3rd party, but still required to be attached by Kubernetes, will be re-attached back. Frequency of this re-sync is controlled by `--reconcile-sync` command line parameter.
 
 ## Community, discussion, contribution, and support
