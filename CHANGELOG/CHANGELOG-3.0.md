@@ -8,10 +8,11 @@
 
 ### (No, really, you MUST read this before you upgrade)
 
-- Update volumeAttachment to v1.
-- RBAC policy was updated to allow the external-attacher to patch VolumeAttachment.Status ([#200](https://github.com/kubernetes-csi/external-attacher/pull/200), [@cwdsuzhou](https://github.com/cwdsuzhou))
-- Use GA version of CSINode object. The external-attacher now requires Kubernetes 1.17. ([#193](https://github.com/kubernetes-csi/external-attacher/pull/193), [@bertinatto](https://github.com/bertinatto))
-
+- Update volumeAttachment to v1
+  
+  RBAC policy was updated to allow the external-attacher to patch VolumeAttachment.Status ([#200](https://github.com/kubernetes-csi/external-attacher/pull/200), [@cwdsuzhou](https://github.com/cwdsuzhou))
+ - Use GA version of CSINode object. The external-attacher now requires Kubernetes 1.17. ([#193](https://github.com/kubernetes-csi/external-attacher/pull/193), [@bertinatto](https://github.com/bertinatto))
+ 
 ## Changes by Kind
 
 ### Feature
@@ -20,10 +21,16 @@
 
 ### Bug or Regression
 
+- Fixes an issue in volume attachment reconciler when the CSI driver supports LIST_VOLUMES_PUBLISHED_NODES but does not implement CSI migration. ([#244](https://github.com/kubernetes-csi/external-attacher/pull/244), [@yuga711](https://github.com/yuga711))
 - Use dedicated Kubernetes client for leader election that does not get throttled when the external-attacher is under heavy load. ([#242](https://github.com/kubernetes-csi/external-attacher/pull/242), [@jsafrane](https://github.com/jsafrane))
+
+### Other (Cleanup or Flake)
+
+- Removed support of go dep. ([#239](https://github.com/kubernetes-csi/external-attacher/pull/239), [@jsafrane](https://github.com/jsafrane))
 
 ### Uncategorized
 
+- Build with Go 1.15 ([#246](https://github.com/kubernetes-csi/external-attacher/pull/246), [@pohly](https://github.com/pohly))
 - Publishing of images on k8s.gcr.io ([#231](https://github.com/kubernetes-csi/external-attacher/pull/231), [@pohly](https://github.com/pohly))
 - Updated client-go to v0.18 ([#221](https://github.com/kubernetes-csi/external-attacher/pull/221), [@humblec](https://github.com/humblec))
 
