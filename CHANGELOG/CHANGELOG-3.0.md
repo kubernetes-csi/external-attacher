@@ -65,7 +65,7 @@
 - rsc.io/binaryregexp: v0.2.0
 - rsc.io/quote/v3: v3.1.0
 - rsc.io/sampler: v1.3.0
-- sigs.k8s.io/structured-merge-diff/v3: 43c19bb
+- sigs.k8s.io/structured-merge-diff/v4: v4.0.1
 
 ### Changed
 - cloud.google.com/go: v0.38.0 → v0.51.0
@@ -75,6 +75,7 @@
 - github.com/Azure/go-autorest/autorest: [v0.9.0 → v0.9.6](https://github.com/Azure/go-autorest/autorest/compare/v0.9.0...v0.9.6)
 - github.com/elazarl/goproxy: [c4fc265 → 947c36d](https://github.com/elazarl/goproxy/compare/c4fc265...947c36d)
 - github.com/envoyproxy/go-control-plane: [5f8ba28 → v0.9.4](https://github.com/envoyproxy/go-control-plane/compare/5f8ba28...v0.9.4)
+- github.com/evanphx/json-patch: [v4.5.0+incompatible → v4.9.0+incompatible](https://github.com/evanphx/json-patch/compare/v4.5.0...v4.9.0)
 - github.com/fsnotify/fsnotify: [v1.4.7 → v1.4.9](https://github.com/fsnotify/fsnotify/compare/v1.4.7...v1.4.9)
 - github.com/go-logr/logr: [v0.1.0 → v0.2.0](https://github.com/go-logr/logr/compare/v0.1.0...v0.2.0)
 - github.com/gogo/protobuf: [65acae2 → v1.3.1](https://github.com/gogo/protobuf/compare/65acae2...v1.3.1)
@@ -96,10 +97,10 @@
 - github.com/pkg/errors: [v0.8.1 → v0.9.1](https://github.com/pkg/errors/compare/v0.8.1...v0.9.1)
 - github.com/sirupsen/logrus: [v1.2.0 → v1.4.2](https://github.com/sirupsen/logrus/compare/v1.2.0...v1.4.2)
 - go.opencensus.io: v0.21.0 → v0.22.2
-- golang.org/x/crypto: 60c769a → bac4c82
+- golang.org/x/crypto: 60c769a → 75b2880
 - golang.org/x/exp: 509febe → da58074
 - golang.org/x/lint: d0100b6 → fdd1cda
-- golang.org/x/net: c0dbc17 → d3edc99
+- golang.org/x/net: c0dbc17 → ab34263
 - golang.org/x/oauth2: 0f29369 → 858c2ad
 - golang.org/x/sync: 1122301 → cd5d95a
 - golang.org/x/sys: 0732a99 → ed371f2
@@ -113,13 +114,13 @@
 - gopkg.in/check.v1: 788fd78 → 41f04d3
 - gopkg.in/yaml.v2: v2.2.4 → v2.2.8
 - honnef.co/go/tools: ea95bdf → v0.0.1-2019.2.3
-- k8s.io/api: v0.17.0 → v0.19.0-rc.2
-- k8s.io/apimachinery: v0.17.1-beta.0 → v0.19.0-rc.2
-- k8s.io/client-go: v0.17.0 → v0.19.0-rc.2
-- k8s.io/csi-translation-lib: v0.17.0 → v0.19.0-rc.2
+- k8s.io/api: v0.17.0 → v0.19.0
+- k8s.io/apimachinery: v0.17.1-beta.0 → v0.19.0
+- k8s.io/client-go: v0.17.0 → v0.19.0
+- k8s.io/csi-translation-lib: v0.17.0 → v0.19.0
 - k8s.io/gengo: 0689ccc → 3a45101
-- k8s.io/kube-openapi: 30be4d1 → 656914f
-- k8s.io/utils: e782cd3 → 0bdb4ca
+- k8s.io/kube-openapi: 30be4d1 → 6aeccd4
+- k8s.io/utils: e782cd3 → d5654de
 - sigs.k8s.io/yaml: v1.1.0 → v1.2.0
 
 ### Removed
