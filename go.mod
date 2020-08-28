@@ -1,6 +1,6 @@
 module github.com/kubernetes-csi/external-attacher
 
-go 1.14
+go 1.15
 
 require (
 	github.com/container-storage-interface/spec v1.2.0
