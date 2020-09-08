@@ -1,1 +1,0 @@
-../../../cmd/csi-attacher/main.go

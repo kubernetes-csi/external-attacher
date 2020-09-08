@@ -29,15 +29,15 @@ import (
 	"k8s.io/client-go/tools/clientcmd"
 	"k8s.io/client-go/util/workqueue"
 	csitrans "k8s.io/csi-translation-lib"
-	"k8s.io/klog"
+	"k8s.io/klog/v2"
 
 	"github.com/container-storage-interface/spec/lib/go/csi"
 	"github.com/kubernetes-csi/csi-lib-utils/connection"
 	"github.com/kubernetes-csi/csi-lib-utils/leaderelection"
 	"github.com/kubernetes-csi/csi-lib-utils/metrics"
 	"github.com/kubernetes-csi/csi-lib-utils/rpc"
-	"github.com/kubernetes-csi/external-attacher/v2/pkg/attacher"
-	"github.com/kubernetes-csi/external-attacher/v2/pkg/controller"
+	"github.com/kubernetes-csi/external-attacher/pkg/attacher"
+	"github.com/kubernetes-csi/external-attacher/pkg/controller"
 	"google.golang.org/grpc"
 )
 
@@ -154,8 +154,8 @@ func main() {
 		}
 		if supportsAttach {
 			pvLister := factory.Core().V1().PersistentVolumes().Lister()
-			vaLister := factory.Storage().V1beta1().VolumeAttachments().Lister()
-			csiNodeLister := factory.Storage().V1beta1().CSINodes().Lister()
+			vaLister := factory.Storage().V1().VolumeAttachments().Lister()
+			csiNodeLister := factory.Storage().V1().CSINodes().Lister()
 			volAttacher := attacher.NewAttacher(csiConn)
 			CSIVolumeLister := attacher.NewVolumeLister(csiConn)
 			handler = controller.NewCSIHandler(clientset, csiAttacher, volAttacher, CSIVolumeLister, pvLister, csiNodeLister, vaLister, timeout, supportsReadOnly, csitrans.New())
@@ -179,7 +179,7 @@ func main() {
 		clientset,
 		csiAttacher,
 		handler,
-		factory.Storage().V1beta1().VolumeAttachments(),
+		factory.Storage().V1().VolumeAttachments(),
 		factory.Core().V1().PersistentVolumes(),
 		workqueue.NewItemExponentialFailureRateLimiter(*retryIntervalStart, *retryIntervalMax),
 		workqueue.NewItemExponentialFailureRateLimiter(*retryIntervalStart, *retryIntervalMax),
@@ -196,9 +196,17 @@ func main() {
 	if !*enableLeaderElection {
 		run(context.TODO())
 	} else {
+		// Create a new clientset for leader election. When the attacher
+		// gets busy and its client gets throttled, the leader election
+		// can proceed without issues.
+		leClientset, err := kubernetes.NewForConfig(config)
+		if err != nil {
+			klog.Fatalf("Failed to create leaderelection client: %v", err)
+		}
+
 		// Name of config map with leader election lock
 		lockName := "external-attacher-leader-" + csiAttacher
-		le := leaderelection.NewLeaderElection(clientset, lockName, run)
+		le := leaderelection.NewLeaderElection(leClientset, lockName, run)
 
 		if *leaderElectionNamespace != "" {
 			le.WithNamespace(*leaderElectionNamespace)

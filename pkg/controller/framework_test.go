@@ -27,10 +27,10 @@ import (
 
 	"github.com/container-storage-interface/spec/lib/go/csi"
 	"github.com/davecgh/go-spew/spew"
-	"github.com/kubernetes-csi/external-attacher/v2/pkg/attacher"
+	"github.com/kubernetes-csi/external-attacher/pkg/attacher"
 
 	v1 "k8s.io/api/core/v1"
-	storage "k8s.io/api/storage/v1beta1"
+	storage "k8s.io/api/storage/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/informers"
@@ -38,8 +38,7 @@ import (
 	"k8s.io/client-go/kubernetes/fake"
 	core "k8s.io/client-go/testing"
 	"k8s.io/client-go/util/workqueue"
-	csitrans "k8s.io/csi-translation-lib"
-	"k8s.io/klog"
+	"k8s.io/klog/v2"
 )
 
 // This is an unit test framework. It is heavily inspired by serviceaccount
@@ -133,10 +132,10 @@ func runTests(t *testing.T, handlerFactory handlerFactory, tests []testCase) {
 		// Create client and informers
 		client := fake.NewSimpleClientset(coreObjs...)
 		informers := informers.NewSharedInformerFactory(client, time.Hour /* disable resync*/)
-		vaInformer := informers.Storage().V1beta1().VolumeAttachments()
+		vaInformer := informers.Storage().V1().VolumeAttachments()
 		pvInformer := informers.Core().V1().PersistentVolumes()
 		nodeInformer := informers.Core().V1().Nodes()
-		csiNodeInformer := informers.Storage().V1beta1().CSINodes()
+		csiNodeInformer := informers.Storage().V1().CSINodes()
 		// Fill the informers with initial objects so controller can Get() them
 		for _, obj := range objs {
 			switch obj.(type) {
@@ -178,8 +177,8 @@ func runTests(t *testing.T, handlerFactory handlerFactory, tests []testCase) {
 		}
 
 		// Construct controller
-		csiConnection := &fakeCSIConnection{t: t, calls: test.expectedCSICalls}
 		lister := &fakeLister{t: t, publishedNodes: test.listerResponse}
+		csiConnection := &fakeCSIConnection{t: t, calls: test.expectedCSICalls, lister: lister}
 		handler := handlerFactory(client, informers, csiConnection, lister)
 		ctrl := NewCSIAttachController(client, testAttacherName, handler, vaInformer, pvInformer, workqueue.DefaultControllerRateLimiter(), workqueue.DefaultControllerRateLimiter(), test.listerResponse != nil, 1*time.Minute)
 
@@ -223,6 +222,10 @@ func runTests(t *testing.T, handlerFactory handlerFactory, tests []testCase) {
 				if err != nil {
 					t.Errorf("Failed to reconcile Volume Attachment objects: %v", err)
 				}
+			}
+			if ctrl.vaQueue.Len() > 0 || ctrl.pvQueue.Len() > 0 {
+				// Reconciler created some work, process the queues once again
+				continue
 			}
 			currentActionCount := len(client.Actions())
 			if currentActionCount < len(test.expectedActions) {
@@ -296,6 +299,13 @@ func runTests(t *testing.T, handlerFactory handlerFactory, tests []testCase) {
 
 		if test.additionalCheck != nil {
 			test.additionalCheck(t, test)
+		}
+		// makesure all the csi calls were executed.
+		if csiConnection.index < len(csiConnection.calls) {
+			t.Errorf("Test %q: %d additional expected CSI calls", test.name, len(csiConnection.calls)-csiConnection.index)
+			for _, a := range csiConnection.calls[csiConnection.index:] {
+				t.Logf("   %+v", a)
+			}
 		}
 		klog.Infof("Test %q: finished \n\n", test.name)
 	}
@@ -400,12 +410,25 @@ func (l *fakeLister) ListVolumes(ctx context.Context) (map[string][]string, erro
 	return l.publishedNodes, nil
 }
 
+func (l *fakeLister) Add(volumeHandle string, nodeID string) {
+	if l.publishedNodes != nil {
+		l.publishedNodes[volumeHandle] = []string{nodeID}
+	}
+}
+
+func (l *fakeLister) Delete(volumeHandle string, nodeID string) {
+	if l.publishedNodes != nil {
+		delete(l.publishedNodes, volumeHandle)
+	}
+}
+
 // Fake CSIConnection implementation that check that Attach/Detach is called
 // with the right parameters and it returns proper error code and metadata.
 type fakeCSIConnection struct {
-	calls []csiCall
-	index int
-	t     *testing.T
+	calls  []csiCall
+	index  int
+	lister *fakeLister
+	t      *testing.T
 }
 
 func (f *fakeCSIConnection) GetDriverName(ctx context.Context) (string, error) {
@@ -429,9 +452,12 @@ func (f *fakeCSIConnection) Attach(ctx context.Context, volumeID string, readOnl
 	call := f.calls[f.index]
 	f.index++
 
-	// Force a delay
-	if call.delay != time.Duration(0) {
-		time.Sleep(call.delay)
+	// If caller has set long delay, return when deadline expires
+	select {
+	case <-ctx.Done():
+		return nil, true, ctx.Err()
+	case <-time.After(call.delay):
+		break
 	}
 
 	var err error
@@ -465,6 +491,8 @@ func (f *fakeCSIConnection) Attach(ctx context.Context, volumeID string, readOnl
 	if err != nil {
 		return nil, true, err
 	}
+	// Update the published volume map
+	f.lister.Add(call.volumeHandle, call.nodeID)
 	return call.metadata, call.detached, call.err
 }
 
@@ -476,9 +504,12 @@ func (f *fakeCSIConnection) Detach(ctx context.Context, volumeID string, nodeID 
 	call := f.calls[f.index]
 	f.index++
 
-	// Force a delay
-	if call.delay != time.Duration(0) {
-		time.Sleep(call.delay)
+	// If caller has set long delay, return when deadline expires
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-time.After(call.delay):
+		break
 	}
 
 	var err error
@@ -504,6 +535,8 @@ func (f *fakeCSIConnection) Detach(ctx context.Context, volumeID string, nodeID 
 	if err != nil {
 		return err
 	}
+	// Update the published volume map
+	f.lister.Delete(call.volumeHandle, call.nodeID)
 	return call.err
 }
 
@@ -513,18 +546,4 @@ func (f *fakeCSIConnection) Close() error {
 
 func (f *fakeCSIConnection) Probe(timeout time.Duration) error {
 	return nil
-}
-
-// TODO: Remove hardcoding for GCE tests and make more general
-type fakeInTreeToCSITranslator struct{}
-
-func (f fakeInTreeToCSITranslator) TranslateInTreePVToCSI(pv *v1.PersistentVolume) (*v1.PersistentVolume, error) {
-	t := csitrans.New()
-	return t.TranslateInTreePVToCSI(pv)
-}
-func (f fakeInTreeToCSITranslator) IsPVMigratable(pv *v1.PersistentVolume) bool {
-	return pv.Spec.GCEPersistentDisk != nil
-}
-func (f fakeInTreeToCSITranslator) RepairVolumeHandle(pluginName, volumeHandle, nodeID string) (string, error) {
-	return volumeHandle, nil
 }
