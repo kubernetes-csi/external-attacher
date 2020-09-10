@@ -30,7 +30,7 @@ import (
 	"github.com/golang/protobuf/proto"
 	"github.com/kubernetes-csi/csi-lib-utils/connection"
 	"github.com/kubernetes-csi/csi-lib-utils/metrics"
-	"github.com/kubernetes-csi/csi-test/driver"
+	"github.com/kubernetes-csi/csi-test/v3/driver"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
