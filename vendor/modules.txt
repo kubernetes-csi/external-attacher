@@ -51,7 +51,7 @@ github.com/hashicorp/golang-lru/simplelru
 github.com/imdario/mergo
 # github.com/json-iterator/go v1.1.10
 github.com/json-iterator/go
-# github.com/kubernetes-csi/csi-lib-utils v0.7.0
+# github.com/kubernetes-csi/csi-lib-utils v0.8.1
 ## explicit
 github.com/kubernetes-csi/csi-lib-utils/connection
 github.com/kubernetes-csi/csi-lib-utils/leaderelection
@@ -120,7 +120,7 @@ google.golang.org/appengine/internal/urlfetch
 google.golang.org/appengine/urlfetch
 # google.golang.org/genproto v0.0.0-20200526211855-cb27e3aa2013
 google.golang.org/genproto/googleapis/rpc/status
-# google.golang.org/grpc v1.28.0
+# google.golang.org/grpc v1.29.0
 ## explicit
 google.golang.org/grpc
 google.golang.org/grpc/attributes
@@ -149,6 +149,7 @@ google.golang.org/grpc/internal/grpcsync
 google.golang.org/grpc/internal/grpcutil
 google.golang.org/grpc/internal/resolver/dns
 google.golang.org/grpc/internal/resolver/passthrough
+google.golang.org/grpc/internal/status
 google.golang.org/grpc/internal/syscall
 google.golang.org/grpc/internal/transport
 google.golang.org/grpc/keepalive
@@ -502,7 +503,7 @@ k8s.io/client-go/util/keyutil
 k8s.io/client-go/util/workqueue
 # k8s.io/cloud-provider v0.19.0 => k8s.io/cloud-provider v0.17.0
 k8s.io/cloud-provider/volume
-# k8s.io/component-base v0.17.0 => k8s.io/component-base v0.17.0
+# k8s.io/component-base v0.19.0 => k8s.io/component-base v0.17.0
 k8s.io/component-base/metrics
 k8s.io/component-base/version
 # k8s.io/csi-translation-lib v0.19.0
