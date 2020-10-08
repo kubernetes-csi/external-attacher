@@ -1,3 +1,50 @@
+# Release notes for v3.0.1
+
+[Documentation](https://kubernetes-csi.github.io/docs/)
+# Changelog since v3.0.0
+
+## Changes by Kind
+
+### Feature
+
+- Add `process_start_time_seconds` metric. ([#254](https://github.com/kubernetes-csi/external-attacher/pull/254), [@Jiawei0227](https://github.com/Jiawei0227))
+
+## Dependencies
+
+### Added
+- github.com/Azure/go-ansiterm: [d6e3b33](https://github.com/Azure/go-ansiterm/tree/d6e3b33)
+- github.com/cespare/xxhash/v2: [v2.1.1](https://github.com/cespare/xxhash/v2/tree/v2.1.1)
+- github.com/moby/term: [672ec06](https://github.com/moby/term/tree/672ec06)
+- go.uber.org/atomic: v1.4.0
+- go.uber.org/multierr: v1.1.0
+- go.uber.org/zap: v1.10.0
+- gotest.tools/v3: v3.0.2
+- gotest.tools: v2.2.0+incompatible
+
+### Changed
+- github.com/alecthomas/template: [a0175ee → fb15b89](https://github.com/alecthomas/template/compare/a0175ee...fb15b89)
+- github.com/alecthomas/units: [2efee85 → c3de453](https://github.com/alecthomas/units/compare/2efee85...c3de453)
+- github.com/beorn7/perks: [v1.0.0 → v1.0.1](https://github.com/beorn7/perks/compare/v1.0.0...v1.0.1)
+- github.com/go-kit/kit: [v0.8.0 → v0.9.0](https://github.com/go-kit/kit/compare/v0.8.0...v0.9.0)
+- github.com/go-logfmt/logfmt: [v0.3.0 → v0.4.0](https://github.com/go-logfmt/logfmt/compare/v0.3.0...v0.4.0)
+- github.com/konsorten/go-windows-terminal-sequences: [v1.0.2 → v1.0.3](https://github.com/konsorten/go-windows-terminal-sequences/compare/v1.0.2...v1.0.3)
+- github.com/kubernetes-csi/csi-lib-utils: [v0.7.0 → v0.8.1](https://github.com/kubernetes-csi/csi-lib-utils/compare/v0.7.0...v0.8.1)
+- github.com/matttproud/golang_protobuf_extensions: [v1.0.1 → c182aff](https://github.com/matttproud/golang_protobuf_extensions/compare/v1.0.1...c182aff)
+- github.com/prometheus/client_golang: [v1.0.0 → v1.7.1](https://github.com/prometheus/client_golang/compare/v1.0.0...v1.7.1)
+- github.com/prometheus/client_model: [14fe0d1 → v0.2.0](https://github.com/prometheus/client_model/compare/14fe0d1...v0.2.0)
+- github.com/prometheus/common: [v0.4.1 → v0.10.0](https://github.com/prometheus/common/compare/v0.4.1...v0.10.0)
+- github.com/prometheus/procfs: [v0.0.2 → v0.1.3](https://github.com/prometheus/procfs/compare/v0.0.2...v0.1.3)
+- github.com/sirupsen/logrus: [v1.4.2 → v1.6.0](https://github.com/sirupsen/logrus/compare/v1.4.2...v1.6.0)
+- github.com/stretchr/testify: [v1.4.0 → v1.5.1](https://github.com/stretchr/testify/compare/v1.4.0...v1.5.1)
+- google.golang.org/grpc: v1.28.0 → v1.29.0
+- k8s.io/cloud-provider: v0.17.0 → v0.19.0
+- k8s.io/component-base: v0.17.0 → v0.19.0
+
+### Removed
+- github.com/gophercloud/gophercloud: [v0.1.0](https://github.com/gophercloud/gophercloud/tree/v0.1.0)
+- sigs.k8s.io/structured-merge-diff: 15d366b
+
+
 # Release notes for v3.0.0
 
 [Documentation](https://kubernetes-csi.github.io/docs/)
