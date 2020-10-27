@@ -248,11 +248,16 @@ configvar CSI_PROW_DEP_VERSION v0.5.1 "golang dep version to be used for vendor 
 #
 # Unknown or unsupported entries are ignored.
 #
+# Testing of alpha features is only supported for CSI_PROW_KUBERNETES_VERSION=latest
+# because CSI_PROW_E2E_ALPHA and CSI_PROW_E2E_ALPHA_GATES are not set for
+# older Kubernetes releases. The script supports that, it just isn't done because
+# it is not needed and would cause additional maintenance effort.
+#
 # Sanity testing with csi-sanity only covers the CSI driver itself and
 # thus only makes sense in repos which provide their own CSI
 # driver. Repos can enable sanity testing by setting
 # CSI_PROW_TESTS_SANITY=sanity.
-configvar CSI_PROW_TESTS "unit parallel serial parallel-alpha serial-alpha sanity" "tests to run"
+configvar CSI_PROW_TESTS "unit parallel serial $(if [ "${CSI_PROW_KUBERNETES_VERSION}" = "latest" ]; then echo parallel-alpha serial-alpha; fi) sanity" "tests to run"
 tests_enabled () {
     local t1 t2
     # We want word-splitting here, so ignore: Quote to prevent word splitting, or split robustly with mapfile or read -a.
@@ -558,7 +563,8 @@ start_cluster () {
             git_clone_branch https://github.com/kubernetes/kubernetes "${CSI_PROW_WORK}/src/kubernetes" "$version" || die "checking out Kubernetes $version failed"
 
             go_version="$(go_version_for_kubernetes "${CSI_PROW_WORK}/src/kubernetes" "$version")" || die "cannot proceed without knowing Go version for Kubernetes"
-            run_with_go "$go_version" kind build node-image --image csiprow/node:latest --type="$type" --kube-root "${CSI_PROW_WORK}/src/kubernetes" || die "'kind build node-image' failed"
+            # Changing into the Kubernetes source code directory is a workaround for https://github.com/kubernetes-sigs/kind/issues/1910
+            (cd "${CSI_PROW_WORK}/src/kubernetes" && run_with_go "$go_version" kind build node-image --image csiprow/node:latest --type="$type" --kube-root "${CSI_PROW_WORK}/src/kubernetes") || die "'kind build node-image' failed"
             csi_prow_kind_have_kubernetes=true
         fi
         image="csiprow/node:latest"
