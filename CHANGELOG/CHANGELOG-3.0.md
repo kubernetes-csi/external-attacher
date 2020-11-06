@@ -1,3 +1,27 @@
+# Release notes for v3.0.2
+
+[Documentation](https://docs.k8s.io/docs/home)
+# Changelog since v3.0.1
+
+## Changes by Kind
+
+### Bug or Regression
+
+- Upgrade azure translation lib to fix the azure file migration issue ([#271](https://github.com/kubernetes-csi/external-attacher/pull/271), [@andyzhangx](https://github.com/andyzhangx))
+
+## Dependencies
+
+### Added
+_Nothing has changed._
+
+### Changed
+- k8s.io/api: v0.19.0 → v0.19.3
+- k8s.io/apimachinery: v0.19.0 → v0.19.3
+- k8s.io/csi-translation-lib: v0.19.0 → v0.19.3
+
+### Removed
+_Nothing has changed._
+
 # Release notes for v3.0.1
 
 [Documentation](https://kubernetes-csi.github.io/docs/)
