@@ -14,6 +14,8 @@ metadata:
   name: csi-attacher
   # replace with non-default namespace name
   namespace: default
+  labels:
+    app: csi-attacher
 
 ---
 # Attacher must be able to work with PVs, CSINodes and VolumeAttachments
@@ -21,6 +23,8 @@ kind: ClusterRole
 apiVersion: rbac.authorization.k8s.io/v1
 metadata:
   name: external-attacher-runner
+  labels:
+    app: csi-attacher
 rules:
   - apiGroups: [""]
     resources: ["persistentvolumes"]
@@ -47,6 +51,8 @@ kind: ClusterRoleBinding
 apiVersion: rbac.authorization.k8s.io/v1
 metadata:
   name: csi-attacher-role
+  labels:
+    app: csi-attacher
 subjects:
   - kind: ServiceAccount
     name: csi-attacher
@@ -65,6 +71,8 @@ apiVersion: rbac.authorization.k8s.io/v1
 metadata:
   # replace with non-default namespace name
   namespace: default
+  labels:
+    app: csi-attacher
   name: external-attacher-cfg
 rules:
 - apiGroups: ["coordination.k8s.io"]
@@ -78,6 +86,8 @@ metadata:
   name: csi-attacher-role-cfg
   # replace with non-default namespace name
   namespace: default
+  labels:
+    app: csi-attacher
 subjects:
   - kind: ServiceAccount
     name: csi-attacher
