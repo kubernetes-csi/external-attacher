@@ -20,6 +20,7 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"net/http"
 	"os"
 	"time"
 
@@ -134,8 +135,17 @@ func main() {
 		os.Exit(1)
 	}
 	klog.V(2).Infof("CSI driver name: %q", csiAttacher)
-	metricsManager.SetDriverName(csiAttacher)
-	metricsManager.StartMetricsEndpoint(*metricsAddress, *metricsPath)
+
+	// Prepare http endpoint for metrics + leader election healthz
+	mux := http.NewServeMux()
+	cmm := metrics.NewCSIMetricsManagerForSidecar(csiAttacher)
+	cmm.RegisterToServer(mux, *metricsPath)
+	go func() {
+		err := http.ListenAndServe(*metricsAddress, mux)
+		if err != nil {
+			klog.Fatalf("Failed to start prometheus metrics endpoint on specified address (%q) and path (%q): %s", *metricsAddress, *metricsPath, err)
+		}
+	}()
 
 	supportsService, err := supportsPluginControllerService(ctx, csiConn)
 	if err != nil {
@@ -207,6 +217,7 @@ func main() {
 		// Name of config map with leader election lock
 		lockName := "external-attacher-leader-" + csiAttacher
 		le := leaderelection.NewLeaderElection(leClientset, lockName, run)
+		le.PrepareHealthCheck(mux, leaderelection.DefaultHealthCheckTimeout)
 
 		if *leaderElectionNamespace != "" {
 			le.WithNamespace(*leaderElectionNamespace)

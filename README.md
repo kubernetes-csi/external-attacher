@@ -68,7 +68,7 @@ Note that the external-attacher does not scale with more replicas. Only one exte
 
 * `--retry-interval-max`: The exponential backoff maximum value. See [CSI error and timeout handling](#csi-error-and-timeout-handling) for details. 5 minutes is used by default.
 
-* `--metrics-address`: The TCP network address where the prometheus metrics endpoint will run (example: `:8080` which corresponds to port 8080 on local host). The default is empty string, which means metrics endpoint is disabled.
+* `--metrics-address`: The TCP network address where the prometheus metrics endpoint and leader election health check will run (example: `:8080` which corresponds to port 8080 on local host). The default is empty string, which means metrics and leader election check endpoint is disabled.
 
 * `--metrics-path`: The HTTP path where prometheus metrics will be exposed. Default is `/metrics`.
 
@@ -98,6 +98,13 @@ Correct timeout value depends on the storage backend and how quickly it is able 
 ### Periodic re-sync
 
 When CSI driver supports `LIST_VOLUMES` and `LIST_VOLUMES_PUBLISHED_NODES` capabilities, the external attacher periodically syncs volume attachments requested by Kubernetes with the actual state reported by CSI driver. Volumes detached by any 3rd party, but still required to be attached by Kubernetes, will be re-attached back. Frequency of this re-sync is controlled by `--reconcile-sync` command line parameter.
+
+### HTTP endpoint
+
+The external-attacher optionally exposes an HTTP endpoint at address:port specified by `--metrics-address` argument. When set, these two paths are exposed:
+
+* Metrics path, as set by `--metrics-path` argument (default is `/metrics`).
+* Leader election health check at `/healthz/leader-election`. It is recommended to run a liveness probe against this endpoint when leader election is used to kill external-attacher leader that fails to connect to the API server to renew its leadership. See https://github.com/kubernetes-csi/csi-lib-utils/issues/66 for details.
 
 ## Community, discussion, contribution, and support
 
