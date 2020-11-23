@@ -138,14 +138,16 @@ func main() {
 
 	// Prepare http endpoint for metrics + leader election healthz
 	mux := http.NewServeMux()
-	cmm := metrics.NewCSIMetricsManagerForSidecar(csiAttacher)
-	cmm.RegisterToServer(mux, *metricsPath)
-	go func() {
-		err := http.ListenAndServe(*metricsAddress, mux)
-		if err != nil {
-			klog.Fatalf("Failed to start prometheus metrics endpoint on specified address (%q) and path (%q): %s", *metricsAddress, *metricsPath, err)
-		}
-	}()
+	if *metricsAddress != "" {
+		metricsManager.RegisterToServer(mux, *metricsPath)
+		metricsManager.SetDriverName(csiAttacher)
+		go func() {
+			err := http.ListenAndServe(*metricsAddress, mux)
+			if err != nil {
+				klog.Fatalf("Failed to start Prometheus metrics endpoint on specified address (%q) and path (%q): %s", *metricsAddress, *metricsPath, err)
+			}
+		}()
+	}
 
 	supportsService, err := supportsPluginControllerService(ctx, csiConn)
 	if err != nil {
