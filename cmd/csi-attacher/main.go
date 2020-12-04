@@ -152,9 +152,10 @@ func main() {
 		metricsManager.RegisterToServer(mux, *metricsPath)
 		metricsManager.SetDriverName(csiAttacher)
 		go func() {
+			klog.Infof("ServeMux listening at %q", addr)
 			err := http.ListenAndServe(addr, mux)
 			if err != nil {
-				klog.Fatalf("Failed to start Prometheus metrics endpoint on specified address (%q) and path (%q): %s", *metricsAddress, *metricsPath, err)
+				klog.Fatalf("Failed to start HTTP server at specified address (%q) and metrics path (%q): %s", addr, *metricsPath, err)
 			}
 		}()
 	}
