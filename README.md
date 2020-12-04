@@ -101,7 +101,7 @@ When CSI driver supports `LIST_VOLUMES` and `LIST_VOLUMES_PUBLISHED_NODES` capab
 
 ### HTTP endpoint
 
-The external-attacher optionally exposes an HTTP endpoint at address:port specified by `--metrics-address` argument. When set, these two paths are exposed:
+The external-attacher optionally exposes an HTTP endpoint at address:port specified by `--http-endpoint` argument. When set, these two paths are exposed:
 
 * Metrics path, as set by `--metrics-path` argument (default is `/metrics`).
 * Leader election health check at `/healthz/leader-election`. It is recommended to run a liveness probe against this endpoint when leader election is used to kill external-attacher leader that fails to connect to the API server to renew its leadership. See https://github.com/kubernetes-csi/csi-lib-utils/issues/66 for details.

@@ -38,7 +38,7 @@ spec:
             - "--v=5"
             - "--csi-address=$(ADDRESS)"
             - "--leader-election"
-            - "--metrics-address=:8080"
+            - "--http-endpoint=:8080"
           env:
             - name: MY_NAME
               valueFrom:
@@ -52,13 +52,13 @@ spec:
               mountPath: /var/lib/csi/sockets/pluginproxy/
           ports:
             - containerPort: 8080
-              name: metrics
+              name: http-endpoint
               protocol: TCP
           livenessProbe:
             failureThreshold: 1
             httpGet:
               path: /healthz/leader-election
-              port: metrics
+              port: http-endpoint
             initialDelaySeconds: 10
             timeoutSeconds: 10
             periodSeconds: 20

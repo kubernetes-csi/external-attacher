@@ -67,7 +67,8 @@ var (
 
 	reconcileSync = flag.Duration("reconcile-sync", 1*time.Minute, "Resync interval of the VolumeAttachment reconciler.")
 
-	metricsAddress = flag.String("metrics-address", "", "The TCP network address where the prometheus metrics endpoint will listen (example: `:8080`). The default is empty string, which means metrics endpoint is disabled.")
+	metricsAddress = flag.String("metrics-address", "", "(deprecated) The TCP network address where the prometheus metrics endpoint will listen (example: `:8080`). The default is empty string, which means metrics endpoint is disabled. Only one of `--metrics-address` and `--http-endpoint` can be set.")
+	httpEndpoint   = flag.String("http-endpoint", "", "The TCP network address where the HTTP server for diagnostics, including metrics and leader election health check, will listen (example: :8080). The default is empty string, which means the server is disabled. Only one of `--metrics-address` and `--http-endpoint` can be set.")
 	metricsPath    = flag.String("metrics-path", "/metrics", "The HTTP path where prometheus metrics will be exposed. Default is `/metrics`.")
 )
 
@@ -90,6 +91,15 @@ func main() {
 		return
 	}
 	klog.Infof("Version: %s", version)
+
+	if *metricsAddress != "" && *httpEndpoint != "" {
+		klog.Error("only one of `--metrics-address` and `--http-endpoint` can be set.")
+		os.Exit(1)
+	}
+	addr := *metricsAddress
+	if addr == "" {
+		addr = *httpEndpoint
+	}
 
 	// Create the client config. Use kubeconfig if given, otherwise assume in-cluster.
 	config, err := buildConfig(*kubeconfig)
@@ -138,11 +148,11 @@ func main() {
 
 	// Prepare http endpoint for metrics + leader election healthz
 	mux := http.NewServeMux()
-	if *metricsAddress != "" {
+	if addr != "" {
 		metricsManager.RegisterToServer(mux, *metricsPath)
 		metricsManager.SetDriverName(csiAttacher)
 		go func() {
-			err := http.ListenAndServe(*metricsAddress, mux)
+			err := http.ListenAndServe(addr, mux)
 			if err != nil {
 				klog.Fatalf("Failed to start Prometheus metrics endpoint on specified address (%q) and path (%q): %s", *metricsAddress, *metricsPath, err)
 			}
@@ -219,7 +229,9 @@ func main() {
 		// Name of config map with leader election lock
 		lockName := "external-attacher-leader-" + csiAttacher
 		le := leaderelection.NewLeaderElection(leClientset, lockName, run)
-		le.PrepareHealthCheck(mux, leaderelection.DefaultHealthCheckTimeout)
+		if *httpEndpoint != "" {
+			le.PrepareHealthCheck(mux, leaderelection.DefaultHealthCheckTimeout)
+		}
 
 		if *leaderElectionNamespace != "" {
 			le.WithNamespace(*leaderElectionNamespace)
