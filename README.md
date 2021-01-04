@@ -74,6 +74,10 @@ Note that the external-attacher does not scale with more replicas. Only one exte
 
 * `--reconcile-sync`: Resync frequency of the attached volumes with the driver. See [Periodic re-sync](#periodic-re-sync) for details. 1 minute is used by default.
 
+* `--kube-api-qps`: The number of requests per second sent by a Kubernetes client to the Kubernetes API server. Defaults to `5.0`.
+
+* `--kube-api-burst`: The number of requests to the Kubernetes API server, exceeding the QPS, that can be sent at any given time. Defaults to `10`.
+
 #### Other recognized arguments
 
 * `--kubeconfig <path>`: Path to Kubernetes client configuration that the external-attacher uses to connect to Kubernetes API server. When omitted, default token provided by Kubernetes will be used. This option is useful only when the external-attacher does not run as a Kubernetes pod, e.g. for debugging.
