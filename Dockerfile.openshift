@@ -3,6 +3,6 @@ WORKDIR /go/src/github.com/kubernetes-csi/external-attacher
 COPY . .
 RUN make build
 
-FROM registry.svc.ci.openshift.org/openshift/origin-v4.6:base
+FROM registry.svc.ci.openshift.org/openshift/origin-v4.7:base
 COPY --from=builder /go/src/github.com/kubernetes-csi/external-attacher/bin/csi-attacher /usr/bin/
 ENTRYPOINT ["/usr/bin/csi-attacher"]
