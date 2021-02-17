@@ -151,6 +151,24 @@ func main() {
 	}
 	klog.V(2).Infof("CSI driver name: %q", csiAttacher)
 
+	translator := csitrans.New()
+	if translator.IsMigratedCSIDriverByName(csiAttacher) {
+		metricsManager = metrics.NewCSIMetricsManagerWithOptions(csiAttacher, metrics.WithMigration())
+		migratedCsiClient, err := connection.Connect(*csiAddress, metricsManager, connection.OnConnectionLoss(connection.ExitOnConnectionLoss()))
+		if err != nil {
+			klog.Error(err.Error())
+			os.Exit(1)
+		}
+		csiConn.Close()
+		csiConn = migratedCsiClient
+
+		err = rpc.ProbeForever(csiConn, *timeout)
+		if err != nil {
+			klog.Error(err.Error())
+			os.Exit(1)
+		}
+	}
+
 	// Prepare http endpoint for metrics + leader election healthz
 	mux := http.NewServeMux()
 	if addr != "" {

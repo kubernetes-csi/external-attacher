@@ -20,9 +20,11 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strconv"
 	"sync"
 	"time"
 
+	"github.com/kubernetes-csi/csi-lib-utils/connection"
 	"github.com/kubernetes-csi/external-attacher/pkg/attacher"
 	v1 "k8s.io/api/core/v1"
 	storage "k8s.io/api/storage/v1"
@@ -425,6 +427,7 @@ func (h *csiHandler) csiAttach(va *storage.VolumeAttachment) (*storage.VolumeAtt
 
 	var csiSource *v1.CSIPersistentVolumeSource
 	var pvSpec *v1.PersistentVolumeSpec
+	var migratable bool
 	if va.Spec.Source.PersistentVolumeName != nil {
 		if va.Spec.Source.InlineVolumeSpec != nil {
 			return va, nil, errors.New("both InlineCSIVolumeSource and PersistentVolumeName specified in VA source")
@@ -447,6 +450,7 @@ func (h *csiHandler) csiAttach(va *storage.VolumeAttachment) (*storage.VolumeAtt
 			if err != nil {
 				return va, nil, fmt.Errorf("failed to translate in tree pv to CSI: %v", err)
 			}
+			migratable = true
 		}
 
 		// Both csiSource and pvSpec could be translated here if the PV was
@@ -509,6 +513,7 @@ func (h *csiHandler) csiAttach(va *storage.VolumeAttachment) (*storage.VolumeAtt
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), h.timeout)
+	ctx = markAsMigrated(ctx, migratable)
 	defer cancel()
 	// We're not interested in `detached` return value, the controller will
 	// issue Detach to be sure the volume is really detached.
@@ -522,6 +527,7 @@ func (h *csiHandler) csiAttach(va *storage.VolumeAttachment) (*storage.VolumeAtt
 
 func (h *csiHandler) csiDetach(va *storage.VolumeAttachment) (*storage.VolumeAttachment, error) {
 	var csiSource *v1.CSIPersistentVolumeSource
+	var migratable bool
 	if va.Spec.Source.PersistentVolumeName != nil {
 		if va.Spec.Source.InlineVolumeSpec != nil {
 			return va, errors.New("both InlineCSIVolumeSource and PersistentVolumeName specified in VA source")
@@ -535,6 +541,7 @@ func (h *csiHandler) csiDetach(va *storage.VolumeAttachment) (*storage.VolumeAtt
 			if err != nil {
 				return va, fmt.Errorf("failed to translate in tree pv to CSI: %v", err)
 			}
+			migratable = true
 		}
 		csiSource, err = getCSISource(&pv.Spec)
 		if err != nil {
@@ -565,6 +572,7 @@ func (h *csiHandler) csiDetach(va *storage.VolumeAttachment) (*storage.VolumeAtt
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), h.timeout)
+	ctx = markAsMigrated(ctx, migratable)
 	defer cancel()
 	err = h.attacher.Detach(ctx, volumeHandle, nodeID, secrets)
 	if err != nil {
@@ -762,4 +770,8 @@ func (h *csiHandler) patchPV(pv, clone *v1.PersistentVolume) (*v1.PersistentVolu
 		return pv, err
 	}
 	return newPV, nil
+}
+
+func markAsMigrated(parent context.Context, hasMigrated bool) context.Context {
+	return context.WithValue(parent, connection.AdditionalInfoKey, connection.AdditionalInfo{Migrated: strconv.FormatBool(hasMigrated)})
 }
