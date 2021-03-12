@@ -63,7 +63,8 @@ func csiHandlerFactory(client kubernetes.Interface, informerFactory informers.Sh
 		informerFactory.Storage().V1().CSINodes().Lister(),
 		informerFactory.Storage().V1().VolumeAttachments().Lister(),
 		&timeout,
-		true, /* supports PUBLISH_READONLY */
+		true,  /* supports PUBLISH_READONLY */
+		false, /* does not support SINGLE_NODE_MULTI_WRITER access mode */
 		csitranslator.New(),
 	)
 }
@@ -79,6 +80,7 @@ func csiHandlerFactoryNoReadOnly(client kubernetes.Interface, informerFactory in
 		informerFactory.Storage().V1().VolumeAttachments().Lister(),
 		&timeout,
 		false, /* does not support PUBLISH_READONLY */
+		false, /* does not support SINGLE_NODE_MULTI_WRITER access mode */
 		csitranslator.New(),
 	)
 }

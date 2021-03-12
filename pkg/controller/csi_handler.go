@@ -58,19 +58,20 @@ var _ VolumeLister = &attacher.CSIVolumeLister{}
 // It adds finalizer to VolumeAttachment instance to make sure they're detached
 // before deletion.
 type csiHandler struct {
-	client                  kubernetes.Interface
-	attacherName            string
-	attacher                attacher.Attacher
-	CSIVolumeLister         VolumeLister
-	pvLister                corelisters.PersistentVolumeLister
-	csiNodeLister           storagelisters.CSINodeLister
-	vaLister                storagelisters.VolumeAttachmentLister
-	vaQueue, pvQueue        workqueue.RateLimitingInterface
-	forceSync               map[string]bool
-	forceSyncMux            sync.Mutex
-	timeout                 time.Duration
-	supportsPublishReadOnly bool
-	translator              AttacherCSITranslator
+	client                        kubernetes.Interface
+	attacherName                  string
+	attacher                      attacher.Attacher
+	CSIVolumeLister               VolumeLister
+	pvLister                      corelisters.PersistentVolumeLister
+	csiNodeLister                 storagelisters.CSINodeLister
+	vaLister                      storagelisters.VolumeAttachmentLister
+	vaQueue, pvQueue              workqueue.RateLimitingInterface
+	forceSync                     map[string]bool
+	forceSyncMux                  sync.Mutex
+	timeout                       time.Duration
+	supportsPublishReadOnly       bool
+	supportsSingleNodeMultiWriter bool
+	translator                    AttacherCSITranslator
 }
 
 var _ Handler = &csiHandler{}
@@ -86,21 +87,23 @@ func NewCSIHandler(
 	vaLister storagelisters.VolumeAttachmentLister,
 	timeout *time.Duration,
 	supportsPublishReadOnly bool,
+	supportsSingleNodeMultiWriter bool,
 	translator AttacherCSITranslator) Handler {
 
 	return &csiHandler{
-		client:                  client,
-		attacherName:            attacherName,
-		attacher:                attacher,
-		CSIVolumeLister:         CSIVolumeLister,
-		pvLister:                pvLister,
-		csiNodeLister:           csiNodeLister,
-		vaLister:                vaLister,
-		timeout:                 *timeout,
-		supportsPublishReadOnly: supportsPublishReadOnly,
-		translator:              translator,
-		forceSync:               map[string]bool{},
-		forceSyncMux:            sync.Mutex{},
+		client:                        client,
+		attacherName:                  attacherName,
+		attacher:                      attacher,
+		CSIVolumeLister:               CSIVolumeLister,
+		pvLister:                      pvLister,
+		csiNodeLister:                 csiNodeLister,
+		vaLister:                      vaLister,
+		timeout:                       *timeout,
+		supportsPublishReadOnly:       supportsPublishReadOnly,
+		supportsSingleNodeMultiWriter: supportsSingleNodeMultiWriter,
+		translator:                    translator,
+		forceSync:                     map[string]bool{},
+		forceSyncMux:                  sync.Mutex{},
 	}
 }
 
@@ -488,10 +491,11 @@ func (h *csiHandler) csiAttach(va *storage.VolumeAttachment) (*storage.VolumeAtt
 		readOnly = false
 	}
 
-	volumeCapabilities, err := GetVolumeCapabilities(pvSpec)
+	volumeCapabilities, err := GetVolumeCapabilities(pvSpec, h.supportsSingleNodeMultiWriter)
 	if err != nil {
 		return va, nil, err
 	}
+
 	secrets, err := h.getCredentialsFromPV(csiSource)
 	if err != nil {
 		return va, nil, err

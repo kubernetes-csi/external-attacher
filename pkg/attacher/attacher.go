@@ -42,8 +42,7 @@ type Attacher interface {
 }
 
 type attacher struct {
-	conn         *grpc.ClientConn
-	capabilities []csi.ControllerServiceCapability
+	conn *grpc.ClientConn
 }
 
 var (
