@@ -625,10 +625,29 @@ func (h *csiHandler) SyncNewOrUpdatedPersistentVolume(pv *v1.PersistentVolume) {
 	klog.V(4).Infof("CSIHandler: processing PV %q", pv.Name)
 	// Sync and remove finalizer on given PV
 	if pv.DeletionTimestamp == nil {
-		// Don't process anything that has no deletion timestamp.
-		klog.V(4).Infof("CSIHandler: processing PV %q: no deletion timestamp, ignoring", pv.Name)
-		h.pvQueue.Forget(pv.Name)
-		return
+		ignore := true
+
+		// if the PV is migrated this means CSIMigration is disabled so we need to remove the finalizer
+		// to give back the control of the PV to Kube-Controller-Manager
+		if h.translator.IsPVMigratable(pv) {
+			ignore = false
+			if ann := pv.Annotations; ann != nil {
+				if migratedToDriver := ann[annMigratedTo]; migratedToDriver == h.attacherName {
+					ignore = true
+				} else {
+					klog.V(4).Infof("CSIHandler: PV %q is an in-tree PV but does not have migrated-to annotation "+
+						"or the annotation does not match. Expect %v, Get %v. Remove the finalizer for this PV ",
+						pv.Name, h.attacherName, migratedToDriver)
+				}
+			}
+		}
+
+		if ignore {
+			// Don't process anything that has no deletion timestamp.
+			klog.V(4).Infof("CSIHandler: processing PV %q: no deletion timestamp, ignoring", pv.Name)
+			h.pvQueue.Forget(pv.Name)
+			return
+		}
 	}
 
 	// Check if the PV has finalizer
