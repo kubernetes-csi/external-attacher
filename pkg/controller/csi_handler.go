@@ -742,14 +742,15 @@ func (h *csiHandler) getNodeID(driver string, nodeName string, va *storage.Volum
 			klog.V(4).Infof("Found NodeID %s in CSINode %s", nodeID, nodeName)
 			return nodeID, nil
 		}
-		// CSINode exists, but does not have the requested driver.
-		errMessage := fmt.Sprintf("CSINode %s does not contain driver %s", nodeName, driver)
-		klog.V(4).Info(errMessage)
-		return "", errors.New(errMessage)
+		// CSINode exists, but does not have the requested driver; this can happen if the CSI pod is not running, for
+		// example the node might be currently shut down. We don't want to block the controller unpublish in that scenario.
+		// We should treat missing driver in the same way as missing CSINode; attempt to use the node ID from the volume
+		// attachment.
+		err = errors.New(fmt.Sprintf("CSINode %s does not contain driver %s", nodeName, driver))
 	}
 
 	// Can't get CSINode, check Volume Attachment.
-	klog.V(4).Infof("Can't get CSINode %s: %s", nodeName, err)
+	klog.V(4).Infof("Can't get nodeID from CSINode %s: %s", nodeName, err)
 
 	// Check VolumeAttachment annotation as the last resort if caller wants so (i.e. has provided one).
 	if va == nil {
