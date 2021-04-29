@@ -17,11 +17,13 @@ limitations under the License.
 package controller
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"testing"
 	"time"
 
+	"github.com/kubernetes-csi/csi-lib-utils/connection"
 	"github.com/kubernetes-csi/external-attacher/pkg/attacher"
 
 	v1 "k8s.io/api/core/v1"
@@ -1518,4 +1520,21 @@ func TestCSIHandlerReadOnly(t *testing.T) {
 		},
 	}
 	runTests(t, csiHandlerFactoryNoReadOnly, tests)
+}
+
+func TestMarkAsMigrated(t *testing.T) {
+	t.Run("context has the migrated label for the migratable plugins", func(t *testing.T) {
+		ctx := context.Background()
+		migratedCtx := markAsMigrated(ctx, true)
+		additionalInfo := migratedCtx.Value(connection.AdditionalInfoKey)
+		if additionalInfo == nil {
+			t.Errorf("test: %s, no migrated label found in the context", t.Name())
+		}
+		additionalInfoVal := additionalInfo.(connection.AdditionalInfo)
+		migrated := additionalInfoVal.Migrated
+
+		if migrated != "true" {
+			t.Errorf("test: %s, expected: %v, got: %v", t.Name(), "true", migrated)
+		}
+	})
 }

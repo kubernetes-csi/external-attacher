@@ -20,9 +20,11 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strconv"
 	"sync"
 	"time"
 
+	"github.com/kubernetes-csi/csi-lib-utils/connection"
 	"github.com/kubernetes-csi/external-attacher/pkg/attacher"
 	v1 "k8s.io/api/core/v1"
 	storage "k8s.io/api/storage/v1"
@@ -425,6 +427,7 @@ func (h *csiHandler) csiAttach(va *storage.VolumeAttachment) (*storage.VolumeAtt
 
 	var csiSource *v1.CSIPersistentVolumeSource
 	var pvSpec *v1.PersistentVolumeSpec
+	var migratable bool
 	if va.Spec.Source.PersistentVolumeName != nil {
 		if va.Spec.Source.InlineVolumeSpec != nil {
 			return va, nil, errors.New("both InlineCSIVolumeSource and PersistentVolumeName specified in VA source")
@@ -447,6 +450,7 @@ func (h *csiHandler) csiAttach(va *storage.VolumeAttachment) (*storage.VolumeAtt
 			if err != nil {
 				return va, nil, fmt.Errorf("failed to translate in tree pv to CSI: %v", err)
 			}
+			migratable = true
 		}
 
 		// Both csiSource and pvSpec could be translated here if the PV was
@@ -509,6 +513,7 @@ func (h *csiHandler) csiAttach(va *storage.VolumeAttachment) (*storage.VolumeAtt
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), h.timeout)
+	ctx = markAsMigrated(ctx, migratable)
 	defer cancel()
 	// We're not interested in `detached` return value, the controller will
 	// issue Detach to be sure the volume is really detached.
@@ -522,6 +527,7 @@ func (h *csiHandler) csiAttach(va *storage.VolumeAttachment) (*storage.VolumeAtt
 
 func (h *csiHandler) csiDetach(va *storage.VolumeAttachment) (*storage.VolumeAttachment, error) {
 	var csiSource *v1.CSIPersistentVolumeSource
+	var migratable bool
 	if va.Spec.Source.PersistentVolumeName != nil {
 		if va.Spec.Source.InlineVolumeSpec != nil {
 			return va, errors.New("both InlineCSIVolumeSource and PersistentVolumeName specified in VA source")
@@ -535,6 +541,7 @@ func (h *csiHandler) csiDetach(va *storage.VolumeAttachment) (*storage.VolumeAtt
 			if err != nil {
 				return va, fmt.Errorf("failed to translate in tree pv to CSI: %v", err)
 			}
+			migratable = true
 		}
 		csiSource, err = getCSISource(&pv.Spec)
 		if err != nil {
@@ -565,6 +572,7 @@ func (h *csiHandler) csiDetach(va *storage.VolumeAttachment) (*storage.VolumeAtt
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), h.timeout)
+	ctx = markAsMigrated(ctx, migratable)
 	defer cancel()
 	err = h.attacher.Detach(ctx, volumeHandle, nodeID, secrets)
 	if err != nil {
@@ -617,10 +625,29 @@ func (h *csiHandler) SyncNewOrUpdatedPersistentVolume(pv *v1.PersistentVolume) {
 	klog.V(4).Infof("CSIHandler: processing PV %q", pv.Name)
 	// Sync and remove finalizer on given PV
 	if pv.DeletionTimestamp == nil {
-		// Don't process anything that has no deletion timestamp.
-		klog.V(4).Infof("CSIHandler: processing PV %q: no deletion timestamp, ignoring", pv.Name)
-		h.pvQueue.Forget(pv.Name)
-		return
+		ignore := true
+
+		// if the PV is migrated this means CSIMigration is disabled so we need to remove the finalizer
+		// to give back the control of the PV to Kube-Controller-Manager
+		if h.translator.IsPVMigratable(pv) {
+			ignore = false
+			if ann := pv.Annotations; ann != nil {
+				if migratedToDriver := ann[annMigratedTo]; migratedToDriver == h.attacherName {
+					ignore = true
+				} else {
+					klog.V(4).Infof("CSIHandler: PV %q is an in-tree PV but does not have migrated-to annotation "+
+						"or the annotation does not match. Expect %v, Get %v. Remove the finalizer for this PV ",
+						pv.Name, h.attacherName, migratedToDriver)
+				}
+			}
+		}
+
+		if ignore {
+			// Don't process anything that has no deletion timestamp.
+			klog.V(4).Infof("CSIHandler: processing PV %q: no deletion timestamp, ignoring", pv.Name)
+			h.pvQueue.Forget(pv.Name)
+			return
+		}
 	}
 
 	// Check if the PV has finalizer
@@ -715,14 +742,15 @@ func (h *csiHandler) getNodeID(driver string, nodeName string, va *storage.Volum
 			klog.V(4).Infof("Found NodeID %s in CSINode %s", nodeID, nodeName)
 			return nodeID, nil
 		}
-		// CSINode exists, but does not have the requested driver.
-		errMessage := fmt.Sprintf("CSINode %s does not contain driver %s", nodeName, driver)
-		klog.V(4).Info(errMessage)
-		return "", errors.New(errMessage)
+		// CSINode exists, but does not have the requested driver; this can happen if the CSI pod is not running, for
+		// example the node might be currently shut down. We don't want to block the controller unpublish in that scenario.
+		// We should treat missing driver in the same way as missing CSINode; attempt to use the node ID from the volume
+		// attachment.
+		err = errors.New(fmt.Sprintf("CSINode %s does not contain driver %s", nodeName, driver))
 	}
 
 	// Can't get CSINode, check Volume Attachment.
-	klog.V(4).Infof("Can't get CSINode %s: %s", nodeName, err)
+	klog.V(4).Infof("Can't get nodeID from CSINode %s: %s", nodeName, err)
 
 	// Check VolumeAttachment annotation as the last resort if caller wants so (i.e. has provided one).
 	if va == nil {
@@ -762,4 +790,8 @@ func (h *csiHandler) patchPV(pv, clone *v1.PersistentVolume) (*v1.PersistentVolu
 		return pv, err
 	}
 	return newPV, nil
+}
+
+func markAsMigrated(parent context.Context, hasMigrated bool) context.Context {
+	return context.WithValue(parent, connection.AdditionalInfoKey, connection.AdditionalInfo{Migrated: strconv.FormatBool(hasMigrated)})
 }

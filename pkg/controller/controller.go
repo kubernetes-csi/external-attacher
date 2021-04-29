@@ -36,7 +36,12 @@ import (
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/tools/record"
 	"k8s.io/client-go/util/workqueue"
+	csitrans "k8s.io/csi-translation-lib"
 	"k8s.io/klog/v2"
+)
+
+const (
+	annMigratedTo = "pv.kubernetes.io/migrated-to"
 )
 
 // CSIAttachController is a controller that attaches / detaches CSI volumes using provided Handler interface
@@ -55,6 +60,7 @@ type CSIAttachController struct {
 
 	shouldReconcileVolumeAttachment bool
 	reconcileSync                   time.Duration
+	translator                      AttacherCSITranslator
 }
 
 // Handler is responsible for handling VolumeAttachment events from informer.
@@ -91,6 +97,7 @@ func NewCSIAttachController(client kubernetes.Interface, attacherName string, ha
 		pvQueue:                         workqueue.NewNamedRateLimitingQueue(paRateLimiter, "csi-attacher-pv"),
 		shouldReconcileVolumeAttachment: shouldReconcileVolumeAttachment,
 		reconcileSync:                   reconcileSync,
+		translator:                      csitrans.New(),
 	}
 
 	volumeAttachmentInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
@@ -217,7 +224,24 @@ func (ctrl *CSIAttachController) syncVA() {
 }
 
 func (ctrl *CSIAttachController) processFinalizers(pv *v1.PersistentVolume) bool {
-	return pv.DeletionTimestamp != nil && sets.NewString(pv.Finalizers...).Has(GetFinalizerName(ctrl.attacherName))
+	if sets.NewString(pv.Finalizers...).Has(GetFinalizerName(ctrl.attacherName)) {
+		if pv.DeletionTimestamp != nil {
+			return true
+		}
+
+		// if PV is provisioned by in-tree plugin and does not have migrated-to label
+		// this normally means this is a rollback scenario, we need to remove the finalizer as well
+		if ctrl.translator.IsPVMigratable(pv) {
+			if ann := pv.Annotations; ann != nil {
+				if migratedToDriver := ann[annMigratedTo]; migratedToDriver == ctrl.attacherName {
+					// migrated-to annonation detected, keep the finalizer
+					return false
+				}
+			}
+			return true
+		}
+	}
+	return false
 }
 
 // syncPV deals with one key off the queue.  It returns false when it's time to quit.

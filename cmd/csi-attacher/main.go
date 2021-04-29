@@ -70,6 +70,9 @@ var (
 	metricsAddress = flag.String("metrics-address", "", "(deprecated) The TCP network address where the prometheus metrics endpoint will listen (example: `:8080`). The default is empty string, which means metrics endpoint is disabled. Only one of `--metrics-address` and `--http-endpoint` can be set.")
 	httpEndpoint   = flag.String("http-endpoint", "", "The TCP network address where the HTTP server for diagnostics, including metrics and leader election health check, will listen (example: `:8080`). The default is empty string, which means the server is disabled. Only one of `--metrics-address` and `--http-endpoint` can be set.")
 	metricsPath    = flag.String("metrics-path", "/metrics", "The HTTP path where prometheus metrics will be exposed. Default is `/metrics`.")
+
+	kubeAPIQPS   = flag.Float64("kube-api-qps", 5, "QPS to use while communicating with the kubernetes apiserver. Defaults to 5.0.")
+	kubeAPIBurst = flag.Int("kube-api-burst", 10, "Burst to use while communicating with the kubernetes apiserver. Defaults to 10.")
 )
 
 var (
@@ -107,6 +110,8 @@ func main() {
 		klog.Error(err.Error())
 		os.Exit(1)
 	}
+	config.QPS = (float32)(*kubeAPIQPS)
+	config.Burst = *kubeAPIBurst
 
 	if *workerThreads == 0 {
 		klog.Error("option -worker-threads must be greater than zero")
@@ -145,6 +150,24 @@ func main() {
 		os.Exit(1)
 	}
 	klog.V(2).Infof("CSI driver name: %q", csiAttacher)
+
+	translator := csitrans.New()
+	if translator.IsMigratedCSIDriverByName(csiAttacher) {
+		metricsManager = metrics.NewCSIMetricsManagerWithOptions(csiAttacher, metrics.WithMigration())
+		migratedCsiClient, err := connection.Connect(*csiAddress, metricsManager, connection.OnConnectionLoss(connection.ExitOnConnectionLoss()))
+		if err != nil {
+			klog.Error(err.Error())
+			os.Exit(1)
+		}
+		csiConn.Close()
+		csiConn = migratedCsiClient
+
+		err = rpc.ProbeForever(csiConn, *timeout)
+		if err != nil {
+			klog.Error(err.Error())
+			os.Exit(1)
+		}
+	}
 
 	// Prepare http endpoint for metrics + leader election healthz
 	mux := http.NewServeMux()
