@@ -168,6 +168,9 @@ func (ctrl *CSIAttachController) vaUpdated(old, new interface{}) {
 
 // vaDeleted reacts to a VolumeAttachment deleted
 func (ctrl *CSIAttachController) vaDeleted(obj interface{}) {
+	if unknown, ok := obj.(cache.DeletedFinalStateUnknown); ok && unknown.Obj != nil {
+		obj = unknown.Obj
+	}
 	va := obj.(*storage.VolumeAttachment)
 	if va != nil && va.Spec.Source.PersistentVolumeName != nil {
 		// Enqueue PV sync event - it will evaluate and remove finalizer
