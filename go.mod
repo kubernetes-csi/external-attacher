@@ -30,19 +30,18 @@ require (
 	k8s.io/component-base v0.21.0 // indirect
 	k8s.io/csi-translation-lib v0.21.0
 	k8s.io/klog/v2 v2.8.0
-	k8s.io/kube-openapi v0.0.0-20210305164622-f622666832c1 // indirect
 	k8s.io/utils v0.0.0-20210305010621-2afb4311ab10 // indirect
-	sigs.k8s.io/structured-merge-diff/v4 v4.1.1 // indirect
 )
 
-replace k8s.io/component-base => k8s.io/component-base v0.21.0
+replace k8s.io/component-base => github.com/chrishenzie/kubernetes/staging/src/k8s.io/component-base v0.0.0-20210507180302-a29b4b67ec78
 
-replace k8s.io/node-api => k8s.io/node-api v0.21.0
+replace k8s.io/node-api => github.com/chrishenzie/kubernetes/staging/src/k8s.io/node-api v0.0.0-20210507180302-a29b4b67ec78
 
-replace k8s.io/api => k8s.io/api v0.21.0
+// go get -d github.com/chrishenzie/kubernetes/staging/src/k8s.io/api@read-write-once-pod-access-mode
+replace k8s.io/api => github.com/chrishenzie/kubernetes/staging/src/k8s.io/api v0.0.0-20210507180302-a29b4b67ec78
 
-replace k8s.io/apimachinery => k8s.io/apimachinery v0.21.0
+replace k8s.io/apimachinery => github.com/chrishenzie/kubernetes/staging/src/k8s.io/apimachinery v0.0.0-20210507180302-a29b4b67ec78
 
-replace k8s.io/client-go => k8s.io/client-go v0.21.0
+replace k8s.io/client-go => github.com/chrishenzie/kubernetes/staging/src/k8s.io/client-go v0.0.0-20210507180302-a29b4b67ec78
 
-replace k8s.io/csi-translation-lib => k8s.io/csi-translation-lib v0.21.0
+replace k8s.io/csi-translation-lib => github.com/chrishenzie/kubernetes/staging/src/k8s.io/csi-translation-lib v0.0.0-20210507180302-a29b4b67ec78

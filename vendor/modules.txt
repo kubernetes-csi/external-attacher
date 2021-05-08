@@ -224,7 +224,7 @@ gopkg.in/yaml.v2
 # gopkg.in/yaml.v3 v3.0.0-20210107192922-496545a6307b
 ## explicit
 gopkg.in/yaml.v3
-# k8s.io/api v0.21.0 => k8s.io/api v0.21.0
+# k8s.io/api v0.21.0 => github.com/chrishenzie/kubernetes/staging/src/k8s.io/api v0.0.0-20210507180302-a29b4b67ec78
 ## explicit
 k8s.io/api/admissionregistration/v1
 k8s.io/api/admissionregistration/v1beta1
@@ -269,7 +269,7 @@ k8s.io/api/scheduling/v1beta1
 k8s.io/api/storage/v1
 k8s.io/api/storage/v1alpha1
 k8s.io/api/storage/v1beta1
-# k8s.io/apimachinery v0.21.0 => k8s.io/apimachinery v0.21.0
+# k8s.io/apimachinery v0.21.0 => github.com/chrishenzie/kubernetes/staging/src/k8s.io/apimachinery v0.0.0-20210507180302-a29b4b67ec78
 ## explicit
 k8s.io/apimachinery/pkg/api/equality
 k8s.io/apimachinery/pkg/api/errors
@@ -315,7 +315,7 @@ k8s.io/apimachinery/pkg/version
 k8s.io/apimachinery/pkg/watch
 k8s.io/apimachinery/third_party/forked/golang/json
 k8s.io/apimachinery/third_party/forked/golang/reflect
-# k8s.io/client-go v0.21.0 => k8s.io/client-go v0.21.0
+# k8s.io/client-go v0.21.0 => github.com/chrishenzie/kubernetes/staging/src/k8s.io/client-go v0.0.0-20210507180302-a29b4b67ec78
 ## explicit
 k8s.io/client-go/applyconfigurations/admissionregistration/v1
 k8s.io/client-go/applyconfigurations/admissionregistration/v1beta1
@@ -576,11 +576,11 @@ k8s.io/client-go/util/flowcontrol
 k8s.io/client-go/util/homedir
 k8s.io/client-go/util/keyutil
 k8s.io/client-go/util/workqueue
-# k8s.io/component-base v0.21.0 => k8s.io/component-base v0.21.0
+# k8s.io/component-base v0.21.0 => github.com/chrishenzie/kubernetes/staging/src/k8s.io/component-base v0.0.0-20210507180302-a29b4b67ec78
 ## explicit
 k8s.io/component-base/metrics
 k8s.io/component-base/version
-# k8s.io/csi-translation-lib v0.21.0 => k8s.io/csi-translation-lib v0.21.0
+# k8s.io/csi-translation-lib v0.21.0 => github.com/chrishenzie/kubernetes/staging/src/k8s.io/csi-translation-lib v0.0.0-20210507180302-a29b4b67ec78
 ## explicit
 k8s.io/csi-translation-lib
 k8s.io/csi-translation-lib/plugins
@@ -589,8 +589,7 @@ k8s.io/klog
 # k8s.io/klog/v2 v2.8.0
 ## explicit
 k8s.io/klog/v2
-# k8s.io/kube-openapi v0.0.0-20210305164622-f622666832c1
-## explicit
+# k8s.io/kube-openapi v0.0.0-20210421082810-95288971da7e
 k8s.io/kube-openapi/pkg/util/proto
 # k8s.io/utils v0.0.0-20210305010621-2afb4311ab10
 ## explicit
@@ -598,16 +597,15 @@ k8s.io/utils/buffer
 k8s.io/utils/integer
 k8s.io/utils/trace
 # sigs.k8s.io/structured-merge-diff/v4 v4.1.1
-## explicit
 sigs.k8s.io/structured-merge-diff/v4/fieldpath
 sigs.k8s.io/structured-merge-diff/v4/schema
 sigs.k8s.io/structured-merge-diff/v4/typed
 sigs.k8s.io/structured-merge-diff/v4/value
 # sigs.k8s.io/yaml v1.2.0
 sigs.k8s.io/yaml
-# k8s.io/component-base => k8s.io/component-base v0.21.0
-# k8s.io/node-api => k8s.io/node-api v0.21.0
-# k8s.io/api => k8s.io/api v0.21.0
-# k8s.io/apimachinery => k8s.io/apimachinery v0.21.0
-# k8s.io/client-go => k8s.io/client-go v0.21.0
-# k8s.io/csi-translation-lib => k8s.io/csi-translation-lib v0.21.0
+# k8s.io/component-base => github.com/chrishenzie/kubernetes/staging/src/k8s.io/component-base v0.0.0-20210507180302-a29b4b67ec78
+# k8s.io/node-api => github.com/chrishenzie/kubernetes/staging/src/k8s.io/node-api v0.0.0-20210507180302-a29b4b67ec78
+# k8s.io/api => github.com/chrishenzie/kubernetes/staging/src/k8s.io/api v0.0.0-20210507180302-a29b4b67ec78
+# k8s.io/apimachinery => github.com/chrishenzie/kubernetes/staging/src/k8s.io/apimachinery v0.0.0-20210507180302-a29b4b67ec78
+# k8s.io/client-go => github.com/chrishenzie/kubernetes/staging/src/k8s.io/client-go v0.0.0-20210507180302-a29b4b67ec78
+# k8s.io/csi-translation-lib => github.com/chrishenzie/kubernetes/staging/src/k8s.io/csi-translation-lib v0.0.0-20210507180302-a29b4b67ec78
