@@ -1,5 +1,5 @@
 #! /bin/bash
-#
+
 # Copyright 2019 The Kubernetes Authors.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -65,6 +65,18 @@ get_versioned_variable () {
     echo "$value"
 }
 
+# This takes a version string like CSI_PROW_KUBERNETES_VERSION and
+# maps it to the corresponding git tag, branch or commit.
+version_to_git () {
+    version="$1"
+    shift
+    case "$version" in
+        latest|master) echo "master";;
+        release-*) echo "$version";;
+        *) echo "v$version";;
+    esac
+}
+
 configvar CSI_PROW_BUILD_PLATFORMS "linux amd64; windows amd64 .exe; linux ppc64le -ppc64le; linux s390x -s390x; linux arm64 -arm64" "Go target platforms (= GOOS + GOARCH) and file suffix of the resulting binaries"
 
 # If we have a vendor directory, then use it. We must be careful to only
@@ -73,36 +85,11 @@ configvar CSI_PROW_BUILD_PLATFORMS "linux amd64; windows amd64 .exe; linux ppc64
 # which is disabled with GOFLAGS=-mod=vendor).
 configvar GOFLAGS_VENDOR "$( [ -d vendor ] && echo '-mod=vendor' )" "Go flags for using the vendor directory"
 
-# Go versions can be specified seperately for different tasks
-# If the pre-installed Go is missing or a different
-# version, the required version here will get installed
-# from https://golang.org/dl/.
-go_from_travis_yml () {
-    grep "^ *- go:" "${RELEASE_TOOLS_ROOT}/travis.yml" | sed -e 's/.*go: *//'
-}
-configvar CSI_PROW_GO_VERSION_BUILD "$(go_from_travis_yml)" "Go version for building the component" # depends on component's source code
+configvar CSI_PROW_GO_VERSION_BUILD "1.16" "Go version for building the component" # depends on component's source code
 configvar CSI_PROW_GO_VERSION_E2E "" "override Go version for building the Kubernetes E2E test suite" # normally doesn't need to be set, see install_e2e
 configvar CSI_PROW_GO_VERSION_SANITY "${CSI_PROW_GO_VERSION_BUILD}" "Go version for building the csi-sanity test suite" # depends on CSI_PROW_SANITY settings below
 configvar CSI_PROW_GO_VERSION_KIND "${CSI_PROW_GO_VERSION_BUILD}" "Go version for building 'kind'" # depends on CSI_PROW_KIND_VERSION below
 configvar CSI_PROW_GO_VERSION_GINKGO "${CSI_PROW_GO_VERSION_BUILD}" "Go version for building ginkgo" # depends on CSI_PROW_GINKGO_VERSION below
-
-# kind version to use. If the pre-installed version is different,
-# the desired version is downloaded from https://github.com/kubernetes-sigs/kind/releases
-# (if available), otherwise it is built from source.
-configvar CSI_PROW_KIND_VERSION "v0.9.0" "kind"
-
-# kind images to use. Must match the kind version.
-# The release notes of each kind release list the supported images.
-configvar CSI_PROW_KIND_IMAGES "kindest/node:v1.19.1@sha256:98cf5288864662e37115e362b23e4369c8c4a408f99cbc06e58ac30ddc721600
-kindest/node:v1.18.8@sha256:f4bcc97a0ad6e7abaf3f643d890add7efe6ee4ab90baeb374b4f41a4c95567eb
-kindest/node:v1.17.11@sha256:5240a7a2c34bf241afb54ac05669f8a46661912eab05705d660971eeb12f6555
-kindest/node:v1.16.15@sha256:a89c771f7de234e6547d43695c7ab047809ffc71a0c3b65aa54eda051c45ed20
-kindest/node:v1.15.12@sha256:d9b939055c1e852fe3d86955ee24976cab46cba518abcb8b13ba70917e6547a6
-kindest/node:v1.14.10@sha256:ce4355398a704fca68006f8a29f37aafb49f8fc2f64ede3ccd0d9198da910146
-kindest/node:v1.13.12@sha256:1c1a48c2bfcbae4d5f4fa4310b5ed10756facad0b7a2ca93c7a4b5bae5db29f5" "kind images"
-
-# Use kind node-image --type=bazel by default, but allow to disable that.
-configvar CSI_PROW_USE_BAZEL true "use Bazel during 'kind node-image' invocation"
 
 # ginkgo test runner version to use. If the pre-installed version is
 # different, the desired version is built from source.
@@ -140,10 +127,40 @@ configvar CSI_PROW_KUBERNETES_VERSION 1.17.0 "Kubernetes"
 # when a Prow job just defines the Kubernetes version.
 csi_prow_kubernetes_version_suffix="$(echo "${CSI_PROW_KUBERNETES_VERSION}" | tr . _ | tr '[:lower:]' '[:upper:]' | sed -e 's/^RELEASE-//' -e 's/\([0-9]*\)_\([0-9]*\).*/\1_\2/')"
 
-# Work directory. It has to allow running executables, therefore /tmp
-# is avoided. Cleaning up after the script is intentionally left to
-# the caller.
-configvar CSI_PROW_WORK "$(mkdir -p "$GOPATH/pkg" && mktemp -d "$GOPATH/pkg/csiprow.XXXXXXXXXX")" "work directory"
+# Only the latest KinD is (eventually) guaranteed to work with the
+# latest Kubernetes. For example, KinD 0.10.0 failed with Kubernetes
+# 1.21.0-beta1.  Therefore the default version of KinD is "main"
+# for that, otherwise the latest stable release for which we then
+# list the officially supported images below.
+kind_version_default () {
+    case "${CSI_PROW_KUBERNETES_VERSION}" in
+        latest|master)
+            echo main;;
+        1.21*|release-1.21)
+            # TODO: replace this special case once the next KinD release supports 1.21.
+            echo main;;
+        *)
+            echo v0.10.0;;
+    esac
+}
+
+# kind version to use. If the pre-installed version is different,
+# the desired version is downloaded from https://github.com/kubernetes-sigs/kind/releases
+# (if available), otherwise it is built from source.
+configvar CSI_PROW_KIND_VERSION "$(kind_version_default)" "kind"
+
+# kind images to use. Must match the kind version.
+# The release notes of each kind release list the supported images.
+configvar CSI_PROW_KIND_IMAGES "kindest/node:v1.20.2@sha256:8f7ea6e7642c0da54f04a7ee10431549c0257315b3a634f6ef2fecaaedb19bab
+kindest/node:v1.19.7@sha256:a70639454e97a4b733f9d9b67e12c01f6b0297449d5b9cbbef87473458e26dca
+kindest/node:v1.18.15@sha256:5c1b980c4d0e0e8e7eb9f36f7df525d079a96169c8a8f20d8bd108c0d0889cc4
+kindest/node:v1.17.17@sha256:7b6369d27eee99c7a85c48ffd60e11412dc3f373658bc59b7f4d530b7056823e
+kindest/node:v1.16.15@sha256:c10a63a5bda231c0a379bf91aebf8ad3c79146daca59db816fb963f731852a99
+kindest/node:v1.15.12@sha256:67181f94f0b3072fb56509107b380e38c55e23bf60e6f052fbd8052d26052fb5
+kindest/node:v1.14.10@sha256:3fbed72bcac108055e46e7b4091eb6858ad628ec51bf693c21f5ec34578f6180" "kind images"
+
+# Use kind node-image --type=bazel by default, but allow to disable that.
+configvar CSI_PROW_USE_BAZEL true "use Bazel during 'kind node-image' invocation"
 
 # By default, this script tests sidecars with the CSI hostpath driver,
 # using the install_csi_driver function. That function depends on
@@ -171,8 +188,8 @@ configvar CSI_PROW_WORK "$(mkdir -p "$GOPATH/pkg" && mktemp -d "$GOPATH/pkg/csip
 #   CSI_PROW_DEPLOYMENT variable can be set in the
 #   .prow.sh of each component when there are breaking changes
 #   that require using a non-default deployment. The default
-#   is a deployment named "kubernetes-x.yy" (if available),
-#   otherwise "kubernetes-latest".
+#   is a deployment named "kubernetes-x.yy${CSI_PROW_DEPLOYMENT_SUFFIX}" (if available),
+#   otherwise "kubernetes-latest${CSI_PROW_DEPLOYMENT_SUFFIX}".
 #   "none" disables the deployment of the hostpath driver.
 #
 # When no deploy script is found (nothing in `deploy` directory,
@@ -184,6 +201,7 @@ configvar CSI_PROW_WORK "$(mkdir -p "$GOPATH/pkg" && mktemp -d "$GOPATH/pkg/csip
 configvar CSI_PROW_DRIVER_VERSION "v1.3.0" "CSI driver version"
 configvar CSI_PROW_DRIVER_REPO https://github.com/kubernetes-csi/csi-driver-host-path "CSI driver repo"
 configvar CSI_PROW_DEPLOYMENT "" "deployment"
+configvar CSI_PROW_DEPLOYMENT_SUFFIX "" "additional suffix in kubernetes-x.yy[suffix].yaml files"
 
 # The install_csi_driver function may work also for other CSI drivers,
 # as long as they follow the conventions of the CSI hostpath driver.
@@ -208,16 +226,7 @@ configvar CSI_PROW_DRIVER_CANARY_REGISTRY "gcr.io/k8s-staging-sig-storage" "regi
 # all generated files are present.
 #
 # CSI_PROW_E2E_REPO=none disables E2E testing.
-tag_from_version () {
-    version="$1"
-    shift
-    case "$version" in
-        latest) echo "master";;
-        release-*) echo "$version";;
-        *) echo "v$version";;
-    esac
-}
-configvar CSI_PROW_E2E_VERSION "$(tag_from_version "${CSI_PROW_KUBERNETES_VERSION}")"  "E2E version"
+configvar CSI_PROW_E2E_VERSION "$(version_to_git "${CSI_PROW_KUBERNETES_VERSION}")"  "E2E version"
 configvar CSI_PROW_E2E_REPO "https://github.com/kubernetes/kubernetes" "E2E repo"
 configvar CSI_PROW_E2E_IMPORT_PATH "k8s.io/kubernetes" "E2E package"
 
@@ -227,8 +236,8 @@ configvar CSI_PROW_E2E_IMPORT_PATH "k8s.io/kubernetes" "E2E package"
 # of the cluster. The alternative would have been to (cross-)compile csi-sanity
 # and install it inside the cluster, which is not necessarily easier.
 configvar CSI_PROW_SANITY_REPO https://github.com/kubernetes-csi/csi-test "csi-test repo"
-configvar CSI_PROW_SANITY_VERSION 5421d9f3c37be3b95b241b44a094a3db11bee789 "csi-test version" # latest master
-configvar CSI_PROW_SANITY_IMPORT_PATH github.com/kubernetes-csi/csi-test "csi-test package"
+configvar CSI_PROW_SANITY_VERSION v4.0.2 "csi-test version" # v4.0.2
+configvar CSI_PROW_SANITY_PACKAGE_PATH github.com/kubernetes-csi/csi-test "csi-test package"
 configvar CSI_PROW_SANITY_SERVICE "hostpath-service" "Kubernetes TCP service name that exposes csi.sock"
 configvar CSI_PROW_SANITY_POD "csi-hostpathplugin-0" "Kubernetes pod with CSI driver"
 configvar CSI_PROW_SANITY_CONTAINER "hostpath" "Kubernetes container with CSI driver"
@@ -293,7 +302,7 @@ configvar CSI_PROW_E2E_FOCUS_LATEST '\[Feature:VolumeSnapshotDataSource\]' "non-
 configvar CSI_PROW_E2E_FOCUS "$(get_versioned_variable CSI_PROW_E2E_FOCUS "${csi_prow_kubernetes_version_suffix}")" "non-alpha, feature-tagged tests"
 
 # Serial vs. parallel is always determined by these regular expressions.
-# Individual regular expressions are seperated by spaces for readability
+# Individual regular expressions are separated by spaces for readability
 # and expected to not contain spaces. Use dots instead. The complete
 # regex for Ginkgo will be created by joining the individual terms.
 configvar CSI_PROW_E2E_SERIAL '\[Serial\] \[Disruptive\]' "tags for serial E2E tests"
@@ -351,10 +360,23 @@ configvar CSI_SNAPSHOTTER_VERSION "$(default_csi_snapshotter_version)" "external
 # to all the K8s versions we test against
 configvar CSI_PROW_E2E_SKIP 'Disruptive|different\s+node' "tests that need to be skipped"
 
-# This is the directory for additional result files. Usually set by Prow, but
-# if not (for example, when invoking manually) it defaults to the work directory.
-configvar ARTIFACTS "${CSI_PROW_WORK}/artifacts" "artifacts"
-mkdir -p "${ARTIFACTS}"
+# This creates directories that are required for testing.
+ensure_paths () {
+    # Work directory. It has to allow running executables, therefore /tmp
+    # is avoided. Cleaning up after the script is intentionally left to
+    # the caller.
+    configvar CSI_PROW_WORK "$(mkdir -p "$GOPATH/pkg" && mktemp -d "$GOPATH/pkg/csiprow.XXXXXXXXXX")" "work directory"
+
+    # This is the directory for additional result files. Usually set by Prow, but
+    # if not (for example, when invoking manually) it defaults to the work directory.
+    configvar ARTIFACTS "${CSI_PROW_WORK}/artifacts" "artifacts"
+    mkdir -p "${ARTIFACTS}"
+
+    # For additional tools.
+    CSI_PROW_BIN="${CSI_PROW_WORK}/bin"
+    mkdir -p "${CSI_PROW_BIN}"
+    PATH="${CSI_PROW_BIN}:$PATH"
+}
 
 run () {
     echo "$(date) $(go version | sed -e 's/.*version \(go[^ ]*\).*/\1/') $(if [ "$(pwd)" != "${REPO_DIR}" ]; then pwd; fi)\$" "$@" >&2
@@ -373,11 +395,6 @@ die () {
     echo >&2 ERROR: "$@"
     exit 1
 }
-
-# For additional tools.
-CSI_PROW_BIN="${CSI_PROW_WORK}/bin"
-mkdir -p "${CSI_PROW_BIN}"
-PATH="${CSI_PROW_BIN}:$PATH"
 
 # Ensure that PATH has the desired version of the Go tools, then run command given as argument.
 # Empty parameter uses the already installed Go. In Prow, that version is kept up-to-date by
@@ -407,7 +424,7 @@ install_kind () {
         chmod u+x "${CSI_PROW_WORK}/bin/kind"
     else
         git_checkout https://github.com/kubernetes-sigs/kind "${GOPATH}/src/sigs.k8s.io/kind" "${CSI_PROW_KIND_VERSION}" --depth=1 &&
-        (cd "${GOPATH}/src/sigs.k8s.io/kind" && make install INSTALL_DIR="${CSI_PROW_WORK}/bin")
+        (cd "${GOPATH}/src/sigs.k8s.io/kind" && run_with_go "$CSI_PROW_GO_VERSION_KIND" make install INSTALL_DIR="${CSI_PROW_WORK}/bin")
     fi
 }
 
@@ -465,20 +482,22 @@ git_checkout () {
 
 # This clones a repo ("https://github.com/kubernetes/kubernetes")
 # in a certain location ("$GOPATH/src/k8s.io/kubernetes") at
-# a the head of a specific branch (i.e., release-1.13, master).
-# The directory cannot exist.
-git_clone_branch () {
-    local repo path branch parent
+# a the head of a specific branch (i.e., release-1.13, master),
+# tag (v1.20.0) or commit.
+#
+# The directory must not exist.
+git_clone () {
+    local repo path name parent
     repo="$1"
     shift
     path="$1"
     shift
-    branch="$1"
+    name="$1"
     shift
 
     parent="$(dirname "$path")"
     mkdir -p "$parent"
-    (cd "$parent" && run git clone --single-branch --branch "$branch" "$repo" "$path") || die "cloning $repo" failed
+    (cd "$parent" && run git clone --single-branch --branch "$name" "$repo" "$path") || die "cloning $repo" failed
     # This is useful for local testing or when switching between different revisions in the same
     # repo.
     (cd "$path" && run git clean -fdx) || die "failed to clean $path"
@@ -567,11 +586,12 @@ start_cluster () {
             else
                 type="docker"
             fi
-            git_clone_branch https://github.com/kubernetes/kubernetes "${CSI_PROW_WORK}/src/kubernetes" "$version" || die "checking out Kubernetes $version failed"
+            git_clone https://github.com/kubernetes/kubernetes "${CSI_PROW_WORK}/src/kubernetes" "$(version_to_git "$version")" || die "checking out Kubernetes $version failed"
 
             go_version="$(go_version_for_kubernetes "${CSI_PROW_WORK}/src/kubernetes" "$version")" || die "cannot proceed without knowing Go version for Kubernetes"
             # Changing into the Kubernetes source code directory is a workaround for https://github.com/kubernetes-sigs/kind/issues/1910
-            (cd "${CSI_PROW_WORK}/src/kubernetes" && run_with_go "$go_version" kind build node-image --image csiprow/node:latest --type="$type" --kube-root "${CSI_PROW_WORK}/src/kubernetes") || die "'kind build node-image' failed"
+            # shellcheck disable=SC2046
+            (cd "${CSI_PROW_WORK}/src/kubernetes" && run_with_go "$go_version" kind build node-image --image csiprow/node:latest $(if [ "$CSI_PROW_KIND_VERSION" != "main" ]; then echo --type="$type"; fi) --kube-root "${CSI_PROW_WORK}/src/kubernetes") || die "'kind build node-image' failed"
             csi_prow_kind_have_kubernetes=true
         fi
         image="csiprow/node:latest"
@@ -634,9 +654,9 @@ find_deployment () {
 
     # Ignore: See if you can use ${variable//search/replace} instead.
     # shellcheck disable=SC2001
-    file="$dir/kubernetes-$(echo "${CSI_PROW_KUBERNETES_VERSION}" | sed -e 's/\([0-9]*\)\.\([0-9]*\).*/\1.\2/')/deploy.sh"
+    file="$dir/kubernetes-$(echo "${CSI_PROW_KUBERNETES_VERSION}" | sed -e 's/\([0-9]*\)\.\([0-9]*\).*/\1.\2/')${CSI_PROW_DEPLOYMENT_SUFFIX}/deploy.sh"
     if ! [ -e "$file" ]; then
-        file="$dir/kubernetes-latest/deploy.sh"
+        file="$dir/kubernetes-latest${CSI_PROW_DEPLOYMENT_SUFFIX}/deploy.sh"
         if ! [ -e "$file" ]; then
             return 1
         fi
@@ -796,16 +816,17 @@ install_snapshot_controller() {
 	  echo "kubectl apply -f ${SNAPSHOT_CONTROLLER_YAML}(modified)"
       done
   else
-      echo "kubectl apply -f ${CONTROLLER_DIR}/deploy/kubernetes/snapshot-controller/setup-snapshot-controller.yaml"
-      kubectl apply -f "${CONTROLLER_DIR}/deploy/kubernetes/snapshot-controller/setup-snapshot-controller.yaml"
+      echo "kubectl apply -f $SNAPSHOT_CONTROLLER_YAML"
+      kubectl apply -f "$SNAPSHOT_CONTROLLER_YAML"
   fi
 
   cnt=0
-  expected_running_pods=$(curl https://raw.githubusercontent.com/kubernetes-csi/external-snapshotter/"${CSI_SNAPSHOTTER_VERSION}"/deploy/kubernetes/snapshot-controller/setup-snapshot-controller.yaml | grep replicas | cut -d ':' -f 2-)
-  while [ "$(kubectl get pods -l app=snapshot-controller | grep 'Running' -c)" -lt "$expected_running_pods" ]; do
+  expected_running_pods=$(kubectl apply --dry-run=client -o "jsonpath={.spec.replicas}" -f "$SNAPSHOT_CONTROLLER_YAML")
+  expected_namespace=$(kubectl apply --dry-run=client -o "jsonpath={.metadata.namespace}" -f "$SNAPSHOT_CONTROLLER_YAML")
+  while [ "$(kubectl get pods -n "$expected_namespace" -l app=snapshot-controller | grep 'Running' -c)" -lt "$expected_running_pods" ]; do
     if [ $cnt -gt 30 ]; then
         echo "snapshot-controller pod status:"
-        kubectl describe pods -l app=snapshot-controller
+        kubectl describe pods -n "$expected_namespace" -l app=snapshot-controller
         echo >&2 "ERROR: snapshot controller not ready after over 5 min"
         exit 1
     fi
@@ -879,8 +900,8 @@ install_sanity () (
         return
     fi
 
-    git_checkout "${CSI_PROW_SANITY_REPO}" "${GOPATH}/src/${CSI_PROW_SANITY_IMPORT_PATH}" "${CSI_PROW_SANITY_VERSION}" --depth=1 || die "checking out csi-sanity failed"
-    run_with_go "${CSI_PROW_GO_VERSION_SANITY}" go test -c -o "${CSI_PROW_WORK}/csi-sanity" "${CSI_PROW_SANITY_IMPORT_PATH}/cmd/csi-sanity" || die "building csi-sanity failed"
+    git_checkout "${CSI_PROW_SANITY_REPO}" "${GOPATH}/src/${CSI_PROW_SANITY_PACKAGE_PATH}" "${CSI_PROW_SANITY_VERSION}" --depth=1 || die "checking out csi-sanity failed"
+    ( cd "${GOPATH}/src/${CSI_PROW_SANITY_PACKAGE_PATH}/cmd/csi-sanity" && run_with_go "${CSI_PROW_GO_VERSION_SANITY}" go build -o "${CSI_PROW_WORK}/csi-sanity" ) || die "building csi-sanity failed"
 )
 
 # Captures pod output while running some other command.
@@ -998,7 +1019,7 @@ make_test_to_junit () {
         echo "$line" # pass through
         if echo "$line" | grep -q "^### [^ ]*:$"; then
             if [ "$testname" ]; then
-                # previous test succesful
+                # previous test successful
                 echo "    </system-out>" >>"$out"
                 echo "  </testcase>" >>"$out"
             fi
@@ -1083,6 +1104,9 @@ function version_gt() {
 main () {
     local images ret
     ret=0
+
+    # Set up work directory.
+    ensure_paths
 
     images=
     if ${CSI_PROW_BUILD_JOB}; then
@@ -1244,6 +1268,9 @@ gcr_cloud_build () {
     # Register gcloud as a Docker credential helper.
     # Required for "docker buildx build --push".
     gcloud auth configure-docker
+
+    # Might not be needed here, but call it just in case.
+    ensure_paths
 
     if find . -name Dockerfile | grep -v ^./vendor | xargs --no-run-if-empty cat | grep -q ^RUN; then
         # Needed for "RUN" steps on non-linux/amd64 platforms.
