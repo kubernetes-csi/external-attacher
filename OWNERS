@@ -1,12 +1,10 @@
+# See the OWNERS docs at https://go.k8s.io/owners
+
 approvers:
-- jsafrane
-- lpabon
-- msau42
-- saad-ali
+- kubernetes-csi-approvers
+
 reviewers:
+- kubernetes-csi-reviewers
+
+emeritus_reviewers:
 - davidz627
-- jsafrane
-- lpabon
-- msau42
-- saad-ali
-- sbezverk
