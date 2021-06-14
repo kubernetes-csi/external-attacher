@@ -3,7 +3,7 @@ module github.com/kubernetes-csi/external-attacher
 go 1.16
 
 require (
-	github.com/container-storage-interface/spec v1.4.0
+	github.com/container-storage-interface/spec v1.5.0
 	github.com/davecgh/go-spew v1.1.1
 	github.com/evanphx/json-patch v4.9.0+incompatible
 	github.com/golang/mock v1.4.4
