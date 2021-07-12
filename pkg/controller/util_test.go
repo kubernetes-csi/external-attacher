@@ -57,13 +57,14 @@ func TestGetVolumeCapabilities(t *testing.T) {
 	filesystemVolumeMode := v1.PersistentVolumeMode(v1.PersistentVolumeFilesystem)
 
 	tests := []struct {
-		name               string
-		volumeMode         *v1.PersistentVolumeMode
-		fsType             string
-		modes              []v1.PersistentVolumeAccessMode
-		mountOptions       []string
-		expectedCapability *csi.VolumeCapability
-		expectError        bool
+		name                          string
+		volumeMode                    *v1.PersistentVolumeMode
+		fsType                        string
+		modes                         []v1.PersistentVolumeAccessMode
+		mountOptions                  []string
+		supportsSingleNodeMultiWriter bool
+		expectedCapability            *csi.VolumeCapability
+		expectError                   bool
 	}{
 		{
 			name:               "RWX",
@@ -130,6 +131,69 @@ func TestGetVolumeCapabilities(t *testing.T) {
 			expectedCapability: nil,
 			expectError:        true,
 		},
+		{
+			name:                          "RWX with SINGLE_NODE_MULTI_WRITER capable driver",
+			volumeMode:                    &filesystemVolumeMode,
+			modes:                         []v1.PersistentVolumeAccessMode{v1.ReadWriteMany},
+			supportsSingleNodeMultiWriter: true,
+			expectedCapability:            createMountCapability(defaultFSType, csi.VolumeCapability_AccessMode_MULTI_NODE_MULTI_WRITER, nil),
+			expectError:                   false,
+		},
+		{
+			name:                          "ROX + RWO with SINGLE_NODE_MULTI_WRITER capable driver",
+			volumeMode:                    &filesystemVolumeMode,
+			modes:                         []v1.PersistentVolumeAccessMode{v1.ReadOnlyMany, v1.ReadWriteOnce},
+			supportsSingleNodeMultiWriter: true,
+			expectedCapability:            nil,
+			expectError:                   true,
+		},
+		{
+			name:                          "ROX + RWOP with SINGLE_NODE_MULTI_WRITER capable driver",
+			volumeMode:                    &filesystemVolumeMode,
+			modes:                         []v1.PersistentVolumeAccessMode{v1.ReadOnlyMany, v1.ReadWriteOncePod},
+			supportsSingleNodeMultiWriter: true,
+			expectedCapability:            nil,
+			expectError:                   true,
+		},
+		{
+			name:                          "RWO + RWOP with SINGLE_NODE_MULTI_WRITER capable driver",
+			volumeMode:                    &filesystemVolumeMode,
+			modes:                         []v1.PersistentVolumeAccessMode{v1.ReadWriteOnce, v1.ReadWriteOncePod},
+			supportsSingleNodeMultiWriter: true,
+			expectedCapability:            nil,
+			expectError:                   true,
+		},
+		{
+			name:                          "ROX with SINGLE_NODE_MULTI_WRITER capable driver",
+			volumeMode:                    &filesystemVolumeMode,
+			modes:                         []v1.PersistentVolumeAccessMode{v1.ReadOnlyMany},
+			supportsSingleNodeMultiWriter: true,
+			expectedCapability:            createMountCapability(defaultFSType, csi.VolumeCapability_AccessMode_MULTI_NODE_READER_ONLY, nil),
+			expectError:                   false,
+		},
+		{
+			name:                          "RWO with SINGLE_NODE_MULTI_WRITER capable driver",
+			volumeMode:                    &filesystemVolumeMode,
+			modes:                         []v1.PersistentVolumeAccessMode{v1.ReadWriteOnce},
+			supportsSingleNodeMultiWriter: true,
+			expectedCapability:            createMountCapability(defaultFSType, csi.VolumeCapability_AccessMode_SINGLE_NODE_MULTI_WRITER, nil),
+			expectError:                   false,
+		},
+		{
+			name:                          "RWOP with SINGLE_NODE_MULTI_WRITER capable driver",
+			volumeMode:                    &filesystemVolumeMode,
+			modes:                         []v1.PersistentVolumeAccessMode{v1.ReadWriteOncePod},
+			supportsSingleNodeMultiWriter: true,
+			expectedCapability:            createMountCapability(defaultFSType, csi.VolumeCapability_AccessMode_SINGLE_NODE_SINGLE_WRITER, nil),
+			expectError:                   false,
+		},
+		{
+			name:                          "nothing with SINGLE_NODE_MULTI_WRITER capable driver",
+			modes:                         []v1.PersistentVolumeAccessMode{},
+			supportsSingleNodeMultiWriter: true,
+			expectedCapability:            nil,
+			expectError:                   true,
+		},
 	}
 
 	for _, test := range tests {
@@ -145,7 +209,7 @@ func TestGetVolumeCapabilities(t *testing.T) {
 				},
 			},
 		}
-		cap, err := GetVolumeCapabilities(&pv.Spec)
+		cap, err := GetVolumeCapabilities(&pv.Spec, test.supportsSingleNodeMultiWriter)
 
 		if err == nil && test.expectError {
 			t.Errorf("test %s: expected error, got none", test.name)
