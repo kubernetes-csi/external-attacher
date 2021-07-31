@@ -42,7 +42,7 @@ type Attacher interface {
 }
 
 type attacher struct {
-	conn         *grpc.ClientConn
+	client       csi.ControllerClient
 	capabilities []csi.ControllerServiceCapability
 }
 
@@ -53,13 +53,11 @@ var (
 // NewAttacher provides a new Attacher object.
 func NewAttacher(conn *grpc.ClientConn) Attacher {
 	return &attacher{
-		conn: conn,
+		client: csi.NewControllerClient(conn),
 	}
 }
 
 func (a *attacher) Attach(ctx context.Context, volumeID string, readOnly bool, nodeID string, caps *csi.VolumeCapability, context, secrets map[string]string) (metadata map[string]string, detached bool, err error) {
-	client := csi.NewControllerClient(a.conn)
-
 	req := csi.ControllerPublishVolumeRequest{
 		VolumeId:         volumeID,
 		NodeId:           nodeID,
@@ -69,7 +67,7 @@ func (a *attacher) Attach(ctx context.Context, volumeID string, readOnly bool, n
 		Secrets:          secrets,
 	}
 
-	rsp, err := client.ControllerPublishVolume(ctx, &req)
+	rsp, err := a.client.ControllerPublishVolume(ctx, &req)
 	if err != nil {
 		return nil, isFinalError(err), err
 	}
@@ -77,15 +75,13 @@ func (a *attacher) Attach(ctx context.Context, volumeID string, readOnly bool, n
 }
 
 func (a *attacher) Detach(ctx context.Context, volumeID string, nodeID string, secrets map[string]string) error {
-	client := csi.NewControllerClient(a.conn)
-
 	req := csi.ControllerUnpublishVolumeRequest{
 		VolumeId: volumeID,
 		NodeId:   nodeID,
 		Secrets:  secrets,
 	}
 
-	_, err := client.ControllerUnpublishVolume(ctx, &req)
+	_, err := a.client.ControllerUnpublishVolume(ctx, &req)
 	return err
 }
 
