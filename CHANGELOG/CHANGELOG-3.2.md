@@ -1,4 +1,4 @@
-# Release notes for master
+# Release notes for v3.2.0
 
 [Documentation](https://kubernetes-csi.github.io)
 # Changelog since v3.1.0
