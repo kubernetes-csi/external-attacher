@@ -324,15 +324,6 @@ func (h *csiHandler) prepareVANodeID(va *storage.VolumeAttachment, nodeID string
 	return clone, true
 }
 
-func (h *csiHandler) saveVA(va *storage.VolumeAttachment, patch []byte) (*storage.VolumeAttachment, error) {
-	newVA, err := h.client.StorageV1().VolumeAttachments().Patch(context.TODO(), va.Name, types.MergePatchType, patch, metav1.PatchOptions{})
-	if err != nil {
-		return va, err
-	}
-	klog.V(4).Infof("VolumeAttachment %q updated with finalizer and/or NodeID annotation", va.Name)
-	return newVA, nil
-}
-
 func (h *csiHandler) addPVFinalizer(pv *v1.PersistentVolume) (*v1.PersistentVolume, error) {
 	finalizerName := GetFinalizerName(h.attacherName)
 	for _, f := range pv.Finalizers {

@@ -23,10 +23,6 @@ import (
 	v1 "k8s.io/api/core/v1"
 )
 
-const (
-	driverName = "foo/bar"
-)
-
 func createBlockCapability(mode csi.VolumeCapability_AccessMode_Mode) *csi.VolumeCapability {
 	return &csi.VolumeCapability{
 		AccessType: &csi.VolumeCapability_Block{
