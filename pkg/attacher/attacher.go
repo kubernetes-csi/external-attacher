@@ -20,12 +20,10 @@ import (
 	"context"
 
 	"github.com/container-storage-interface/spec/lib/go/csi"
-	"github.com/kubernetes-csi/csi-lib-utils/protosanitizer"
 
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
-	"k8s.io/klog/v2"
 )
 
 // Attacher implements attach/detach operations against a remote CSI driver.
@@ -82,15 +80,6 @@ func (a *attacher) Detach(ctx context.Context, volumeID string, nodeID string, s
 	}
 
 	_, err := a.client.ControllerUnpublishVolume(ctx, &req)
-	return err
-}
-
-func logGRPC(ctx context.Context, method string, req, reply interface{}, cc *grpc.ClientConn, invoker grpc.UnaryInvoker, opts ...grpc.CallOption) error {
-	klog.V(5).Infof("GRPC call: %s", method)
-	klog.V(5).Infof("GRPC request: %s", protosanitizer.StripSecrets(req))
-	err := invoker(ctx, method, req, reply, cc, opts...)
-	klog.V(5).Infof("GRPC response: %s", protosanitizer.StripSecrets(reply))
-	klog.V(5).Infof("GRPC error: %v", err)
 	return err
 }
 
