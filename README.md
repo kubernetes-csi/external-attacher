@@ -22,7 +22,7 @@ This information reflects the head of this branch.
 
 | Compatible with CSI Version                                                                | Container Image                     | [Min K8s Version](https://kubernetes-csi.github.io/docs/kubernetes-compatibility.html#minimum-version) | [Recommended K8s Version](https://kubernetes-csi.github.io/docs/kubernetes-compatibility.html#recommended-version) |
 | ------------------------------------------------------------------------------------------ | ------------------------------------| ---- | ---- |
-| [CSI Spec v1.2.0](https://github.com/container-storage-interface/spec/releases/tag/v1.2.0) | k8s.gcr.io/sig-storage/csi-attacher | 1.17 | 1.17 |
+| [CSI Spec v1.5.0](https://github.com/container-storage-interface/spec/releases/tag/v1.5.0) | k8s.gcr.io/sig-storage/csi-attacher | 1.17 | 1.22 |
 
 ## Feature Status
 
@@ -32,7 +32,8 @@ The following table reflects the head of this branch.
 
 | Feature       | Status  | Default | Description                                                                                   |
 | ------------- | ------- | ------- | --------------------------------------------------------------------------------------------- |
-| CSIMigration* | Beta    | On      | [Migrating in-tree volume plugins to CSI](https://kubernetes.io/docs/concepts/storage/volumes/#csi-migration). |
+| CSIMigration*     | Beta    | On      | [Migrating in-tree volume plugins to CSI](https://kubernetes.io/docs/concepts/storage/volumes/#csi-migration). |
+| ReadWriteOncePod* | Alpha   | Off     | [Single pod access mode for PersistentVolumes](https://kubernetes.io/docs/concepts/storage/persistent-volumes/#access-modes). |
 
 *) There is no special feature gate for this feature. It is enabled by turning on the corresponding features in Kubernetes.
 
@@ -77,6 +78,12 @@ Note that the external-attacher does not scale with more replicas. Only one exte
 * `--kube-api-qps`: The number of requests per second sent by a Kubernetes client to the Kubernetes API server. Defaults to `5.0`.
 
 * `--kube-api-burst`: The number of requests to the Kubernetes API server, exceeding the QPS, that can be sent at any given time. Defaults to `10`.
+
+* `--leader-election-lease-duration <duration>`: Duration, in seconds, that non-leader candidates will wait to force acquire leadership. Defaults to 15 seconds.
+
+* `--leader-election-renew-deadline <duration>`: Duration, in seconds, that the acting leader will retry refreshing leadership before giving up. Defaults to 10 seconds.
+
+* `--leader-election-retry-period <duration>`: Duration, in seconds, the LeaderElector clients should wait between tries of actions. Defaults to 5 seconds.
 
 #### Other recognized arguments
 

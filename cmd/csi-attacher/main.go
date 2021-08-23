@@ -62,8 +62,11 @@ var (
 	retryIntervalStart = flag.Duration("retry-interval-start", time.Second, "Initial retry interval of failed create volume or deletion. It doubles with each failure, up to retry-interval-max.")
 	retryIntervalMax   = flag.Duration("retry-interval-max", 5*time.Minute, "Maximum retry interval of failed create volume or deletion.")
 
-	enableLeaderElection    = flag.Bool("leader-election", false, "Enable leader election.")
-	leaderElectionNamespace = flag.String("leader-election-namespace", "", "Namespace where the leader election resource lives. Defaults to the pod namespace if not set.")
+	enableLeaderElection        = flag.Bool("leader-election", false, "Enable leader election.")
+	leaderElectionNamespace     = flag.String("leader-election-namespace", "", "Namespace where the leader election resource lives. Defaults to the pod namespace if not set.")
+	leaderElectionLeaseDuration = flag.Duration("leader-election-lease-duration", 15*time.Second, "Duration, in seconds, that non-leader candidates will wait to force acquire leadership. Defaults to 15 seconds.")
+	leaderElectionRenewDeadline = flag.Duration("leader-election-renew-deadline", 10*time.Second, "Duration, in seconds, that the acting leader will retry refreshing leadership before giving up. Defaults to 10 seconds.")
+	leaderElectionRetryPeriod   = flag.Duration("leader-election-retry-period", 5*time.Second, "Duration, in seconds, the LeaderElector clients should wait between tries of actions. Defaults to 5 seconds.")
 
 	reconcileSync = flag.Duration("reconcile-sync", 1*time.Minute, "Resync interval of the VolumeAttachment reconciler.")
 
@@ -188,23 +191,42 @@ func main() {
 		klog.Error(err.Error())
 		os.Exit(1)
 	}
+
+	var (
+		supportsAttach                    bool
+		supportsReadOnly                  bool
+		supportsListVolumesPublishedNodes bool
+		supportsSingleNodeMultiWriter     bool
+	)
 	if !supportsService {
 		handler = controller.NewTrivialHandler(clientset)
 		klog.V(2).Infof("CSI driver does not support Plugin Controller Service, using trivial handler")
 	} else {
-		// Find out if the driver supports attach/detach.
-		supportsAttach, supportsReadOnly, err := supportsControllerPublish(ctx, csiConn)
+		supportsAttach, supportsReadOnly, supportsListVolumesPublishedNodes, supportsSingleNodeMultiWriter, err = supportsControllerCapabilities(ctx, csiConn)
 		if err != nil {
 			klog.Error(err.Error())
 			os.Exit(1)
 		}
+
 		if supportsAttach {
 			pvLister := factory.Core().V1().PersistentVolumes().Lister()
 			vaLister := factory.Storage().V1().VolumeAttachments().Lister()
 			csiNodeLister := factory.Storage().V1().CSINodes().Lister()
 			volAttacher := attacher.NewAttacher(csiConn)
 			CSIVolumeLister := attacher.NewVolumeLister(csiConn)
-			handler = controller.NewCSIHandler(clientset, csiAttacher, volAttacher, CSIVolumeLister, pvLister, csiNodeLister, vaLister, timeout, supportsReadOnly, csitrans.New())
+			handler = controller.NewCSIHandler(
+				clientset,
+				csiAttacher,
+				volAttacher,
+				CSIVolumeLister,
+				pvLister,
+				csiNodeLister,
+				vaLister,
+				timeout,
+				supportsReadOnly,
+				supportsSingleNodeMultiWriter,
+				csitrans.New(),
+			)
 			klog.V(2).Infof("CSI driver supports ControllerPublishUnpublish, using real CSI handler")
 		} else {
 			handler = controller.NewTrivialHandler(clientset)
@@ -212,12 +234,7 @@ func main() {
 		}
 	}
 
-	slvpn, err := supportsListVolumesPublishedNodes(ctx, csiConn)
-	if err != nil {
-		klog.Errorf("Failed to check if driver supports ListVolumesPublishedNodes, assuming it does not: %v", err)
-	}
-
-	if slvpn {
+	if supportsListVolumesPublishedNodes {
 		klog.V(2).Infof("CSI driver supports list volumes published nodes. Using capability to reconcile volume attachment objects with actual backend state")
 	}
 
@@ -229,7 +246,7 @@ func main() {
 		factory.Core().V1().PersistentVolumes(),
 		workqueue.NewItemExponentialFailureRateLimiter(*retryIntervalStart, *retryIntervalMax),
 		workqueue.NewItemExponentialFailureRateLimiter(*retryIntervalStart, *retryIntervalMax),
-		slvpn,
+		supportsListVolumesPublishedNodes,
 		*reconcileSync,
 	)
 
@@ -261,6 +278,10 @@ func main() {
 			le.WithNamespace(*leaderElectionNamespace)
 		}
 
+		le.WithLeaseDuration(*leaderElectionLeaseDuration)
+		le.WithRenewDeadline(*leaderElectionRenewDeadline)
+		le.WithRetryPeriod(*leaderElectionRetryPeriod)
+
 		if err := le.Run(); err != nil {
 			klog.Fatalf("failed to initialize leader election: %v", err)
 		}
@@ -274,24 +295,17 @@ func buildConfig(kubeconfig string) (*rest.Config, error) {
 	return rest.InClusterConfig()
 }
 
-func supportsControllerPublish(ctx context.Context, csiConn *grpc.ClientConn) (supportsControllerPublish bool, supportsPublishReadOnly bool, err error) {
+func supportsControllerCapabilities(ctx context.Context, csiConn *grpc.ClientConn) (bool, bool, bool, bool, error) {
 	caps, err := rpc.GetControllerCapabilities(ctx, csiConn)
 	if err != nil {
-		return false, false, err
+		return false, false, false, false, err
 	}
 
-	supportsControllerPublish = caps[csi.ControllerServiceCapability_RPC_PUBLISH_UNPUBLISH_VOLUME]
-	supportsPublishReadOnly = caps[csi.ControllerServiceCapability_RPC_PUBLISH_READONLY]
-	return supportsControllerPublish, supportsPublishReadOnly, nil
-}
-
-func supportsListVolumesPublishedNodes(ctx context.Context, csiConn *grpc.ClientConn) (bool, error) {
-	caps, err := rpc.GetControllerCapabilities(ctx, csiConn)
-	if err != nil {
-		return false, fmt.Errorf("failed to get controller capabilities: %v", err)
-	}
-
-	return caps[csi.ControllerServiceCapability_RPC_LIST_VOLUMES] && caps[csi.ControllerServiceCapability_RPC_LIST_VOLUMES_PUBLISHED_NODES], nil
+	supportsControllerPublish := caps[csi.ControllerServiceCapability_RPC_PUBLISH_UNPUBLISH_VOLUME]
+	supportsPublishReadOnly := caps[csi.ControllerServiceCapability_RPC_PUBLISH_READONLY]
+	supportsListVolumesPublishedNodes := caps[csi.ControllerServiceCapability_RPC_LIST_VOLUMES] && caps[csi.ControllerServiceCapability_RPC_LIST_VOLUMES_PUBLISHED_NODES]
+	supportsSingleNodeMultiWriter := caps[csi.ControllerServiceCapability_RPC_SINGLE_NODE_MULTI_WRITER]
+	return supportsControllerPublish, supportsPublishReadOnly, supportsListVolumesPublishedNodes, supportsSingleNodeMultiWriter, nil
 }
 
 func supportsPluginControllerService(ctx context.Context, csiConn *grpc.ClientConn) (bool, error) {
