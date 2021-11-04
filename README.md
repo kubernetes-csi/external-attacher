@@ -67,9 +67,13 @@ Note that the external-attacher does not scale with more replicas. Only one exte
 
 * `--retry-interval-max`: The exponential backoff maximum value. See [CSI error and timeout handling](#csi-error-and-timeout-handling) for details. 5 minutes is used by default.
 
-* `--http-endpoint`: The TCP network address where the HTTP server for diagnostics, including metrics and leader election health check, will listen (example: `:8080` which corresponds to port 8080 on local host). The default is empty string, which means the server is disabled.
+* `--http-endpoint`: The TCP network address where the HTTP(S) server for diagnostics, including metrics and leader election health check, will listen (example: `:8080` which corresponds to port 8080 on local host). The default is empty string, which means the server is disabled.
 
 * `--metrics-path`: The HTTP path where prometheus metrics will be exposed. Default is `/metrics`.
+
+* `--http-endpoint-key-file`: The path to TLS key file used for running HTTPS server. The default is empty string, which means that TLS will not be used when running HTTP server. Both `--http-endpoint-key-file` and `--http-endpoint-cert-file` flags must be set to enable TLS support.
+
+* `--http-endpoint-cert-file`: The path to TLS cert file used for running HTTPS server. The default is empty string, which means that TLS will not be used when running HTTP server. Both `--http-endpoint-key-file` and `--http-endpoint-cert-file` flags must be set to enable TLS support.
 
 * `--reconcile-sync`: Resync frequency of the attached volumes with the driver. See [Periodic re-sync](#periodic-re-sync) for details. 1 minute is used by default.
 

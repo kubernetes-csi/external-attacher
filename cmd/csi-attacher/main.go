@@ -68,9 +68,11 @@ var (
 
 	reconcileSync = flag.Duration("reconcile-sync", 1*time.Minute, "Resync interval of the VolumeAttachment reconciler.")
 
-	metricsAddress = flag.String("metrics-address", "", "(deprecated) The TCP network address where the prometheus metrics endpoint will listen (example: `:8080`). The default is empty string, which means metrics endpoint is disabled. Only one of `--metrics-address` and `--http-endpoint` can be set.")
-	httpEndpoint   = flag.String("http-endpoint", "", "The TCP network address where the HTTP server for diagnostics, including metrics and leader election health check, will listen (example: `:8080`). The default is empty string, which means the server is disabled. Only one of `--metrics-address` and `--http-endpoint` can be set.")
-	metricsPath    = flag.String("metrics-path", "/metrics", "The HTTP path where prometheus metrics will be exposed. Default is `/metrics`.")
+	metricsAddress       = flag.String("metrics-address", "", "(deprecated) The TCP network address where the prometheus metrics endpoint will listen (example: `:8080`). The default is empty string, which means metrics endpoint is disabled. Only one of `--metrics-address` and `--http-endpoint` can be set.")
+	httpEndpoint         = flag.String("http-endpoint", "", "The TCP network address where the HTTP(S) server for diagnostics, including metrics and leader election health check, will listen (example: `:8080`). The default is empty string, which means the server is disabled. Only one of `--metrics-address` and `--http-endpoint` can be set.")
+	metricsPath          = flag.String("metrics-path", "/metrics", "The HTTP path where prometheus metrics will be exposed. Default is `/metrics`.")
+	httpEndpointKeyFile  = flag.String("http-endpoint-key-file", "", "The path to TLS key file used for running HTTPS server. The default is empty string, which means that TLS will not be used when running HTTP server. Both `--http-endpoint-key-file` and `--http-endpoint-cert-file` flags must be set to enable TLS support.")
+	httpEndpointCertFile = flag.String("http-endpoint-cert-file", "", "The path to TLS cert file used for running HTTPS server. The default is empty string, which means that TLS will not be used when running HTTP server. Both `--http-endpoint-key-file` and `--http-endpoint-cert-file` flags must be set to enable TLS support.")
 
 	kubeAPIQPS   = flag.Float64("kube-api-qps", 5, "QPS to use while communicating with the kubernetes apiserver. Defaults to 5.0.")
 	kubeAPIBurst = flag.Int("kube-api-burst", 10, "Burst to use while communicating with the kubernetes apiserver. Defaults to 10.")
@@ -94,6 +96,12 @@ func main() {
 	if *metricsAddress != "" && *httpEndpoint != "" {
 		klog.Error("only one of `--metrics-address` and `--http-endpoint` can be set.")
 		os.Exit(1)
+	}
+	if (*httpEndpointKeyFile == "" && *httpEndpointCertFile != "") || (*httpEndpointKeyFile != "" && *httpEndpointCertFile == "") {
+		klog.Warningf(
+			"One of the TLS flags is set but the other is empty (--http-endpoint-key-file=%q, --http-endpoint-cert-file=%q)",
+			*httpEndpointKeyFile, *httpEndpointCertFile,
+		)
 	}
 	addr := *metricsAddress
 	if addr == "" {
@@ -171,10 +179,16 @@ func main() {
 		metricsManager.RegisterToServer(mux, *metricsPath)
 		metricsManager.SetDriverName(csiAttacher)
 		go func() {
-			klog.Infof("ServeMux listening at %q", addr)
-			err := http.ListenAndServe(addr, mux)
+			var err error
+			if *httpEndpointKeyFile == "" || *httpEndpointCertFile == "" {
+				klog.Infof("HTTP ServeMux listening at %q", addr)
+				err = http.ListenAndServe(addr, mux)
+			} else {
+				klog.Infof("HTTPS ServeMux listening at %q", addr)
+				err = http.ListenAndServeTLS(addr, *httpEndpointKeyFile, *httpEndpointCertFile, mux)
+			}
 			if err != nil {
-				klog.Fatalf("Failed to start HTTP server at specified address (%q) and metrics path (%q): %s", addr, *metricsPath, err)
+				klog.Fatalf("Failed to start HTTP(S) server at specified address (%q) and metrics path (%q): %s", addr, *metricsPath, err)
 			}
 		}()
 	}
