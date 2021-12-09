@@ -291,6 +291,7 @@ func shouldEnqueueVAChange(old, new *storage.VolumeAttachment) bool {
 	sanitized.ResourceVersion = old.ResourceVersion
 	sanitized.Status.AttachError = old.Status.AttachError
 	sanitized.Status.DetachError = old.Status.DetachError
+	sanitized.ManagedFields = old.ManagedFields
 
 	if equality.Semantic.DeepEqual(old, sanitized) {
 		// The objects are the same except Status.Attach/DetachError.
