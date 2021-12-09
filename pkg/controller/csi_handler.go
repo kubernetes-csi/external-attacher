@@ -134,9 +134,9 @@ func (h *csiHandler) ReconcileVA() error {
 	}
 
 	for _, va := range vas {
-		nodeID, ok := va.Annotations[vaNodeIDAnnotation]
-		if !ok {
-			klog.Warningf("Failed to find node ID in VolumeAttachment %s annotation", va.Name)
+		nodeID, err := h.getNodeID(h.attacherName, va.Spec.NodeName, va)
+		if err != nil {
+			klog.Warningf("Failed to find node ID err: %v", err)
 			continue
 		}
 		pvSpec, err := h.getProcessedPVSpec(va)
