@@ -43,6 +43,8 @@ import (
 const (
 	// Finalizer value
 	fin = "external-attacher/csi-test"
+
+	defaultFSType = "ext4"
 )
 
 var (
@@ -66,6 +68,7 @@ func csiHandlerFactory(client kubernetes.Interface, informerFactory informers.Sh
 		true,  /* supports PUBLISH_READONLY */
 		false, /* does not support SINGLE_NODE_MULTI_WRITER access mode */
 		csitranslator.New(),
+		defaultFSType,
 	)
 }
 
@@ -82,6 +85,7 @@ func csiHandlerFactoryNoReadOnly(client kubernetes.Interface, informerFactory in
 		false, /* does not support PUBLISH_READONLY */
 		false, /* does not support SINGLE_NODE_MULTI_WRITER access mode */
 		csitranslator.New(),
+		defaultFSType,
 	)
 }
 

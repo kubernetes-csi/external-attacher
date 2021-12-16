@@ -72,6 +72,7 @@ type csiHandler struct {
 	supportsPublishReadOnly       bool
 	supportsSingleNodeMultiWriter bool
 	translator                    AttacherCSITranslator
+	defaultFSType                 string
 }
 
 var _ Handler = &csiHandler{}
@@ -88,7 +89,8 @@ func NewCSIHandler(
 	timeout *time.Duration,
 	supportsPublishReadOnly bool,
 	supportsSingleNodeMultiWriter bool,
-	translator AttacherCSITranslator) Handler {
+	translator AttacherCSITranslator,
+	defaultFSType string) Handler {
 
 	return &csiHandler{
 		client:                        client,
@@ -104,6 +106,7 @@ func NewCSIHandler(
 		translator:                    translator,
 		forceSync:                     map[string]bool{},
 		forceSyncMux:                  sync.Mutex{},
+		defaultFSType:                 defaultFSType,
 	}
 }
 
@@ -482,7 +485,7 @@ func (h *csiHandler) csiAttach(va *storage.VolumeAttachment) (*storage.VolumeAtt
 		readOnly = false
 	}
 
-	volumeCapabilities, err := GetVolumeCapabilities(pvSpec, h.supportsSingleNodeMultiWriter)
+	volumeCapabilities, err := GetVolumeCapabilities(pvSpec, h.supportsSingleNodeMultiWriter, h.defaultFSType)
 	if err != nil {
 		return va, nil, err
 	}
