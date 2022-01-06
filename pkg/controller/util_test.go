@@ -51,6 +51,7 @@ func createMountCapability(fsType string, mode csi.VolumeCapability_AccessMode_M
 func TestGetVolumeCapabilities(t *testing.T) {
 	blockVolumeMode := v1.PersistentVolumeMode(v1.PersistentVolumeBlock)
 	filesystemVolumeMode := v1.PersistentVolumeMode(v1.PersistentVolumeFilesystem)
+	defaultFSType := "ext4"
 
 	tests := []struct {
 		name                          string
@@ -205,7 +206,7 @@ func TestGetVolumeCapabilities(t *testing.T) {
 				},
 			},
 		}
-		cap, err := GetVolumeCapabilities(&pv.Spec, test.supportsSingleNodeMultiWriter)
+		cap, err := GetVolumeCapabilities(&pv.Spec, test.supportsSingleNodeMultiWriter, defaultFSType)
 
 		if err == nil && test.expectError {
 			t.Errorf("test %s: expected error, got none", test.name)
