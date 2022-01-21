@@ -73,6 +73,19 @@ func TestShouldEnqueueVAChange(t *testing.T) {
 		Time:    metav1.Time{},
 	}
 
+	va2AppendManagedFields := va1.DeepCopy()
+	va2AppendManagedFields.ResourceVersion = "2"
+	va2AppendManagedFields.ManagedFields = append(va2AppendManagedFields.ManagedFields,
+		metav1.ManagedFieldsEntry{
+			APIVersion: "storage.k8s.io/v1beta1",
+			Manager:    "csi-attacher",
+			Operation:  "Update",
+			FieldsType: "FieldsV1",
+			FieldsV1: &metav1.FieldsV1{
+				Raw: []byte(`{"f:metadata":{"f:annotations":{".":{},"f:csi.alpha.kubernetes.io/node-id":{}},"f:finalizers":{".":{},"v:\\\"external-attacher/csi-cdsplugin\\\"":{}}},"f:status":{"f:attached":{},"f:attachmentMetadata":{".":{},"f:devName":{},"f:serial":{}}}}`),
+			},
+		})
+
 	tests := []struct {
 		name           string
 		oldVA, newVA   *storage.VolumeAttachment
@@ -118,6 +131,12 @@ func TestShouldEnqueueVAChange(t *testing.T) {
 			name:           "changed detachError",
 			oldVA:          va1WithDetachError,
 			newVA:          va2ChangedDetachError,
+			expectedResult: false,
+		},
+		{
+			name:           "appended managedFields",
+			oldVA:          va1,
+			newVA:          va2AppendManagedFields,
 			expectedResult: false,
 		},
 	}
