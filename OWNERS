@@ -6,6 +6,6 @@ approvers:
 reviewers:
 - kubernetes-csi-reviewers
 
-emeritus_reviewers:
+emeritus_approvers:
 - davidz627
 
