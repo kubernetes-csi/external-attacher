@@ -108,9 +108,8 @@ func markAsDetached(client kubernetes.Interface, va *storage.VolumeAttachment) (
 }
 
 const (
-	defaultFSType              = "ext4"
-	csiVolAttribsAnnotationKey = "csi.volume.kubernetes.io/volume-attributes"
-	vaNodeIDAnnotation         = "csi.alpha.kubernetes.io/node-id"
+	defaultFSType      = "ext4"
+	vaNodeIDAnnotation = "csi.alpha.kubernetes.io/node-id"
 )
 
 // SanitizeDriverName sanitizes provided driver name.

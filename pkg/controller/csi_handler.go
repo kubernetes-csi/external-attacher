@@ -134,9 +134,9 @@ func (h *csiHandler) ReconcileVA() error {
 	}
 
 	for _, va := range vas {
-		nodeID, ok := va.Annotations[vaNodeIDAnnotation]
-		if !ok {
-			klog.Warningf("Failed to find node ID in VolumeAttachment %s annotation", va.Name)
+		nodeID, err := h.getNodeID(h.attacherName, va.Spec.NodeName, va)
+		if err != nil {
+			klog.Warningf("Failed to find node ID err: %v", err)
 			continue
 		}
 		pvSpec, err := h.getProcessedPVSpec(va)
@@ -322,15 +322,6 @@ func (h *csiHandler) prepareVANodeID(va *storage.VolumeAttachment, nodeID string
 	clone.Annotations[vaNodeIDAnnotation] = nodeID
 	klog.V(4).Infof("NodeID annotation added to %q", va.Name)
 	return clone, true
-}
-
-func (h *csiHandler) saveVA(va *storage.VolumeAttachment, patch []byte) (*storage.VolumeAttachment, error) {
-	newVA, err := h.client.StorageV1().VolumeAttachments().Patch(context.TODO(), va.Name, types.MergePatchType, patch, metav1.PatchOptions{})
-	if err != nil {
-		return va, err
-	}
-	klog.V(4).Infof("VolumeAttachment %q updated with finalizer and/or NodeID annotation", va.Name)
-	return newVA, nil
 }
 
 func (h *csiHandler) addPVFinalizer(pv *v1.PersistentVolume) (*v1.PersistentVolume, error) {

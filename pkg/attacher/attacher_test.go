@@ -36,10 +36,6 @@ import (
 	"google.golang.org/grpc/status"
 )
 
-const (
-	driverName = "foo/bar"
-)
-
 type pbMatcher struct {
 	x proto.Message
 }

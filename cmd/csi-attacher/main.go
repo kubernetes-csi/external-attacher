@@ -46,8 +46,6 @@ const (
 
 	// Default timeout of short CSI calls like GetPluginInfo
 	csiTimeout = time.Second
-
-	leaderElectionTypeLeases = "leases"
 )
 
 // Command line flags
@@ -81,11 +79,6 @@ var (
 var (
 	version = "unknown"
 )
-
-type leaderElection interface {
-	Run() error
-	WithNamespace(namespace string)
-}
 
 func main() {
 	klog.InitFlags(nil)
