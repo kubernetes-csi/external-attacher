@@ -1,5 +1,5 @@
 /*
-Copyright 2017 Luis Pabón luis@portworx.com
+Copyright 2021 The Kubernetes Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -27,7 +27,7 @@ import (
 
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
-	"k8s.io/klog"
+	"k8s.io/klog/v2"
 
 	"github.com/container-storage-interface/spec/lib/go/csi"
 	"google.golang.org/grpc"
@@ -235,7 +235,10 @@ func logGRPC(method string, request, reply interface{}, err error) {
 		logMessage.Error = err.Error()
 	}
 
-	msg, _ := json.Marshal(logMessage)
+	msg, err := json.Marshal(logMessage)
+	if err != nil {
+		logMessage.Error = err.Error()
+	}
 	klog.V(3).Infof("gRPCCall: %s\n", msg)
 }
 

@@ -3,38 +3,41 @@ module github.com/kubernetes-csi/external-attacher
 go 1.15
 
 require (
-	github.com/container-storage-interface/spec v1.3.0
+	github.com/container-storage-interface/spec v1.5.0
 	github.com/davecgh/go-spew v1.1.1
-	github.com/evanphx/json-patch v4.9.0+incompatible
-	github.com/go-logr/logr v0.3.0 // indirect
-	github.com/golang/mock v1.4.4
-	github.com/golang/protobuf v1.4.3
-	github.com/google/go-cmp v0.5.4 // indirect
+	github.com/evanphx/json-patch v4.12.0+incompatible
+	github.com/go-logr/logr v1.2.2 // indirect
+	github.com/gogo/protobuf v1.3.2 // indirect
+	github.com/golang/groupcache v0.0.0-20210331224755-41bb18bfe9da // indirect
+	github.com/golang/mock v1.6.0
+	github.com/golang/protobuf v1.5.2
+	github.com/google/go-cmp v0.5.7 // indirect
 	github.com/google/gofuzz v1.2.0 // indirect
 	github.com/googleapis/gnostic v0.5.3 // indirect
 	github.com/hashicorp/golang-lru v0.5.4 // indirect
-	github.com/imdario/mergo v0.3.11 // indirect
-	github.com/kubernetes-csi/csi-lib-utils v0.9.0
-	github.com/kubernetes-csi/csi-test/v4 v4.0.2
-	github.com/prometheus/client_golang v1.8.0 // indirect
-	github.com/prometheus/common v0.15.0 // indirect
-	golang.org/x/crypto v0.0.0-20201208171446-5f87f3452ae9 // indirect
-	golang.org/x/net v0.0.0-20201216054612-986b41b23924 // indirect
-	golang.org/x/oauth2 v0.0.0-20201208152858-08078c50e5b5 // indirect
-	golang.org/x/sys v0.0.0-20201214210602-f9fddec55a1e // indirect
-	golang.org/x/term v0.0.0-20201210144234-2321bbc49cbf // indirect
-	golang.org/x/time v0.0.0-20201208040808-7e3f01d25324 // indirect
+	github.com/imdario/mergo v0.3.12 // indirect
+	github.com/kubernetes-csi/csi-lib-utils v0.10.0
+	github.com/kubernetes-csi/csi-test/v4 v4.3.0
+	github.com/prometheus/client_golang v1.12.0 // indirect
+	golang.org/x/crypto v0.0.0-20220112180741-5e0467b6c7ce // indirect
+	golang.org/x/net v0.0.0-20220121210141-e204ce36a2ba // indirect
+	golang.org/x/oauth2 v0.0.0-20211104180415-d3ed0bb246c8 // indirect
+	golang.org/x/time v0.0.0-20211116232009-f0f3c7e86c11 // indirect
 	google.golang.org/appengine v1.6.7 // indirect
-	google.golang.org/genproto v0.0.0-20201214200347-8c77b98c765d // indirect
-	google.golang.org/grpc v1.34.0
-	gopkg.in/yaml.v2 v2.4.0 // indirect
-	k8s.io/api v0.20.0
+	google.golang.org/genproto v0.0.0-20220118154757-00ab72f36ad5 // indirect
+	google.golang.org/grpc v1.43.0
+	k8s.io/api v0.22.0
 	k8s.io/apimachinery v0.20.0
-	k8s.io/client-go v0.20.0
-	k8s.io/component-base v0.20.0 // indirect
+	k8s.io/client-go v0.22.0
 	k8s.io/csi-translation-lib v0.20.0
-	k8s.io/klog/v2 v2.4.0
+	k8s.io/klog/v2 v2.40.1
+	k8s.io/kube-openapi v0.0.0-20220124234850-424119656bbf // indirect
+	k8s.io/utils v0.0.0-20211208161948-7d6a63dca704 // indirect
+	sigs.k8s.io/structured-merge-diff/v4 v4.2.1 // indirect
+	sigs.k8s.io/yaml v1.3.0 // indirect
 )
+
+replace github.com/googleapis/gnostic => github.com/googleapis/gnostic v0.5.5
 
 replace k8s.io/apiextensions-apiserver => k8s.io/apiextensions-apiserver v0.20.0
 
