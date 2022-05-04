@@ -14,11 +14,11 @@ require (
 	github.com/kubernetes-csi/csi-test/v4 v4.0.2
 	github.com/prometheus/client_golang v1.11.1 // indirect
 	google.golang.org/grpc v1.40.0
-	k8s.io/api v0.23.0
-	k8s.io/apimachinery v0.23.0
+	k8s.io/api v0.23.6
+	k8s.io/apimachinery v0.23.6
 	k8s.io/client-go v0.23.0
 	k8s.io/component-base v0.23.0 // indirect
-	k8s.io/csi-translation-lib v0.23.0
+	k8s.io/csi-translation-lib v0.23.6
 	k8s.io/klog/v2 v2.30.0
 )
 
@@ -48,7 +48,7 @@ replace k8s.io/controller-manager => k8s.io/controller-manager v0.23.0
 
 replace k8s.io/cri-api => k8s.io/cri-api v0.23.0
 
-replace k8s.io/csi-translation-lib => k8s.io/csi-translation-lib v0.23.0
+replace k8s.io/csi-translation-lib => k8s.io/csi-translation-lib v0.23.6
 
 replace k8s.io/kube-aggregator => k8s.io/kube-aggregator v0.23.0
 
