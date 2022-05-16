@@ -69,7 +69,7 @@ metadata:
 rules:
 - apiGroups: ["coordination.k8s.io"]
   resources: ["leases"]
-  verbs: ["get", "watch", "list", "delete", "update", "create"]
+  verbs: ["get", "watch", "list", "delete", "patch", "create"]
 
 ---
 kind: RoleBinding
