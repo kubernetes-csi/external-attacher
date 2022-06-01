@@ -83,7 +83,7 @@ Note that the external-attacher does not scale with more replicas. Only one exte
 
 * `--leader-election-retry-period <duration>`: Duration, in seconds, the LeaderElector clients should wait between tries of actions. Defaults to 5 seconds.
 
-* `--default-fstype <type>`: The default filesystem type of the volume to publish. Defaults to `ext4`.
+* `--default-fstype <type>`: The default filesystem type of the volume to publish. Defaults to empty string.
 
 #### Other recognized arguments
 
