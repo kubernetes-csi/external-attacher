@@ -13,6 +13,7 @@ require (
 	github.com/kubernetes-csi/csi-lib-utils v0.11.0
 	github.com/kubernetes-csi/csi-test/v4 v4.0.2
 	google.golang.org/grpc v1.40.0
+	gopkg.in/yaml.v3 v3.0.1 // indirect
 	k8s.io/api v0.24.0
 	k8s.io/apimachinery v0.24.0
 	k8s.io/client-go v0.24.0
