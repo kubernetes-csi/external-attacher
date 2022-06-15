@@ -1,11 +1,5 @@
 # See the OWNERS docs at https://go.k8s.io/owners
 
 approvers:
-- kubernetes-csi-approvers
-
-reviewers:
-- kubernetes-csi-reviewers
-
-emeritus_approvers:
-- davidz627
-
+- openshift-storage-maintainers
+component: "Storage"

@@ -1,1 +1,7 @@
-release-tools/KUBERNETES_CSI_OWNERS_ALIASES
+aliases:
+  openshift-storage-maintainers:
+    - jsafrane
+    - tsmetana
+    - gnufied
+    - bertinatto
+    - dobsonj
