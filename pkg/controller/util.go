@@ -108,7 +108,6 @@ func markAsDetached(client kubernetes.Interface, va *storage.VolumeAttachment) (
 }
 
 const (
-	defaultFSType      = "ext4"
 	vaNodeIDAnnotation = "csi.alpha.kubernetes.io/node-id"
 )
 
@@ -140,7 +139,7 @@ func GetNodeIDFromCSINode(driver string, csiNode *storage.CSINode) (string, bool
 
 // GetVolumeCapabilities returns a VolumeCapability from the PV spec. Which access mode will be set depends if the driver supports the
 // SINGLE_NODE_MULTI_WRITER capability.
-func GetVolumeCapabilities(pvSpec *v1.PersistentVolumeSpec, singleNodeMultiWriterCapable bool) (*csi.VolumeCapability, error) {
+func GetVolumeCapabilities(pvSpec *v1.PersistentVolumeSpec, singleNodeMultiWriterCapable bool, defaultFSType string) (*csi.VolumeCapability, error) {
 	if pvSpec.CSI == nil {
 		return nil, errors.New("CSI volume source was nil")
 	}
@@ -158,6 +157,7 @@ func GetVolumeCapabilities(pvSpec *v1.PersistentVolumeSpec, singleNodeMultiWrite
 		fsType := pvSpec.CSI.FSType
 		if len(fsType) == 0 {
 			fsType = defaultFSType
+			klog.V(4).Infof("Filesystem type not found in PV spec. Using defaultFSType: %v.", fsType)
 		}
 
 		cap = &csi.VolumeCapability{

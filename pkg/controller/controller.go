@@ -61,6 +61,8 @@ type CSIAttachController struct {
 	shouldReconcileVolumeAttachment bool
 	reconcileSync                   time.Duration
 	translator                      AttacherCSITranslator
+
+	defaultFSType string
 }
 
 // Handler is responsible for handling VolumeAttachment events from informer.

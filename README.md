@@ -83,6 +83,8 @@ Note that the external-attacher does not scale with more replicas. Only one exte
 
 * `--leader-election-retry-period <duration>`: Duration, in seconds, the LeaderElector clients should wait between tries of actions. Defaults to 5 seconds.
 
+* `--default-fstype <type>`: The default filesystem type of the volume to publish. Defaults to `ext4`.
+
 #### Other recognized arguments
 
 * `--kubeconfig <path>`: Path to Kubernetes client configuration that the external-attacher uses to connect to Kubernetes API server. When omitted, default token provided by Kubernetes will be used. This option is useful only when the external-attacher does not run as a Kubernetes pod, e.g. for debugging.

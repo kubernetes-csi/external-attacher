@@ -1,26 +1,3 @@
-# Release notes for v3.2.1
-
-[Documentation](https://kubernetes-csi.github.io)
-# Changelog since v3.2.0
-
-## Changes by Kind
-
-### Bug or Regression
-
-- Fix a bug that the controller can panic crash when it receives DeletedFinalStateUnknown deletion event. ([#304](https://github.com/kubernetes-csi/external-attacher/pull/304), [@Jiawei0227](https://github.com/Jiawei0227))
-
-## Dependencies
-
-### Added
-_Nothing has changed._
-
-### Changed
-_Nothing has changed._
-
-### Removed
-_Nothing has changed._
-
-
 # Release notes for v3.2.0
 
 [Documentation](https://kubernetes-csi.github.io)
