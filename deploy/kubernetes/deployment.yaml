@@ -33,7 +33,7 @@ spec:
       serviceAccount: csi-attacher
       containers:
         - name: csi-attacher
-          image: gcr.io/k8s-staging-sig-storage/csi-attacher:canary
+          image: registry.k8s.io/k8s-staging-sig-storage/csi-attacher:v3.5.0
           args:
             - "--v=5"
             - "--csi-address=$(ADDRESS)"
