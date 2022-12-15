@@ -30,7 +30,7 @@ The following table reflects the head of this branch.
 
 | Feature       | Status  | Default | Description                                                                                   |
 | ------------- | ------- | ------- | --------------------------------------------------------------------------------------------- |
-| CSIMigration*     | Beta    | On      | [Migrating in-tree volume plugins to CSI](https://kubernetes.io/docs/concepts/storage/volumes/#csi-migration). |
+| CSIMigration*     | GA      | On      | [Migrating in-tree volume plugins to CSI](https://kubernetes.io/docs/concepts/storage/volumes/#csi-migration). |
 | ReadWriteOncePod* | Alpha   | Off     | [Single pod access mode for PersistentVolumes](https://kubernetes.io/docs/concepts/storage/persistent-volumes/#access-modes). |
 
 *) There is no special feature gate for this feature. It is enabled by turning on the corresponding features in Kubernetes.
