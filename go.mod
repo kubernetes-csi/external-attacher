@@ -8,7 +8,7 @@ require (
 	github.com/evanphx/json-patch v5.6.0+incompatible
 	github.com/golang/mock v1.6.0
 	github.com/golang/protobuf v1.5.2
-	github.com/kubernetes-csi/csi-lib-utils v0.11.0
+	github.com/kubernetes-csi/csi-lib-utils v0.12.0
 	github.com/kubernetes-csi/csi-test/v4 v4.4.0
 	google.golang.org/grpc v1.51.0
 	k8s.io/api v0.26.0
@@ -46,7 +46,7 @@ require (
 	github.com/prometheus/common v0.37.0 // indirect
 	github.com/prometheus/procfs v0.8.0 // indirect
 	github.com/spf13/pflag v1.0.5 // indirect
-	golang.org/x/net v0.3.1-0.20221206200815-1e63c2f08a10 // indirect
+	golang.org/x/net v0.4.0 // indirect
 	golang.org/x/oauth2 v0.2.0 // indirect
 	golang.org/x/sys v0.3.0 // indirect
 	golang.org/x/term v0.3.0 // indirect
