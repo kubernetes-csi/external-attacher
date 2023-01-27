@@ -76,6 +76,8 @@ var (
 
 	kubeAPIQPS   = flag.Float64("kube-api-qps", 5, "QPS to use while communicating with the kubernetes apiserver. Defaults to 5.0.")
 	kubeAPIBurst = flag.Int("kube-api-burst", 10, "Burst to use while communicating with the kubernetes apiserver. Defaults to 10.")
+
+	maxGRPCLogLength = flag.Int("max-grpc-log-length", -1, "The maximum amount of characters logged for every grpc responses. Defaults to no limit")
 )
 
 var (
@@ -127,6 +129,7 @@ func main() {
 	metricsManager := metrics.NewCSIMetricsManager("" /* driverName */)
 
 	// Connect to CSI.
+	connection.SetMaxGRPCLogLength(*maxGRPCLogLength)
 	csiConn, err := connection.Connect(*csiAddress, metricsManager, connection.OnConnectionLoss(connection.ExitOnConnectionLoss()))
 	if err != nil {
 		klog.Error(err.Error())
