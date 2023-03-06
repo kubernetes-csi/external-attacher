@@ -673,7 +673,7 @@ k8s.io/client-go/util/workqueue
 k8s.io/component-base/metrics
 k8s.io/component-base/metrics/prometheusextension
 k8s.io/component-base/version
-# k8s.io/csi-translation-lib v0.26.1
+# k8s.io/csi-translation-lib v0.26.2
 ## explicit; go 1.19
 k8s.io/csi-translation-lib
 k8s.io/csi-translation-lib/plugins
