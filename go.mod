@@ -1,6 +1,6 @@
 module github.com/kubernetes-csi/external-attacher
 
-go 1.19
+go 1.20
 
 require (
 	github.com/container-storage-interface/spec v1.8.0
@@ -11,10 +11,10 @@ require (
 	github.com/kubernetes-csi/csi-lib-utils v0.13.0
 	github.com/kubernetes-csi/csi-test/v4 v4.4.0
 	google.golang.org/grpc v1.54.0
-	k8s.io/api v0.27.0-rc.0
-	k8s.io/apimachinery v0.27.0-rc.0
-	k8s.io/client-go v0.27.0-rc.0
-	k8s.io/csi-translation-lib v0.27.0-rc.0
+	k8s.io/api v0.27.0
+	k8s.io/apimachinery v0.27.0
+	k8s.io/client-go v0.27.0
+	k8s.io/csi-translation-lib v0.27.0
 	k8s.io/klog/v2 v2.90.1
 )
 
