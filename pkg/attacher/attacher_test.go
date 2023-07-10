@@ -19,7 +19,6 @@ package attacher
 import (
 	"context"
 	"fmt"
-	"io/ioutil"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -55,7 +54,7 @@ func pbMatch(x interface{}) gomock.Matcher {
 }
 
 func tempDir(t *testing.T) string {
-	dir, err := ioutil.TempDir("", "external-attacher-test-")
+	dir, err := os.MkdirTemp("", "external-attacher-test-")
 	if err != nil {
 		t.Fatalf("Cannot create temporary directory: %s", err)
 	}
