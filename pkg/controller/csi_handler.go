@@ -744,7 +744,7 @@ func (h *csiHandler) getNodeID(driver string, nodeName string, va *storage.Volum
 		// example the node might be currently shut down. We don't want to block the controller unpublish in that scenario.
 		// We should treat missing driver in the same way as missing CSINode; attempt to use the node ID from the volume
 		// attachment.
-		err = errors.New(fmt.Sprintf("CSINode %s does not contain driver %s", nodeName, driver))
+		err = fmt.Errorf("CSINode %s does not contain driver %s", nodeName, driver)
 	}
 
 	// Can't get CSINode, check Volume Attachment.
