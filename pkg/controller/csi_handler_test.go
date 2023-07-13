@@ -1440,7 +1440,7 @@ func TestCSIHandlerReconcileVA(t *testing.T) {
 				pvWithFinalizer(),
 			},
 			listerResponse: map[string][]string{
-				testVolumeHandle: []string{testNodeID},
+				testVolumeHandle: {testNodeID},
 			},
 			expectedActions: []core.Action{
 				// Intentionally empty
@@ -1453,7 +1453,7 @@ func TestCSIHandlerReconcileVA(t *testing.T) {
 				pvWithFinalizer(),
 			},
 			listerResponse: map[string][]string{
-				testVolumeHandle: []string{testNodeID},
+				testVolumeHandle: {testNodeID},
 			},
 			expectedActions: []core.Action{},
 			expectedCSICalls: []csiCall{
@@ -1464,7 +1464,7 @@ func TestCSIHandlerReconcileVA(t *testing.T) {
 			name:           "no volume attachments but existing lister response results in no action",
 			initialObjects: []runtime.Object{},
 			listerResponse: map[string][]string{
-				testVolumeHandle: []string{testNodeID},
+				testVolumeHandle: {testNodeID},
 			},
 			expectedActions: []core.Action{},
 		},

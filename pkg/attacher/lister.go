@@ -26,13 +26,15 @@ import (
 )
 
 type CSIVolumeLister struct {
-	client csi.ControllerClient
+	client     csi.ControllerClient
+	maxEntries int32
 }
 
 // NewVolumeLister provides a new VolumeLister object.
-func NewVolumeLister(conn *grpc.ClientConn) *CSIVolumeLister {
+func NewVolumeLister(conn *grpc.ClientConn, maxEntries int) *CSIVolumeLister {
 	return &CSIVolumeLister{
-		client: csi.NewControllerClient(conn),
+		client:     csi.NewControllerClient(conn),
+		maxEntries: int32(maxEntries),
 	}
 }
 
@@ -43,6 +45,7 @@ func (a *CSIVolumeLister) ListVolumes(ctx context.Context) (map[string]([]string
 	for {
 		rsp, err := a.client.ListVolumes(ctx, &csi.ListVolumesRequest{
 			StartingToken: tok,
+			MaxEntries:    a.maxEntries,
 		})
 		if err != nil {
 			return nil, fmt.Errorf("failed to list volumes: %v", err)
