@@ -63,6 +63,8 @@ Note that the external-attacher does not scale with more replicas. Only one exte
 
 * `--worker-threads`: The number of goroutines for processing VolumeAttachments. 10 workers is used by default.
 
+* `--max-entries`: The max number of entries per page for processing ListVolumes. 0 means no limit and it is the default value.
+
 * `--retry-interval-start`: The exponential backoff for failures. See [CSI error and timeout handling](#csi-error-and-timeout-handling) for details. 1 second is used by default.
 
 * `--retry-interval-max`: The exponential backoff maximum value. See [CSI error and timeout handling](#csi-error-and-timeout-handling) for details. 5 minutes is used by default.

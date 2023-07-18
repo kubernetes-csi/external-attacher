@@ -56,6 +56,7 @@ var (
 	showVersion   = flag.Bool("version", false, "Show version.")
 	timeout       = flag.Duration("timeout", 15*time.Second, "Timeout for waiting for attaching or detaching the volume.")
 	workerThreads = flag.Uint("worker-threads", 10, "Number of attacher worker threads")
+	maxEntries    = flag.Int("max-entries", 0, "Max entries per each page in volume lister call, 0 means no limit.")
 
 	retryIntervalStart = flag.Duration("retry-interval-start", time.Second, "Initial retry interval of failed create volume or deletion. It doubles with each failure, up to retry-interval-max.")
 	retryIntervalMax   = flag.Duration("retry-interval-max", 5*time.Minute, "Maximum retry interval of failed create volume or deletion.")
@@ -211,7 +212,7 @@ func main() {
 			vaLister := factory.Storage().V1().VolumeAttachments().Lister()
 			csiNodeLister := factory.Storage().V1().CSINodes().Lister()
 			volAttacher := attacher.NewAttacher(csiConn)
-			CSIVolumeLister := attacher.NewVolumeLister(csiConn)
+			CSIVolumeLister := attacher.NewVolumeLister(csiConn, *maxEntries)
 			handler = controller.NewCSIHandler(
 				clientset,
 				csiAttacher,
