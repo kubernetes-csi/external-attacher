@@ -12,7 +12,7 @@ require (
 	github.com/kubernetes-csi/csi-test/v4 v4.4.0
 	google.golang.org/grpc v1.57.0
 	k8s.io/api v0.28.0-rc.0
-	k8s.io/apimachinery v0.28.0-rc.0
+	k8s.io/apimachinery v0.29.0-alpha.0
 	k8s.io/client-go v0.28.0-rc.0
 	k8s.io/csi-translation-lib v0.28.0-rc.0
 	k8s.io/klog/v2 v2.100.1
