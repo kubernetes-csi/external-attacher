@@ -1,9 +1,19 @@
 version: 2
+enable-beta-ecosystems: true
 updates:
 - package-ecosystem: gomod
   directory: "/"
   schedule:
-    interval: daily
+    interval: weekly
+  groups:
+    golang-dependencies:
+      patterns:
+        - "github.com/golang*"
+        - "google.golang.org*"
+    k8s-dependencies:
+      patterns:
+        - "k8s.io*"
+        - "sigs.k8s.io*" 
   labels:
     - "area/dependency"
     - "release-note-none"
