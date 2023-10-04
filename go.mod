@@ -11,9 +11,9 @@ require (
 	github.com/kubernetes-csi/csi-lib-utils v0.11.0
 	github.com/kubernetes-csi/csi-test/v4 v4.0.2
 	google.golang.org/grpc v1.51.0
-	k8s.io/api v0.24.17
-	k8s.io/apimachinery v0.24.17
-	k8s.io/client-go v0.24.17
+	k8s.io/api v0.24.8
+	k8s.io/apimachinery v0.24.8
+	k8s.io/client-go v0.24.8
 	k8s.io/csi-translation-lib v0.24.8
 	k8s.io/klog/v2 v2.80.1
 )
@@ -69,4 +69,4 @@ require (
 	sigs.k8s.io/yaml v1.3.0 // indirect
 )
 
-replace golang.org/x/net => golang.org/x/net v0.4.0
+replace golang.org/x/net => golang.org/x/net v0.8.0
