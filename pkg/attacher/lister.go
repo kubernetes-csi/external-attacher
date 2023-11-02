@@ -52,7 +52,11 @@ func (a *CSIVolumeLister) ListVolumes(ctx context.Context) (map[string]([]string
 		}
 
 		for _, e := range rsp.Entries {
-			p[e.GetVolume().VolumeId] = e.Status.PublishedNodeIds
+			if e.GetVolume() == nil || e.GetStatus() == nil {
+				continue
+			}
+
+			p[e.GetVolume().VolumeId] = e.GetStatus().GetPublishedNodeIds()
 		}
 		tok = rsp.NextToken
 
