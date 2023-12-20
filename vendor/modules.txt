@@ -306,7 +306,7 @@ gopkg.in/yaml.v2
 # gopkg.in/yaml.v3 v3.0.1
 ## explicit
 gopkg.in/yaml.v3
-# k8s.io/api v0.29.0-rc.1 => k8s.io/api v0.29.0-rc.1
+# k8s.io/api v0.29.0 => k8s.io/api v0.29.0
 ## explicit; go 1.21
 k8s.io/api/admissionregistration/v1
 k8s.io/api/admissionregistration/v1alpha1
@@ -360,7 +360,7 @@ k8s.io/api/scheduling/v1beta1
 k8s.io/api/storage/v1
 k8s.io/api/storage/v1alpha1
 k8s.io/api/storage/v1beta1
-# k8s.io/apimachinery v0.29.0-rc.1 => k8s.io/apimachinery v0.29.0-rc.1
+# k8s.io/apimachinery v0.29.0 => k8s.io/apimachinery v0.29.0
 ## explicit; go 1.21
 k8s.io/apimachinery/pkg/api/equality
 k8s.io/apimachinery/pkg/api/errors
@@ -410,7 +410,7 @@ k8s.io/apimachinery/pkg/version
 k8s.io/apimachinery/pkg/watch
 k8s.io/apimachinery/third_party/forked/golang/json
 k8s.io/apimachinery/third_party/forked/golang/reflect
-# k8s.io/client-go v0.29.0-rc.1 => k8s.io/client-go v0.29.0-rc.1
+# k8s.io/client-go v0.29.0 => k8s.io/client-go v0.29.0
 ## explicit; go 1.21
 k8s.io/client-go/applyconfigurations/admissionregistration/v1
 k8s.io/client-go/applyconfigurations/admissionregistration/v1alpha1
@@ -713,12 +713,12 @@ k8s.io/client-go/util/flowcontrol
 k8s.io/client-go/util/homedir
 k8s.io/client-go/util/keyutil
 k8s.io/client-go/util/workqueue
-# k8s.io/component-base v0.28.0 => k8s.io/component-base v0.29.0-rc.1
+# k8s.io/component-base v0.28.0 => k8s.io/component-base v0.29.0
 ## explicit; go 1.21
 k8s.io/component-base/metrics
 k8s.io/component-base/metrics/prometheusextension
 k8s.io/component-base/version
-# k8s.io/csi-translation-lib v0.28.4 => k8s.io/csi-translation-lib v0.29.0-rc.1
+# k8s.io/csi-translation-lib v0.29.0 => k8s.io/csi-translation-lib v0.29.0
 ## explicit; go 1.21
 k8s.io/csi-translation-lib
 k8s.io/csi-translation-lib/plugins
@@ -768,8 +768,8 @@ sigs.k8s.io/structured-merge-diff/v4/value
 # sigs.k8s.io/yaml v1.3.0
 ## explicit; go 1.12
 sigs.k8s.io/yaml
-# k8s.io/api => k8s.io/api v0.29.0-rc.1
-# k8s.io/apimachinery => k8s.io/apimachinery v0.29.0-rc.1
-# k8s.io/client-go => k8s.io/client-go v0.29.0-rc.1
-# k8s.io/component-base => k8s.io/component-base v0.29.0-rc.1
-# k8s.io/csi-translation-lib => k8s.io/csi-translation-lib v0.29.0-rc.1
+# k8s.io/api => k8s.io/api v0.29.0
+# k8s.io/apimachinery => k8s.io/apimachinery v0.29.0
+# k8s.io/client-go => k8s.io/client-go v0.29.0
+# k8s.io/component-base => k8s.io/component-base v0.29.0
+# k8s.io/csi-translation-lib => k8s.io/csi-translation-lib v0.29.0
