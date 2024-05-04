@@ -38,6 +38,7 @@ import (
 	core "k8s.io/client-go/testing"
 	csitranslator "k8s.io/csi-translation-lib"
 	"k8s.io/klog/v2"
+	_ "k8s.io/klog/v2/ktesting/init"
 )
 
 const (
@@ -262,7 +263,7 @@ func secret() *v1.Secret {
 func patch(original, new interface{}) []byte {
 	patch, err := createMergePatch(original, new)
 	if err != nil {
-		klog.Fatalf("Failed to create patch %+v", err)
+		klog.Background().Error(err, "Failed to create patch")
 		return nil
 	}
 	return patch

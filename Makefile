@@ -17,3 +17,8 @@ all: build
 
 include release-tools/build.make
 
+# Check contextual logging.
+.PHONY: logcheck
+test: logcheck
+logcheck:
+	hack/verify-logcheck.sh
