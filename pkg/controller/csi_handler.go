@@ -189,7 +189,7 @@ func (h *csiHandler) ReconcileVA(ctx context.Context) error {
 		if attachedStatus != found {
 			logger.Error(
 				nil,
-				"VolumeAttachment for volume has attached status but actual state. Adding back to VolumeAttachment queue for forced reprocessing",
+				"VolumeAttachment attached status and actual state do not match. Adding back to VolumeAttachment queue for forced reprocessing",
 				"VolumeAttachment", va.Name,
 				"volumeHandle", volumeHandle,
 				"attachedStatus", attachedStatus,
