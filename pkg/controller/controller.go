@@ -209,6 +209,7 @@ func (ctrl *CSIAttachController) syncVA(ctx context.Context) {
 
 	vaName := key.(string)
 	logger := klog.LoggerWithValues(klog.FromContext(ctx), "VolumeAttachment", vaName)
+	ctx = klog.NewContext(ctx, logger)
 	logger.V(4).Info("Started VolumeAttachment processing")
 
 	// get VolumeAttachment to process
@@ -261,6 +262,7 @@ func (ctrl *CSIAttachController) syncPV(ctx context.Context) {
 
 	pvName := key.(string)
 	logger := klog.LoggerWithValues(klog.FromContext(ctx), "PersistentVolume", pvName)
+	ctx = klog.NewContext(ctx, logger)
 	logger.V(4).Info("Started PersistentVolume processing")
 
 	// get PV to process
