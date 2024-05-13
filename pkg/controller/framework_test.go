@@ -39,6 +39,8 @@ import (
 	core "k8s.io/client-go/testing"
 	"k8s.io/client-go/util/workqueue"
 	"k8s.io/klog/v2"
+	"k8s.io/klog/v2/ktesting"
+	_ "k8s.io/klog/v2/ktesting/init"
 )
 
 // This is an unit test framework. It is heavily inspired by serviceaccount
@@ -106,7 +108,10 @@ type handlerFactory func(client kubernetes.Interface, informerFactory informers.
 
 func runTests(t *testing.T, handlerFactory handlerFactory, tests []testCase) {
 	for _, test := range tests {
-		klog.Infof("Test %q: started", test.name)
+		logger, ctx := ktesting.NewTestContext(t)
+		logger = klog.LoggerWithValues(logger, "test", test.name)
+		ctx = klog.NewContext(ctx, logger)
+		logger.Info("Starting test")
 		objs := test.initialObjects
 		if test.addedVA != nil {
 			objs = append(objs, test.addedVA)
@@ -119,11 +124,9 @@ func runTests(t *testing.T, handlerFactory handlerFactory, tests []testCase) {
 		}
 
 		coreObjs := []runtime.Object{}
-		csiObjs := []runtime.Object{}
 		for _, obj := range objs {
 			switch obj.(type) {
 			case *storage.CSINode:
-				csiObjs = append(csiObjs, obj)
 			default:
 				coreObjs = append(coreObjs, obj)
 			}
@@ -160,10 +163,10 @@ func runTests(t *testing.T, handlerFactory handlerFactory, tests []testCase) {
 			if action.GetVerb() == "update" {
 				switch action.GetResource().Resource {
 				case "volumeattachments":
-					klog.V(5).Infof("Test reactor: updated VA")
+					logger.V(5).Info("Test reactor: updated VA")
 					vaInformer.Informer().GetStore().Update(action.(core.UpdateAction).GetObject())
 				case "persistentvolumes":
-					klog.V(5).Infof("Test reactor: updated PV")
+					logger.V(5).Info("Test reactor: updated PV")
 					pvInformer.Informer().GetStore().Update(action.(core.UpdateAction).GetObject())
 				default:
 					t.Errorf("Unknown update resource: %s", action.GetResource())
@@ -180,14 +183,14 @@ func runTests(t *testing.T, handlerFactory handlerFactory, tests []testCase) {
 		lister := &fakeLister{t: t, publishedNodes: test.listerResponse}
 		csiConnection := &fakeCSIConnection{t: t, calls: test.expectedCSICalls, lister: lister}
 		handler := handlerFactory(client, informers, csiConnection, lister)
-		ctrl := NewCSIAttachController(client, testAttacherName, handler, vaInformer, pvInformer, workqueue.DefaultControllerRateLimiter(), workqueue.DefaultControllerRateLimiter(), test.listerResponse != nil, 1*time.Minute)
+		ctrl := NewCSIAttachController(logger, client, testAttacherName, handler, vaInformer, pvInformer, workqueue.DefaultControllerRateLimiter(), workqueue.DefaultControllerRateLimiter(), test.listerResponse != nil, 1*time.Minute)
 
 		// Start the test by enqueueing the right event
 		if test.addedVA != nil {
 			ctrl.vaAdded(test.addedVA)
 		}
 		if test.updatedVA != nil {
-			ctrl.vaUpdated(test.updatedVA, test.updatedVA)
+			ctrl.vaUpdatedFunc(logger)(test.updatedVA, test.updatedVA)
 		}
 		if test.deletedVA != nil {
 			ctrl.vaDeleted(test.deletedVA)
@@ -205,12 +208,12 @@ func runTests(t *testing.T, handlerFactory handlerFactory, tests []testCase) {
 				break
 			}
 			if ctrl.vaQueue.Len() > 0 {
-				klog.V(5).Infof("Test %q: %d events in VA queue, processing one", test.name, ctrl.vaQueue.Len())
-				ctrl.syncVA()
+				logger.V(5).Info("VA queue, processing one", "queueLength", ctrl.vaQueue.Len())
+				ctrl.syncVA(ctx)
 			}
 			if ctrl.pvQueue.Len() > 0 {
-				klog.V(5).Infof("Test %q: %d events in PV queue, processing one", test.name, ctrl.vaQueue.Len())
-				ctrl.syncPV()
+				logger.V(5).Info("PV queue, processing one", "queueLength", ctrl.pvQueue.Len())
+				ctrl.syncPV(ctx)
 			}
 			if ctrl.vaQueue.Len() > 0 || ctrl.pvQueue.Len() > 0 {
 				// There is still some work in the queue, process it now
@@ -218,7 +221,7 @@ func runTests(t *testing.T, handlerFactory handlerFactory, tests []testCase) {
 			}
 			if test.listerResponse != nil {
 				// Reconcile VA with the actual state
-				err := ctrl.handler.ReconcileVA()
+				err := ctrl.handler.ReconcileVA(ctx)
 				if err != nil {
 					t.Errorf("Failed to reconcile Volume Attachment objects: %v", err)
 				}
@@ -230,7 +233,7 @@ func runTests(t *testing.T, handlerFactory handlerFactory, tests []testCase) {
 			currentActionCount := len(client.Actions())
 			if currentActionCount < len(test.expectedActions) {
 				if lastReportedActionCount < currentActionCount {
-					klog.V(5).Infof("Test %q: got %d actions out of %d, waiting for the rest", test.name, currentActionCount, len(test.expectedActions))
+					logger.V(5).Info("Waiting for the rest", "currentActionCount", currentActionCount, "expectedActionsCount", len(test.expectedActions))
 					lastReportedActionCount = currentActionCount
 				}
 				// The test expected more to happen, wait for them
@@ -264,6 +267,9 @@ func runTests(t *testing.T, handlerFactory handlerFactory, tests []testCase) {
 				patch := patchAction.GetPatch()
 				var va storage.VolumeAttachment
 				err := json.Unmarshal(patch, &va)
+				if err != nil {
+					t.Errorf("Failed to unmarshal: %v", err)
+				}
 				if va.Status.AttachError != nil {
 					va.Status.AttachError.Time = metav1.Time{}
 				}
@@ -307,7 +313,7 @@ func runTests(t *testing.T, handlerFactory handlerFactory, tests []testCase) {
 				t.Logf("   %+v", a)
 			}
 		}
-		klog.Infof("Test %q: finished \n\n", test.name)
+		logger.Info("Test was finished")
 	}
 }
 
@@ -381,7 +387,7 @@ func vaWithNoPVReferenceNorInlineVolumeSpec(va *storage.VolumeAttachment) *stora
 	return va
 }
 
-func vaWithInvalidDriver(va *storage.VolumeAttachment) *storage.VolumeAttachment {
+func vaWithInvalidDriver(_ *storage.VolumeAttachment) *storage.VolumeAttachment {
 	return createVolumeAttachment("unknownDriver", testPVName, testNodeName, false, "", nil)
 }
 

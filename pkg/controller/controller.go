@@ -17,7 +17,7 @@ limitations under the License.
 package controller
 
 import (
-	"fmt"
+	"context"
 	"time"
 
 	v1 "k8s.io/api/core/v1"
@@ -29,12 +29,9 @@ import (
 	coreinformers "k8s.io/client-go/informers/core/v1"
 	storageinformers "k8s.io/client-go/informers/storage/v1"
 	"k8s.io/client-go/kubernetes"
-	"k8s.io/client-go/kubernetes/scheme"
-	corev1 "k8s.io/client-go/kubernetes/typed/core/v1"
 	corelisters "k8s.io/client-go/listers/core/v1"
 	storagelisters "k8s.io/client-go/listers/storage/v1"
 	"k8s.io/client-go/tools/cache"
-	"k8s.io/client-go/tools/record"
 	"k8s.io/client-go/util/workqueue"
 	csitrans "k8s.io/csi-translation-lib"
 	"k8s.io/klog/v2"
@@ -46,12 +43,11 @@ const (
 
 // CSIAttachController is a controller that attaches / detaches CSI volumes using provided Handler interface
 type CSIAttachController struct {
-	client        kubernetes.Interface
-	attacherName  string
-	handler       Handler
-	eventRecorder record.EventRecorder
-	vaQueue       workqueue.RateLimitingInterface
-	pvQueue       workqueue.RateLimitingInterface
+	client       kubernetes.Interface
+	attacherName string
+	handler      Handler
+	vaQueue      workqueue.RateLimitingInterface
+	pvQueue      workqueue.RateLimitingInterface
 
 	vaLister       storagelisters.VolumeAttachmentLister
 	vaListerSynced cache.InformerSynced
@@ -61,8 +57,6 @@ type CSIAttachController struct {
 	shouldReconcileVolumeAttachment bool
 	reconcileSync                   time.Duration
 	translator                      AttacherCSITranslator
-
-	defaultFSType string
 }
 
 // Handler is responsible for handling VolumeAttachment events from informer.
@@ -76,25 +70,29 @@ type Handler interface {
 	// VolumeAttachment either as forgotten (resets exponential backoff) or
 	// re-queue it into the vaQueue to process it after exponential
 	// backoff.
-	SyncNewOrUpdatedVolumeAttachment(va *storage.VolumeAttachment)
+	SyncNewOrUpdatedVolumeAttachment(ctx context.Context, va *storage.VolumeAttachment)
 
-	SyncNewOrUpdatedPersistentVolume(pv *v1.PersistentVolume)
+	SyncNewOrUpdatedPersistentVolume(ctx context.Context, pv *v1.PersistentVolume)
 
-	ReconcileVA() error
+	ReconcileVA(ctx context.Context) error
 }
 
 // NewCSIAttachController returns a new *CSIAttachController
-func NewCSIAttachController(client kubernetes.Interface, attacherName string, handler Handler, volumeAttachmentInformer storageinformers.VolumeAttachmentInformer, pvInformer coreinformers.PersistentVolumeInformer, vaRateLimiter, paRateLimiter workqueue.RateLimiter, shouldReconcileVolumeAttachment bool, reconcileSync time.Duration) *CSIAttachController {
-	broadcaster := record.NewBroadcaster()
-	broadcaster.StartRecordingToSink(&corev1.EventSinkImpl{Interface: client.CoreV1().Events(v1.NamespaceAll)})
-	var eventRecorder record.EventRecorder
-	eventRecorder = broadcaster.NewRecorder(scheme.Scheme, v1.EventSource{Component: fmt.Sprintf("csi-attacher %s", attacherName)})
-
+func NewCSIAttachController(
+	logger klog.Logger,
+	client kubernetes.Interface,
+	attacherName string,
+	handler Handler,
+	volumeAttachmentInformer storageinformers.VolumeAttachmentInformer,
+	pvInformer coreinformers.PersistentVolumeInformer,
+	vaRateLimiter, paRateLimiter workqueue.RateLimiter,
+	shouldReconcileVolumeAttachment bool,
+	reconcileSync time.Duration,
+) *CSIAttachController {
 	ctrl := &CSIAttachController{
 		client:                          client,
 		attacherName:                    attacherName,
 		handler:                         handler,
-		eventRecorder:                   eventRecorder,
 		vaQueue:                         workqueue.NewNamedRateLimitingQueue(vaRateLimiter, "csi-attacher-va"),
 		pvQueue:                         workqueue.NewNamedRateLimitingQueue(paRateLimiter, "csi-attacher-pv"),
 		shouldReconcileVolumeAttachment: shouldReconcileVolumeAttachment,
@@ -104,7 +102,7 @@ func NewCSIAttachController(client kubernetes.Interface, attacherName string, ha
 
 	volumeAttachmentInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
 		AddFunc:    ctrl.vaAdded,
-		UpdateFunc: ctrl.vaUpdated,
+		UpdateFunc: ctrl.vaUpdatedFunc(logger),
 		DeleteFunc: ctrl.vaDeleted,
 	})
 	ctrl.vaLister = volumeAttachmentInformer.Lister()
@@ -123,32 +121,33 @@ func NewCSIAttachController(client kubernetes.Interface, attacherName string, ha
 }
 
 // Run starts CSI attacher and listens on channel events
-func (ctrl *CSIAttachController) Run(workers int, stopCh <-chan struct{}) {
+func (ctrl *CSIAttachController) Run(ctx context.Context, workers int) {
 	defer ctrl.vaQueue.ShutDown()
 	defer ctrl.pvQueue.ShutDown()
 
-	klog.Infof("Starting CSI attacher")
-	defer klog.Infof("Shutting CSI attacher")
+	logger := klog.FromContext(ctx)
+	logger.Info("Starting CSI attacher")
+	defer logger.Info("Shutting CSI attacher")
 
-	if !cache.WaitForCacheSync(stopCh, ctrl.vaListerSynced, ctrl.pvListerSynced) {
-		klog.Errorf("Cannot sync caches")
+	if !cache.WaitForCacheSync(ctx.Done(), ctrl.vaListerSynced, ctrl.pvListerSynced) {
+		logger.Error(nil, "Cannot sync caches")
 		return
 	}
 	for i := 0; i < workers; i++ {
-		go wait.Until(ctrl.syncVA, 0, stopCh)
-		go wait.Until(ctrl.syncPV, 0, stopCh)
+		go wait.UntilWithContext(ctx, ctrl.syncVA, 0)
+		go wait.UntilWithContext(ctx, ctrl.syncPV, 0)
 	}
 
 	if ctrl.shouldReconcileVolumeAttachment {
-		go wait.Until(func() {
-			err := ctrl.handler.ReconcileVA()
+		go wait.UntilWithContext(ctx, func(ctx context.Context) {
+			err := ctrl.handler.ReconcileVA(ctx)
 			if err != nil {
-				klog.Errorf("Failed to reconcile volume attachments: %v", err)
+				logger.Error(err, "Failed to reconcile VolumeAttachment")
 			}
-		}, ctrl.reconcileSync, stopCh)
+		}, ctrl.reconcileSync)
 	}
 
-	<-stopCh
+	<-ctx.Done()
 }
 
 // vaAdded reacts to a VolumeAttachment creation
@@ -157,14 +156,16 @@ func (ctrl *CSIAttachController) vaAdded(obj interface{}) {
 	ctrl.vaQueue.Add(va.Name)
 }
 
-// vaUpdated reacts to a VolumeAttachment update
-func (ctrl *CSIAttachController) vaUpdated(old, new interface{}) {
-	oldVA := old.(*storage.VolumeAttachment)
-	newVA := new.(*storage.VolumeAttachment)
-	if shouldEnqueueVAChange(oldVA, newVA) {
-		ctrl.vaQueue.Add(newVA.Name)
-	} else {
-		klog.V(3).Infof("Ignoring VolumeAttachment %q change", newVA.Name)
+// vaUpdated return a function that reacts to a VolumeAttachment update
+func (ctrl *CSIAttachController) vaUpdatedFunc(logger klog.Logger) func(old, new interface{}) {
+	return func(old, new interface{}) {
+		oldVA := old.(*storage.VolumeAttachment)
+		newVA := new.(*storage.VolumeAttachment)
+		if shouldEnqueueVAChange(oldVA, newVA) {
+			ctrl.vaQueue.Add(newVA.Name)
+		} else {
+			logger.V(3).Info("Ignoring VolumeAttachment change", "VolumeAttachment", newVA.Name)
+		}
 	}
 }
 
@@ -199,7 +200,7 @@ func (ctrl *CSIAttachController) pvUpdated(old, new interface{}) {
 }
 
 // syncVA deals with one key off the queue.  It returns false when it's time to quit.
-func (ctrl *CSIAttachController) syncVA() {
+func (ctrl *CSIAttachController) syncVA(ctx context.Context) {
 	key, quit := ctrl.vaQueue.Get()
 	if quit {
 		return
@@ -207,25 +208,27 @@ func (ctrl *CSIAttachController) syncVA() {
 	defer ctrl.vaQueue.Done(key)
 
 	vaName := key.(string)
-	klog.V(4).Infof("Started VA processing %q", vaName)
+	logger := klog.LoggerWithValues(klog.FromContext(ctx), "VolumeAttachment", vaName)
+	ctx = klog.NewContext(ctx, logger)
+	logger.V(4).Info("Started VolumeAttachment processing")
 
 	// get VolumeAttachment to process
 	va, err := ctrl.vaLister.Get(vaName)
 	if err != nil {
 		if apierrs.IsNotFound(err) {
 			// VolumeAttachment was deleted in the meantime, ignore.
-			klog.V(3).Infof("VA %q deleted, ignoring", vaName)
+			logger.V(3).Info("VolumeAttachment was deleted, ignoring")
 			return
 		}
-		klog.Errorf("Error getting VolumeAttachment %q: %v", vaName, err)
+		logger.Error(err, "Error getting VolumeAttachment")
 		ctrl.vaQueue.AddRateLimited(vaName)
 		return
 	}
 	if va.Spec.Attacher != ctrl.attacherName {
-		klog.V(4).Infof("Skipping VolumeAttachment %s for attacher %s", va.Name, va.Spec.Attacher)
+		logger.V(4).Info("Skipping VolumeAttachment for attacher", "attacher", va.Spec.Attacher)
 		return
 	}
-	ctrl.handler.SyncNewOrUpdatedVolumeAttachment(va)
+	ctrl.handler.SyncNewOrUpdatedVolumeAttachment(ctx, va)
 }
 
 func (ctrl *CSIAttachController) processFinalizers(pv *v1.PersistentVolume) bool {
@@ -250,7 +253,7 @@ func (ctrl *CSIAttachController) processFinalizers(pv *v1.PersistentVolume) bool
 }
 
 // syncPV deals with one key off the queue.  It returns false when it's time to quit.
-func (ctrl *CSIAttachController) syncPV() {
+func (ctrl *CSIAttachController) syncPV(ctx context.Context) {
 	key, quit := ctrl.pvQueue.Get()
 	if quit {
 		return
@@ -258,21 +261,23 @@ func (ctrl *CSIAttachController) syncPV() {
 	defer ctrl.pvQueue.Done(key)
 
 	pvName := key.(string)
-	klog.V(4).Infof("Started PV processing %q", pvName)
+	logger := klog.LoggerWithValues(klog.FromContext(ctx), "PersistentVolume", pvName)
+	ctx = klog.NewContext(ctx, logger)
+	logger.V(4).Info("Started PersistentVolume processing")
 
 	// get PV to process
 	pv, err := ctrl.pvLister.Get(pvName)
 	if err != nil {
 		if apierrs.IsNotFound(err) {
 			// PV was deleted in the meantime, ignore.
-			klog.V(3).Infof("PV %q deleted, ignoring", pvName)
+			logger.V(3).Info("PersistentVolume was deleted, ignoring")
 			return
 		}
-		klog.Errorf("Error getting PersistentVolume %q: %v", pvName, err)
+		logger.Error(err, "Error getting PersistentVolume")
 		ctrl.pvQueue.AddRateLimited(pvName)
 		return
 	}
-	ctrl.handler.SyncNewOrUpdatedPersistentVolume(pv)
+	ctrl.handler.SyncNewOrUpdatedPersistentVolume(ctx, pv)
 }
 
 // shouldEnqueueVAChange checks if a changed VolumeAttachment should be enqueued.

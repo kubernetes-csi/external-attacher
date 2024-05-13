@@ -34,8 +34,9 @@ import (
 	"k8s.io/klog/v2"
 )
 
-func markAsAttached(client kubernetes.Interface, va *storage.VolumeAttachment, metadata map[string]string) (*storage.VolumeAttachment, error) {
-	klog.V(4).Infof("Marking as attached %q", va.Name)
+func markAsAttached(ctx context.Context, client kubernetes.Interface, va *storage.VolumeAttachment, metadata map[string]string) (*storage.VolumeAttachment, error) {
+	logger := klog.FromContext(ctx)
+	logger.V(4).Info("Marking as attached")
 	clone := va.DeepCopy()
 	clone.Status.Attached = true
 	clone.Status.AttachmentMetadata = metadata
@@ -44,16 +45,16 @@ func markAsAttached(client kubernetes.Interface, va *storage.VolumeAttachment, m
 	if err != nil {
 		return va, err
 	}
-	newVA, err := client.StorageV1().VolumeAttachments().Patch(context.TODO(), va.Name, types.MergePatchType, patch,
+	newVA, err := client.StorageV1().VolumeAttachments().Patch(ctx, va.Name, types.MergePatchType, patch,
 		metav1.PatchOptions{}, "status")
 	if err != nil {
 		return va, err
 	}
-	klog.V(4).Infof("Marked as attached %q", va.Name)
+	logger.V(4).Info("Marked as attached")
 	return newVA, nil
 }
 
-func markAsDetached(client kubernetes.Interface, va *storage.VolumeAttachment) (*storage.VolumeAttachment, error) {
+func markAsDetached(ctx context.Context, client kubernetes.Interface, va *storage.VolumeAttachment) (*storage.VolumeAttachment, error) {
 	finalizerName := GetFinalizerName(va.Spec.Attacher)
 
 	// Prepare new array of finalizers
@@ -71,13 +72,14 @@ func markAsDetached(client kubernetes.Interface, va *storage.VolumeAttachment) (
 		newFinalizers = nil
 	}
 
+	logger := klog.FromContext(ctx)
 	if !found && !va.Status.Attached {
 		// Finalizer was not present, nothing to update
-		klog.V(4).Infof("Already fully detached %q", va.Name)
+		logger.V(4).Info("Already fully detached")
 		return va, nil
 	}
 
-	klog.V(4).Infof("Marking as detached %q", va.Name)
+	logger.V(4).Info("Marking as detached")
 	clone := va.DeepCopy()
 	clone.Status.Attached = false
 	clone.Status.DetachError = nil
@@ -86,8 +88,7 @@ func markAsDetached(client kubernetes.Interface, va *storage.VolumeAttachment) (
 	if err != nil {
 		return va, err
 	}
-	newVA, err := client.StorageV1().VolumeAttachments().Patch(context.TODO(), va.Name, types.MergePatchType, patch,
-		metav1.PatchOptions{}, "status")
+	newVA, err := client.StorageV1().VolumeAttachments().Patch(ctx, va.Name, types.MergePatchType, patch, metav1.PatchOptions{}, "status")
 	if err != nil {
 		return va, err
 	}
@@ -99,11 +100,11 @@ func markAsDetached(client kubernetes.Interface, va *storage.VolumeAttachment) (
 	if err != nil {
 		return newVA, err
 	}
-	newVA, err = client.StorageV1().VolumeAttachments().Patch(context.TODO(), newVA.Name, types.MergePatchType, patch, metav1.PatchOptions{}, "")
+	newVA, err = client.StorageV1().VolumeAttachments().Patch(ctx, newVA.Name, types.MergePatchType, patch, metav1.PatchOptions{}, "")
 	if err != nil {
 		return newVA, err
 	}
-	klog.V(4).Infof("Finalizer removed from %q", va.Name)
+	logger.V(4).Info("Finalizer removed")
 	return newVA, nil
 }
 
@@ -139,7 +140,7 @@ func GetNodeIDFromCSINode(driver string, csiNode *storage.CSINode) (string, bool
 
 // GetVolumeCapabilities returns a VolumeCapability from the PV spec. Which access mode will be set depends if the driver supports the
 // SINGLE_NODE_MULTI_WRITER capability.
-func GetVolumeCapabilities(pvSpec *v1.PersistentVolumeSpec, singleNodeMultiWriterCapable bool, defaultFSType string) (*csi.VolumeCapability, error) {
+func GetVolumeCapabilities(logger klog.Logger, pvSpec *v1.PersistentVolumeSpec, singleNodeMultiWriterCapable bool, defaultFSType string) (*csi.VolumeCapability, error) {
 	if pvSpec.CSI == nil {
 		return nil, errors.New("CSI volume source was nil")
 	}
@@ -157,7 +158,7 @@ func GetVolumeCapabilities(pvSpec *v1.PersistentVolumeSpec, singleNodeMultiWrite
 		fsType := pvSpec.CSI.FSType
 		if len(fsType) == 0 {
 			fsType = defaultFSType
-			klog.V(4).Infof("Filesystem type not found in PV spec. Using defaultFSType: %v.", fsType)
+			logger.V(4).Info("Filesystem type not found in PV spec. Using defaultFSType", "defaultFSType", fsType)
 		}
 
 		cap = &csi.VolumeCapability{

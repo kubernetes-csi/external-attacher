@@ -17,6 +17,8 @@ limitations under the License.
 package controller
 
 import (
+	"context"
+
 	v1 "k8s.io/api/core/v1"
 	storage "k8s.io/api/storage/v1"
 	"k8s.io/client-go/kubernetes"
@@ -45,24 +47,25 @@ func (h *trivialHandler) Init(vaQueue workqueue.RateLimitingInterface, pvQueue w
 	h.pvQueue = pvQueue
 }
 
-func (h *trivialHandler) ReconcileVA() error {
+func (h *trivialHandler) ReconcileVA(ctx context.Context) error {
 	return nil
 }
 
-func (h *trivialHandler) SyncNewOrUpdatedVolumeAttachment(va *storage.VolumeAttachment) {
-	klog.V(4).Infof("Trivial sync[%s] started", va.Name)
+func (h *trivialHandler) SyncNewOrUpdatedVolumeAttachment(ctx context.Context, va *storage.VolumeAttachment) {
+	logger := klog.FromContext(ctx)
+	ctx = klog.NewContext(ctx, logger)
+	logger.V(4).Info("Trivial sync started")
 	if !va.Status.Attached {
 		// mark as attached
-		if _, err := markAsAttached(h.client, va, nil); err != nil {
-			klog.Warningf("Error saving VolumeAttachment %s as attached: %s", va.Name, err)
+		if _, err := markAsAttached(ctx, h.client, va, nil); err != nil {
+			logger.Error(err, "Error saving VolumeAttachment as attached")
 			h.vaQueue.AddRateLimited(va.Name)
 			return
 		}
-		klog.V(2).Infof("Marked VolumeAttachment %s as attached", va.Name)
+		logger.V(2).Info("Marked VolumeAttachment as attached")
 	}
 	h.vaQueue.Forget(va.Name)
 }
 
-func (h *trivialHandler) SyncNewOrUpdatedPersistentVolume(pv *v1.PersistentVolume) {
-	return
+func (h *trivialHandler) SyncNewOrUpdatedPersistentVolume(ctx context.Context, pv *v1.PersistentVolume) {
 }

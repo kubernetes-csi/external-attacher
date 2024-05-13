@@ -22,6 +22,8 @@ import (
 
 	"github.com/container-storage-interface/spec/lib/go/csi"
 	v1 "k8s.io/api/core/v1"
+	"k8s.io/klog/v2/ktesting"
+	_ "k8s.io/klog/v2/ktesting/init"
 )
 
 func createBlockCapability(mode csi.VolumeCapability_AccessMode_Mode) *csi.VolumeCapability {
@@ -50,6 +52,7 @@ func createMountCapability(fsType string, mode csi.VolumeCapability_AccessMode_M
 }
 
 func TestGetVolumeCapabilities(t *testing.T) {
+	logger, _ := ktesting.NewTestContext(t)
 	blockVolumeMode := v1.PersistentVolumeMode(v1.PersistentVolumeBlock)
 	filesystemVolumeMode := v1.PersistentVolumeMode(v1.PersistentVolumeFilesystem)
 	defaultFSType := "ext4"
@@ -207,7 +210,7 @@ func TestGetVolumeCapabilities(t *testing.T) {
 				},
 			},
 		}
-		cap, err := GetVolumeCapabilities(&pv.Spec, test.supportsSingleNodeMultiWriter, defaultFSType)
+		cap, err := GetVolumeCapabilities(logger, &pv.Spec, test.supportsSingleNodeMultiWriter, defaultFSType)
 
 		if err == nil && test.expectError {
 			t.Errorf("test %s: expected error, got none", test.name)
