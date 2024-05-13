@@ -76,7 +76,8 @@ func createMockServer(t *testing.T, tmpdir string) (*gomock.Controller, *driver.
 	// Create a client connection to it
 	addr := drv.Address()
 	t.Logf("adds: %s", addr)
-	csiConn, err := connection.Connect(addr, metricsManager)
+	ctx := context.Background()
+	csiConn, err := connection.Connect(ctx, addr, metricsManager)
 	if err != nil {
 		return nil, nil, nil, nil, nil, err
 	}

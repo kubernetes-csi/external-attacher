@@ -143,20 +143,21 @@ func main() {
 
 	// Connect to CSI.
 	connection.SetMaxGRPCLogLength(*maxGRPCLogLength)
-	csiConn, err := connection.Connect(*csiAddress, metricsManager, connection.OnConnectionLoss(connection.ExitOnConnectionLoss()))
+	ctx := context.Background()
+	csiConn, err := connection.Connect(ctx, *csiAddress, metricsManager, connection.OnConnectionLoss(connection.ExitOnConnectionLoss()))
 	if err != nil {
 		logger.Error(err, "Failed to connect to the CSI driver", "csiAddress", *csiAddress)
 		klog.FlushAndExit(klog.ExitFlushTimeout, 1)
 	}
 
-	err = rpc.ProbeForever(csiConn, *timeout)
+	err = rpc.ProbeForever(ctx, csiConn, *timeout)
 	if err != nil {
 		logger.Error(err, "Failed to probe the CSI driver")
 		klog.FlushAndExit(klog.ExitFlushTimeout, 1)
 	}
 
 	// Find driver name.
-	cancelationCtx, cancel := context.WithTimeout(context.Background(), csiTimeout)
+	cancelationCtx, cancel := context.WithTimeout(ctx, csiTimeout)
 	cancelationCtx = klog.NewContext(cancelationCtx, logger)
 	defer cancel()
 	csiAttacher, err := rpc.GetDriverName(cancelationCtx, csiConn)
@@ -171,7 +172,7 @@ func main() {
 	translator := csitrans.New()
 	if translator.IsMigratedCSIDriverByName(csiAttacher) {
 		metricsManager = metrics.NewCSIMetricsManagerWithOptions(csiAttacher, metrics.WithMigration())
-		migratedCsiClient, err := connection.Connect(*csiAddress, metricsManager, connection.OnConnectionLoss(connection.ExitOnConnectionLoss()))
+		migratedCsiClient, err := connection.Connect(ctx, *csiAddress, metricsManager, connection.OnConnectionLoss(connection.ExitOnConnectionLoss()))
 		if err != nil {
 			logger.Error(err, "Failed to connect to the CSI driver", "csiAddress", *csiAddress, "migrated", true)
 			klog.FlushAndExit(klog.ExitFlushTimeout, 1)
@@ -179,7 +180,7 @@ func main() {
 		csiConn.Close()
 		csiConn = migratedCsiClient
 
-		err = rpc.ProbeForever(csiConn, *timeout)
+		err = rpc.ProbeForever(ctx, csiConn, *timeout)
 		if err != nil {
 			logger.Error(err, "Failed to probe the CSI driver", "migrated", true)
 			klog.FlushAndExit(klog.ExitFlushTimeout, 1)
