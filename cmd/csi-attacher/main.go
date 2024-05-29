@@ -167,7 +167,6 @@ func main() {
 	}
 	logger = klog.LoggerWithValues(logger, "driver", csiAttacher)
 	logger.V(2).Info("CSI driver name")
-	cancelationCtx = klog.NewContext(cancelationCtx, logger)
 
 	translator := csitrans.New()
 	if translator.IsMigratedCSIDriverByName(csiAttacher) {
@@ -202,6 +201,9 @@ func main() {
 		}()
 	}
 
+	cancelationCtx, cancel = context.WithTimeout(ctx, csiTimeout)
+	cancelationCtx = klog.NewContext(cancelationCtx, logger)
+	defer cancel()
 	supportsService, err := supportsPluginControllerService(cancelationCtx, csiConn)
 	if err != nil {
 		logger.Error(err, "Failed to check if the CSI Driver supports the CONTROLLER_SERVICE")
