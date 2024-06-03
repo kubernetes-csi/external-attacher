@@ -1,3 +1,24 @@
+# Release notes for v4.6.1
+
+[Documentation](https://kubernetes-csi.github.io)
+
+## Changes by Kind
+
+### Bug or Regression
+
+- Update csi-lib-utils to v0.18.1 ([#564](https://github.com/kubernetes-csi/external-attacher/pull/564), [@rhrmo](https://github.com/rhrmo))
+
+## Dependencies
+
+### Added
+_Nothing has changed._
+
+### Changed
+- github.com/kubernetes-csi/csi-lib-utils: [v0.18.0 → v0.18.1](https://github.com/kubernetes-csi/csi-lib-utils/compare/v0.18.0...v0.18.1)
+
+### Removed
+_Nothing has changed._
+
 # Release notes for v4.6.0
 
 [Documentation](https://kubernetes-csi.github.io)
