@@ -1,6 +1,6 @@
 module github.com/kubernetes-csi/external-attacher
 
-go 1.22.3
+go 1.22.5
 
 require (
 	github.com/container-storage-interface/spec v1.9.0
@@ -8,14 +8,14 @@ require (
 	github.com/evanphx/json-patch v5.9.0+incompatible
 	github.com/golang/mock v1.6.0
 	github.com/golang/protobuf v1.5.4
-	github.com/kubernetes-csi/csi-lib-utils v0.19.0-beta.0
+	github.com/kubernetes-csi/csi-lib-utils v0.19.0
 	github.com/kubernetes-csi/csi-test/v5 v5.2.0
 	google.golang.org/grpc v1.65.0
-	k8s.io/api v0.31.0-rc.0
-	k8s.io/apimachinery v0.31.0-rc.0
-	k8s.io/client-go v0.31.0-rc.0
-	k8s.io/component-base v0.31.0-rc.0
-	k8s.io/csi-translation-lib v0.31.0-rc.0
+	k8s.io/api v0.31.0
+	k8s.io/apimachinery v0.31.0
+	k8s.io/client-go v0.31.0
+	k8s.io/component-base v0.31.0
+	k8s.io/csi-translation-lib v0.31.0
 	k8s.io/klog/v2 v2.130.1
 )
 
@@ -78,12 +78,12 @@ require (
 	sigs.k8s.io/yaml v1.4.0 // indirect
 )
 
-replace k8s.io/api => k8s.io/api v0.31.0-rc.0
+replace k8s.io/api => k8s.io/api v0.31.0
 
-replace k8s.io/apimachinery => k8s.io/apimachinery v0.31.0-rc.0
+replace k8s.io/apimachinery => k8s.io/apimachinery v0.31.0
 
-replace k8s.io/client-go => k8s.io/client-go v0.31.0-rc.0
+replace k8s.io/client-go => k8s.io/client-go v0.31.0
 
-replace k8s.io/component-base => k8s.io/component-base v0.31.0-rc.0
+replace k8s.io/component-base => k8s.io/component-base v0.31.0
 
-replace k8s.io/csi-translation-lib => k8s.io/csi-translation-lib v0.31.0-rc.0
+replace k8s.io/csi-translation-lib => k8s.io/csi-translation-lib v0.31.0
