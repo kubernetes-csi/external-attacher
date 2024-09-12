@@ -52,110 +52,126 @@ const (
 	csiTimeout = time.Second
 )
 
-// Command line flags
+// common command flags
 var (
-	kubeconfig    = flag.String("kubeconfig", "", "Absolute path to the kubeconfig file. Required only when running out of cluster.")
-	resync        = flag.Duration("resync", 10*time.Minute, "Resync interval of the controller.")
-	csiAddress    = flag.String("csi-address", "/run/csi/socket", "Address of the CSI driver socket.")
-	showVersion   = flag.Bool("version", false, "Show version.")
-	timeout       = flag.Duration("timeout", 15*time.Second, "Timeout for waiting for attaching or detaching the volume.")
-	workerThreads = flag.Uint("worker-threads", 10, "Number of attacher worker threads")
-	maxEntries    = flag.Int("max-entries", 0, "Max entries per each page in volume lister call, 0 means no limit.")
-
-	retryIntervalStart = flag.Duration("retry-interval-start", time.Second, "Initial retry interval of failed create volume or deletion. It doubles with each failure, up to retry-interval-max.")
-	retryIntervalMax   = flag.Duration("retry-interval-max", 5*time.Minute, "Maximum retry interval of failed create volume or deletion.")
-
-	enableLeaderElection        = flag.Bool("leader-election", false, "Enable leader election.")
-	leaderElectionNamespace     = flag.String("leader-election-namespace", "", "Namespace where the leader election resource lives. Defaults to the pod namespace if not set.")
-	leaderElectionLeaseDuration = flag.Duration("leader-election-lease-duration", 15*time.Second, "Duration, in seconds, that non-leader candidates will wait to force acquire leadership. Defaults to 15 seconds.")
-	leaderElectionRenewDeadline = flag.Duration("leader-election-renew-deadline", 10*time.Second, "Duration, in seconds, that the acting leader will retry refreshing leadership before giving up. Defaults to 10 seconds.")
-	leaderElectionRetryPeriod   = flag.Duration("leader-election-retry-period", 5*time.Second, "Duration, in seconds, the LeaderElector clients should wait between tries of actions. Defaults to 5 seconds.")
-
-	defaultFSType = flag.String("default-fstype", "", "The default filesystem type of the volume to publish. Defaults to empty string")
-
-	reconcileSync = flag.Duration("reconcile-sync", 1*time.Minute, "Resync interval of the VolumeAttachment reconciler.")
-
-	metricsAddress = flag.String("metrics-address", "", "(deprecated) The TCP network address where the prometheus metrics endpoint will listen (example: `:8080`). The default is empty string, which means metrics endpoint is disabled. Only one of `--metrics-address` and `--http-endpoint` can be set.")
-	httpEndpoint   = flag.String("http-endpoint", "", "The TCP network address where the HTTP server for diagnostics, including metrics and leader election health check, will listen (example: `:8080`). The default is empty string, which means the server is disabled. Only one of `--metrics-address` and `--http-endpoint` can be set.")
-	metricsPath    = flag.String("metrics-path", "/metrics", "The HTTP path where prometheus metrics will be exposed. Default is `/metrics`.")
-
-	kubeAPIQPS   = flag.Float64("kube-api-qps", 5, "QPS to use while communicating with the kubernetes apiserver. Defaults to 5.0.")
-	kubeAPIBurst = flag.Int("kube-api-burst", 10, "Burst to use while communicating with the kubernetes apiserver. Defaults to 10.")
-
-	maxGRPCLogLength = flag.Int("max-grpc-log-length", -1, "The maximum amount of characters logged for every grpc responses. Defaults to no limit")
+	kubeconfig                  string
+	csiAddress                  string
+	showVersion                 bool
+	httpEndpoint                string
+	enableLeaderElection        bool
+	leaderElectionNamespace     string
+	leaderElectionLeaseDuration time.Duration
+	leaderElectionRenewDeadline time.Duration
+	leaderElectionRetryPeriod   time.Duration
 )
 
+// attacher command line flags
 var (
-	version = "unknown"
+	resync             time.Duration
+	timeout            time.Duration
+	workerThreads      uint64
+	maxEntries         int
+	retryIntervalStart time.Duration
+	retryIntervalMax   time.Duration
+
+	defaultFSType string
+	reconcileSync time.Duration
+
+	metricsAddress string
+	metricsPath    string
+
+	kubeAPIQPS   float64
+	kubeAPIBurst int
+
+	maxGRPCLogLength int
 )
 
-func main() {
-	fg := featuregate.NewFeatureGate()
-	logsapi.AddFeatureGates(fg)
-	c := logsapi.NewLoggingConfiguration()
-	logsapi.AddGoFlags(c, flag.CommandLine)
-	logs.InitLogs()
-	flag.Parse()
-	logger := klog.Background()
-	if err := logsapi.ValidateAndApply(c, fg); err != nil {
-		logger.Error(err, "LoggingConfiguration is invalid")
-		klog.FlushAndExit(klog.ExitFlushTimeout, 1)
-	}
+func initCommonFlags() {
+	flag.StringVar(&kubeconfig, "kubeconfig", "", "Absolute path to the kubeconfig file. Required only when running out of cluster.")
+	flag.StringVar(&csiAddress, "csi-address", "/run/csi/socket", "Address of the CSI driver socket.")
 
-	if *showVersion {
+	// I think we should remove deprecated flag in AIO project, after all we must change the non-common flags name such as worker-thread to attacher-worker-thread.
+	flag.StringVar(&metricsAddress, "metrics-address", "", "(deprecated) The TCP network address where the prometheus metrics endpoint will listen (example: `:8080`). The default is empty string, which means metrics endpoint is disabled. Only one of `--metrics-address` and `--http-endpoint` can be set.")
+	flag.StringVar(&httpEndpoint, "http-endpoint", "", "The TCP network address where the HTTP server for diagnostics, including metrics and leader election health check, will listen (example: `:8080`). The default is empty string, which means the server is disabled. Only one of `http-endpoint` and `metrics-address` can be set.")
+
+	flag.BoolVar(&enableLeaderElection, "leader-election", false, "Enable leader election.")
+	flag.StringVar(&leaderElectionNamespace, "leader-election-namespace", "", "Namespace where the leader election resource lives. Defaults to the pod namespace if not set.")
+	flag.DurationVar(&leaderElectionLeaseDuration, "leader-election-lease-duration", 15*time.Second, "Duration, in seconds, that non-leader candidates will wait to force acquire leadership. Defaults to 15 seconds.")
+	flag.DurationVar(&leaderElectionRenewDeadline, "leader-election-renew-deadline", 10*time.Second, "Duration, in seconds, that the acting leader will retry refreshing leadership before giving up. Defaults to 10 seconds.")
+	flag.DurationVar(&leaderElectionRetryPeriod, "leader-election-retry-period", 2*time.Second, "Duration, in seconds, the LeaderElector clients should wait between tries of actions. Defaults to 2 seconds.")
+}
+
+func initAttacherFlags() {
+	flag.DurationVar(&resync, "resync", 10*time.Minute, "Resync interval of the controller.")
+	flag.DurationVar(&timeout, "timeout", 15*time.Second, "Timeout for waiting for attaching or detaching the volume.")
+	flag.Uint64Var(&workerThreads, "worker-threads", 10, "Number of attacher worker threads")
+	flag.IntVar(&maxEntries, "max-entries", 0, "Max entries per each page in volume lister call, 0 means no limit.")
+
+	flag.DurationVar(&retryIntervalStart, "retry-interval-start", time.Second, "Initial retry interval of failed create volume or deletion. It doubles with each failure, up to retry-interval-max.")
+	flag.DurationVar(&retryIntervalMax, "retry-interval-max", 5*time.Minute, "Maximum retry interval of failed create volume or deletion.")
+
+	flag.StringVar(&defaultFSType, "default-fstype", "", "The default filesystem type of the volume to publish. Defaults to empty string")
+	flag.DurationVar(&reconcileSync, "reconcile-sync", 1*time.Minute, "Resync interval of the VolumeAttachment reconciler.")
+
+	flag.Float64Var(&kubeAPIQPS, "kube-api-qps", 5, "QPS to use while communicating with the kubernetes apiserver. Defaults to 5.0.")
+	flag.IntVar(&kubeAPIBurst, "kube-api-burst", 10, "Burst to use while communicating with the kubernetes apiserver. Defaults to 10.")
+
+	flag.IntVar(&maxGRPCLogLength, "max-grpc-log-length", -1, "The maximum amount of characters logged for every grpc responses. Defaults to no limit")
+}
+
+func printVersion(logger klog.Logger) {
+	logger.Info("Version", "version", version)
+	if showVersion {
 		fmt.Println(os.Args[0], version)
 		return
 	}
-	logger.Info("Version", "version", version)
+}
 
-	if *metricsAddress != "" && *httpEndpoint != "" {
+func getMetricsAddr(logger klog.Logger) (addr string) {
+	if metricsAddress != "" && httpEndpoint != "" {
 		logger.Error(nil, "Only one of `--metrics-address` and `--http-endpoint` can be set")
 		klog.FlushAndExit(klog.ExitFlushTimeout, 1)
 	}
-	addr := *metricsAddress
+	addr = metricsAddress
 	if addr == "" {
-		addr = *httpEndpoint
+		addr = httpEndpoint
 	}
+	return
+}
 
+func buildKubeConfig(logger klog.Logger) *rest.Config {
 	// Create the client config. Use kubeconfig if given, otherwise assume in-cluster.
-	config, err := buildConfig(*kubeconfig)
+	var config *rest.Config
+	var err error
+	if kubeconfig != "" {
+		config, err = clientcmd.BuildConfigFromFlags("", kubeconfig)
+	} else {
+		config, err = rest.InClusterConfig()
+	}
 	if err != nil {
 		logger.Error(err, "Failed to build a Kubernetes config")
 		klog.FlushAndExit(klog.ExitFlushTimeout, 1)
 	}
-	config.QPS = (float32)(*kubeAPIQPS)
-	config.Burst = *kubeAPIBurst
+	config.QPS = (float32)(kubeAPIQPS)
+	config.Burst = kubeAPIBurst
+	return config
+}
 
-	if *workerThreads == 0 {
-		logger.Error(nil, "Option -worker-threads must be greater than zero")
-		klog.FlushAndExit(klog.ExitFlushTimeout, 1)
-	}
-
-	clientset, err := kubernetes.NewForConfig(config)
-	if err != nil {
-		logger.Error(err, "Failed to create a Clientset")
-		klog.FlushAndExit(klog.ExitFlushTimeout, 1)
-	}
-
-	factory := informers.NewSharedInformerFactory(clientset, *resync)
-	var handler controller.Handler
-	metricsManager := metrics.NewCSIMetricsManager("" /* driverName */)
-
+func findDriverNameAndCSIConn(ctx context.Context, metricsManager metrics.CSIMetricsManager) (string, *grpc.ClientConn) {
+	logger := ctx.Value("logger").(klog.Logger)
 	// Connect to CSI.
-	connection.SetMaxGRPCLogLength(*maxGRPCLogLength)
-	ctx := context.Background()
-	csiConn, err := connection.Connect(ctx, *csiAddress, metricsManager, connection.OnConnectionLoss(connection.ExitOnConnectionLoss()))
+	connection.SetMaxGRPCLogLength(maxGRPCLogLength)
+	csiConn, err := connection.Connect(ctx, csiAddress, metricsManager, connection.OnConnectionLoss(connection.ExitOnConnectionLoss()))
 	if err != nil {
-		logger.Error(err, "Failed to connect to the CSI driver", "csiAddress", *csiAddress)
+		logger.Error(err, "Failed to connect to the CSI driver", "csiAddress", csiAddress)
 		klog.FlushAndExit(klog.ExitFlushTimeout, 1)
 	}
 
-	err = rpc.ProbeForever(ctx, csiConn, *timeout)
+	err = rpc.ProbeForever(ctx, csiConn, timeout)
 	if err != nil {
 		logger.Error(err, "Failed to probe the CSI driver")
 		klog.FlushAndExit(klog.ExitFlushTimeout, 1)
 	}
-
 	// Find driver name.
 	cancelationCtx, cancel := context.WithTimeout(ctx, csiTimeout)
 	cancelationCtx = klog.NewContext(cancelationCtx, logger)
@@ -167,71 +183,68 @@ func main() {
 	}
 	logger = klog.LoggerWithValues(logger, "driver", csiAttacher)
 	logger.V(2).Info("CSI driver name")
-
 	translator := csitrans.New()
 	if translator.IsMigratedCSIDriverByName(csiAttacher) {
 		metricsManager = metrics.NewCSIMetricsManagerWithOptions(csiAttacher, metrics.WithMigration())
-		migratedCsiClient, err := connection.Connect(ctx, *csiAddress, metricsManager, connection.OnConnectionLoss(connection.ExitOnConnectionLoss()))
+		migratedCsiClient, err := connection.Connect(ctx, csiAddress, metricsManager, connection.OnConnectionLoss(connection.ExitOnConnectionLoss()))
 		if err != nil {
-			logger.Error(err, "Failed to connect to the CSI driver", "csiAddress", *csiAddress, "migrated", true)
+			logger.Error(err, "Failed to connect to the CSI driver", "csiAddress", csiAddress, "migrated", true)
 			klog.FlushAndExit(klog.ExitFlushTimeout, 1)
 		}
 		csiConn.Close()
 		csiConn = migratedCsiClient
 
-		err = rpc.ProbeForever(ctx, csiConn, *timeout)
+		err = rpc.ProbeForever(ctx, csiConn, timeout)
 		if err != nil {
 			logger.Error(err, "Failed to probe the CSI driver", "migrated", true)
 			klog.FlushAndExit(klog.ExitFlushTimeout, 1)
 		}
 	}
+	return csiAttacher, csiConn
+}
 
-	// Prepare http endpoint for metrics + leader election healthz
-	mux := http.NewServeMux()
-	if addr != "" {
-		metricsManager.RegisterToServer(mux, *metricsPath)
-		metricsManager.SetDriverName(csiAttacher)
-		go func() {
-			logger.Info("ServeMux listening", "address", addr, "metricsPath", *metricsPath)
-			err := http.ListenAndServe(addr, mux)
-			if err != nil {
-				logger.Error(err, "Failed to start HTTP server at specified address and metrics path", "address", addr, "metricsPath", *metricsPath)
-				klog.FlushAndExit(klog.ExitFlushTimeout, 1)
-			}
-		}()
-	}
+func getSupportService(ctx context.Context, csiConn *grpc.ClientConn) (supportService, supportsAttach, supportsReadOnly, supportsListVolumesPublishedNodes, supportsSingleNodeMultiWriter bool) {
 
-	cancelationCtx, cancel = context.WithTimeout(ctx, csiTimeout)
+	logger := ctx.Value("logger").(klog.Logger)
+	cancelationCtx, cancel := context.WithTimeout(ctx, csiTimeout)
 	cancelationCtx = klog.NewContext(cancelationCtx, logger)
 	defer cancel()
-	supportsService, err := supportsPluginControllerService(cancelationCtx, csiConn)
+	supportService, err := supportsPluginControllerService(cancelationCtx, csiConn)
 	if err != nil {
 		logger.Error(err, "Failed to check if the CSI Driver supports the CONTROLLER_SERVICE")
 		klog.FlushAndExit(klog.ExitFlushTimeout, 1)
 	}
-
-	var (
-		supportsAttach                    bool
-		supportsReadOnly                  bool
-		supportsListVolumesPublishedNodes bool
-		supportsSingleNodeMultiWriter     bool
-	)
-	if !supportsService {
-		handler = controller.NewTrivialHandler(clientset)
-		logger.V(2).Info("CSI driver does not support Plugin Controller Service, using trivial handler")
-	} else {
+	if supportService {
 		supportsAttach, supportsReadOnly, supportsListVolumesPublishedNodes, supportsSingleNodeMultiWriter, err = supportsControllerCapabilities(cancelationCtx, csiConn)
 		if err != nil {
 			logger.Error(err, "Failed to controller capability check")
 			klog.FlushAndExit(klog.ExitFlushTimeout, 1)
 		}
+	}
+	return
+}
 
+func NewAttacherCSIHandler(
+	csiAttacher string,
+	supportsService,
+	supportsAttach,
+	supportsReadOnly,
+	supportsSingleNodeMultiWriter bool,
+	clientset *kubernetes.Clientset,
+	csiConn *grpc.ClientConn,
+	factory informers.SharedInformerFactory,
+	logger klog.Logger) controller.Handler {
+	var handler controller.Handler
+	if !supportsService {
+		handler = controller.NewTrivialHandler(clientset)
+		logger.V(2).Info("CSI driver does not support Plugin Controller Service, using trivial handler")
+	} else {
 		if supportsAttach {
 			pvLister := factory.Core().V1().PersistentVolumes().Lister()
 			vaLister := factory.Storage().V1().VolumeAttachments().Lister()
 			csiNodeLister := factory.Storage().V1().CSINodes().Lister()
 			volAttacher := attacher.NewAttacher(csiConn)
-			CSIVolumeLister := attacher.NewVolumeLister(csiConn, *maxEntries)
+			CSIVolumeLister := attacher.NewVolumeLister(csiConn, maxEntries)
 			handler = controller.NewCSIHandler(
 				clientset,
 				csiAttacher,
@@ -240,11 +253,11 @@ func main() {
 				pvLister,
 				csiNodeLister,
 				vaLister,
-				timeout,
+				&timeout,
 				supportsReadOnly,
 				supportsSingleNodeMultiWriter,
 				csitrans.New(),
-				*defaultFSType,
+				defaultFSType,
 			)
 			logger.V(2).Info("CSI driver supports ControllerPublishUnpublish, using real CSI handler")
 		} else {
@@ -252,31 +265,11 @@ func main() {
 			logger.V(2).Info("CSI driver does not support ControllerPublishUnpublish, using trivial handler")
 		}
 	}
+	return handler
+}
 
-	if supportsListVolumesPublishedNodes {
-		logger.V(2).Info("CSI driver supports list volumes published nodes. Using capability to reconcile volume attachment objects with actual backend state")
-	}
-
-	ctrl := controller.NewCSIAttachController(
-		logger,
-		clientset,
-		csiAttacher,
-		handler,
-		factory.Storage().V1().VolumeAttachments(),
-		factory.Core().V1().PersistentVolumes(),
-		workqueue.NewItemExponentialFailureRateLimiter(*retryIntervalStart, *retryIntervalMax),
-		workqueue.NewItemExponentialFailureRateLimiter(*retryIntervalStart, *retryIntervalMax),
-		supportsListVolumesPublishedNodes,
-		*reconcileSync,
-	)
-
-	run := func(ctx context.Context) {
-		stopCh := ctx.Done()
-		factory.Start(stopCh)
-		ctrl.Run(ctx, int(*workerThreads))
-	}
-
-	if !*enableLeaderElection {
+func startController(lockName string, config *rest.Config, run func(ctx context.Context), mux *http.ServeMux, logger klog.Logger) {
+	if !enableLeaderElection {
 		run(klog.NewContext(context.Background(), logger))
 	} else {
 		// Create a new clientset for leader election. When the attacher
@@ -288,20 +281,18 @@ func main() {
 			klog.FlushAndExit(klog.ExitFlushTimeout, 1)
 		}
 
-		// Name of config map with leader election lock
-		lockName := "external-attacher-leader-" + csiAttacher
 		le := leaderelection.NewLeaderElection(leClientset, lockName, run)
-		if *httpEndpoint != "" {
+		if httpEndpoint != "" {
 			le.PrepareHealthCheck(mux, leaderelection.DefaultHealthCheckTimeout)
 		}
 
-		if *leaderElectionNamespace != "" {
-			le.WithNamespace(*leaderElectionNamespace)
+		if leaderElectionNamespace != "" {
+			le.WithNamespace(leaderElectionNamespace)
 		}
 
-		le.WithLeaseDuration(*leaderElectionLeaseDuration)
-		le.WithRenewDeadline(*leaderElectionRenewDeadline)
-		le.WithRetryPeriod(*leaderElectionRetryPeriod)
+		le.WithLeaseDuration(leaderElectionLeaseDuration)
+		le.WithRenewDeadline(leaderElectionRenewDeadline)
+		le.WithRetryPeriod(leaderElectionRetryPeriod)
 
 		if err := le.Run(); err != nil {
 			logger.Error(err, "Failed to initialize leader election")
@@ -310,11 +301,91 @@ func main() {
 	}
 }
 
-func buildConfig(kubeconfig string) (*rest.Config, error) {
-	if kubeconfig != "" {
-		return clientcmd.BuildConfigFromFlags("", kubeconfig)
+var (
+	version = "unknown"
+)
+
+func main() {
+	initCommonFlags()
+	initAttacherFlags()
+	fg := featuregate.NewFeatureGate()
+	logsapi.AddFeatureGates(fg)
+	c := logsapi.NewLoggingConfiguration()
+	logsapi.AddGoFlags(c, flag.CommandLine)
+	logs.InitLogs()
+	flag.Parse()
+	logger := klog.Background()
+	if err := logsapi.ValidateAndApply(c, fg); err != nil {
+		logger.Error(err, "LoggingConfiguration is invalid")
+		klog.FlushAndExit(klog.ExitFlushTimeout, 1)
 	}
-	return rest.InClusterConfig()
+	printVersion(logger)
+	addr := getMetricsAddr(logger)
+
+	if workerThreads == 0 {
+		logger.Error(nil, "Option -worker-threads must be greater than zero")
+		klog.FlushAndExit(klog.ExitFlushTimeout, 1)
+	}
+
+	config := buildKubeConfig(logger)
+
+	clientset, err := kubernetes.NewForConfig(config)
+	if err != nil {
+		logger.Error(err, "Failed to create a Clientset")
+		klog.FlushAndExit(klog.ExitFlushTimeout, 1)
+	}
+
+	factory := informers.NewSharedInformerFactory(clientset, resync)
+	metricsManager := metrics.NewCSIMetricsManager("" /* driverName */)
+
+	ctx := context.Background()
+	ctx = context.WithValue(ctx, "logger", logger)
+
+	csiAttacher, csiConn := findDriverNameAndCSIConn(ctx, metricsManager)
+
+	// Prepare http endpoint for metrics + leader election healthz
+	mux := http.NewServeMux()
+	if addr != "" {
+		metricsManager.RegisterToServer(mux, metricsPath)
+		metricsManager.SetDriverName(csiAttacher)
+		go func() {
+			logger.Info("ServeMux listening", "address", addr, "metricsPath", metricsPath)
+			err := http.ListenAndServe(addr, mux)
+			if err != nil {
+				logger.Error(err, "Failed to start HTTP server at specified address and metrics path", "address", addr, "metricsPath", metricsPath)
+				klog.FlushAndExit(klog.ExitFlushTimeout, 1)
+			}
+		}()
+	}
+	supportsService, supportsAttach, supportsReadOnly, supportsListVolumesPublishedNodes, supportsSingleNodeMultiWriter := getSupportService(ctx, csiConn)
+
+	if supportsListVolumesPublishedNodes {
+		logger.V(2).Info("CSI driver supports list volumes published nodes. Using capability to reconcile volume attachment objects with actual backend state")
+	}
+	handler := NewAttacherCSIHandler(csiAttacher, supportsService, supportsAttach, supportsReadOnly, supportsSingleNodeMultiWriter, clientset, csiConn, factory, logger)
+
+	ctrl := controller.NewCSIAttachController(
+		logger,
+		clientset,
+		csiAttacher,
+		handler,
+		factory.Storage().V1().VolumeAttachments(),
+		factory.Core().V1().PersistentVolumes(),
+		workqueue.NewItemExponentialFailureRateLimiter(retryIntervalStart, retryIntervalMax),
+		workqueue.NewItemExponentialFailureRateLimiter(retryIntervalStart, retryIntervalMax),
+		supportsListVolumesPublishedNodes,
+		reconcileSync,
+	)
+
+	run := func(ctx context.Context) {
+		stopCh := ctx.Done()
+		factory.Start(stopCh)
+		ctrl.Run(ctx, int(workerThreads))
+	}
+	// Name of config map with leader election lock
+	lockName := "external-attacher-leader-" + csiAttacher
+	startController(lockName, config, run, mux, logger)
+
 }
 
 func supportsControllerCapabilities(ctx context.Context, csiConn *grpc.ClientConn) (bool, bool, bool, bool, error) {
