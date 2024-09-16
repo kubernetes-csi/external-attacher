@@ -24,6 +24,7 @@ import (
 	"os"
 	"time"
 
+	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/informers"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
@@ -125,6 +126,7 @@ func main() {
 	}
 	config.QPS = (float32)(*kubeAPIQPS)
 	config.Burst = *kubeAPIBurst
+	config.ContentType = runtime.ContentTypeProtobuf
 
 	if *workerThreads == 0 {
 		logger.Error(nil, "Option -worker-threads must be greater than zero")
