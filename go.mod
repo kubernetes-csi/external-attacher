@@ -9,7 +9,7 @@ require (
 	github.com/golang/mock v1.6.0
 	github.com/golang/protobuf v1.5.4
 	github.com/kubernetes-csi/csi-lib-utils v0.19.0
-	github.com/kubernetes-csi/csi-test/v5 v5.3.0
+	github.com/kubernetes-csi/csi-test/v5 v5.3.1
 	google.golang.org/grpc v1.66.2
 	k8s.io/api v0.31.0
 	k8s.io/apimachinery v0.31.0
