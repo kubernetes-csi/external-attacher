@@ -1,137 +1,177 @@
-# CSI attacher
+# [csi-release-tools](https://github.com/kubernetes-csi/csi-release-tools)
 
-The external-attacher is a sidecar container that attaches volumes to nodes by calling `ControllerPublish` and `ControllerUnpublish` functions of CSI drivers. It is necessary because internal Attach/Detach controller running in Kubernetes controller-manager does not have any direct interfaces to CSI drivers.
+These build and test rules can be shared between different Go projects
+without modifications. Customization for the different projects happen
+in the top-level Makefile.
 
-## Terminology
+The rules include support for building and pushing Docker images, with
+the following features:
+ - one or more command and image per project
+ - push canary and/or tagged release images
+ - automatically derive the image tag(s) from repo tags
+ - the source code revision is stored in a "revision" image label
+ - never overwrites an existing release image
 
-In Kubernetes, the term *attach* means 3rd party volume attachment to a node. This is common in cloud environments, where the cloud API is able to attach a volume to a node without any code running on the node. In CSI terminology, this corresponds to the `ControllerPublish` call.
+Usage
+-----
 
-*Detach* is the reverse operation, 3rd party volume detachment from a node, `ControllerUnpublish` in CSI terminology.
+The expected repository layout is:
+ - `cmd/*/*.go` - source code for each command
+ - `cmd/*/Dockerfile` - docker file for each command or
+   Dockerfile in the root when only building a single command
+ - `Makefile` - includes `release-tools/build.make` and sets
+   configuration variables
+ - `.prow.sh` script which imports `release-tools/prow.sh`
+   and may contain further customization
+ - `.cloudbuild.sh` and `cloudbuild.yaml` as symlinks to
+   the corresponding files in `release-tools` or (if necessary)
+   as custom files
 
-It is **not** an attach/detach operation performed by a code running on a node, such as an attachment of iSCSI or Fibre Channel volumes. These are typically performed during `NodeStage` and `NodeUnstage` CSI calls and are not done by the external-attacher.
+To create a release, tag a certain revision with a name that
+starts with `v`, for example `v1.0.0`, then `make push`
+while that commit is checked out.
 
-## Overview
+It does not matter on which branch that revision exists, i.e. it is
+possible to create releases directly from master. A release branch can
+still be created for maintenance releases later if needed.
 
-The external-attacher is an external controller that monitors `VolumeAttachment` objects created by controller-manager and attaches/detaches volumes to/from nodes (i.e. calls `ControllerPublish`/`ControllerUnpublish`. Full design can be found at Kubernetes proposal at [container-storage-interface.md](https://github.com/kubernetes/design-proposals-archive/blob/main/storage/container-storage-interface.md)
+Release branches are expected to be named `release-x.y` for releases
+`x.y.z`. Building from such a branch creates `x.y-canary`
+images. Building from master creates the main `canary` image.
 
-## Compatibility
+Sharing and updating
+--------------------
 
-This information reflects the head of this branch.
+[`git subtree`](https://github.com/git/git/blob/HEAD/contrib/subtree/git-subtree.txt)
+is the recommended way of maintaining a copy of the rules inside the
+`release-tools` directory of a project. This way, it is possible to make
+changes also locally, test them and then push them back to the shared
+repository at a later time.
 
-| Compatible with CSI Version                                                                | Container Image                     | [Min K8s Version](https://kubernetes-csi.github.io/docs/kubernetes-compatibility.html#minimum-version) | [Recommended K8s Version](https://kubernetes-csi.github.io/docs/kubernetes-compatibility.html#recommended-version) |
-| ------------------------------------------------------------------------------------------ | -----------------------------------------| ---- | ---- |
-| [CSI Spec v1.5.0](https://github.com/container-storage-interface/spec/releases/tag/v1.5.0) | registry.k8s.io/sig-storage/csi-attacher | 1.17 | 1.22 |
+We no longer care about importing the full commit history, so `--squash` should be used
+when submitting a `release-tools` update. Also make sure that the PR for that
+contains the automatically generated commit message in the PR description.
+It contains the list of individual commits that were squashed. The script from
+https://github.com/kubernetes-csi/csi-release-tools/issues/7 can create such
+PRs automatically.
 
-## Feature Status
+Cheat sheet:
 
-Various external-attacher releases come with different alpha / beta features.
+- `git subtree add --squash --prefix=release-tools https://github.com/kubernetes-csi/csi-release-tools.git master` - add release tools to a repo which does not have them yet (only once)
+- `git subtree pull --squash --prefix=release-tools https://github.com/kubernetes-csi/csi-release-tools.git master` - update local copy to latest upstream (whenever upstream changes)
+- edit, `git commit`, `git subtree push --prefix=release-tools git@github.com:<user>/csi-release-tools.git <my-new-or-existing-branch>` - push to a new branch before submitting a PR
 
-The following table reflects the head of this branch.
+verify-shellcheck.sh
+--------------------
 
-| Feature       | Status  | Default | Description                                                                                   |
-| ------------- | ------- | ------- | --------------------------------------------------------------------------------------------- |
-| CSIMigration*     | GA      | On      | [Migrating in-tree volume plugins to CSI](https://kubernetes.io/docs/concepts/storage/volumes/#csi-migration). |
-| ReadWriteOncePod* | Alpha   | Off     | [Single pod access mode for PersistentVolumes](https://kubernetes.io/docs/concepts/storage/persistent-volumes/#access-modes). |
+The [verify-shellcheck.sh](./verify-shellcheck.sh) script in this repo
+is a stripped down copy of the [corresponding
+script](https://github.com/kubernetes/kubernetes/blob/release-1.14/hack/verify-shellcheck.sh)
+in the Kubernetes repository. It can be used to check for certain
+errors shell scripts, like missing quotation marks. The default
+`test-shellcheck` target in [build.make](./build.make) only checks the
+scripts in this directory. Components can add more directories to
+`TEST_SHELLCHECK_DIRS` to check also other scripts.
 
-*) There is no special feature gate for this feature. It is enabled by turning on the corresponding features in Kubernetes.
+End-to-end testing
+------------------
 
-All other external-attacher features and the external-attacher itself is considered GA and fully supported.
+A repo that wants to opt into testing via Prow must set up a top-level
+`.prow.sh`. Typically that will source `prow.sh` and then transfer
+control to it:
 
-## Usage
+``` bash
+#! /bin/bash -e
 
-It is necessary to create a new service account and give it enough privileges to run the external-attacher, see `deploy/kubernetes/rbac.yaml`. The attacher is then deployed as single Deployment as illustrated below:
-
-```sh
-kubectl create deploy/kubernetes/deployment.yaml
+. release-tools/prow.sh
+main
 ```
 
-The external-attacher may run in the same pod with other external CSI controllers such as the external-provisioner, external-snapshotter and/or external-resizer.
+All Kubernetes-CSI repos are expected to switch to Prow. For details
+on what is enabled in Prow, see
+https://github.com/kubernetes/test-infra/tree/HEAD/config/jobs/kubernetes-csi
 
-Note that the external-attacher does not scale with more replicas. Only one external-attacher is elected as leader and running. The others are waiting for the leader to die. They re-elect a new active leader in ~15 seconds after death of the old leader.
+Test results for periodic jobs are visible in
+https://testgrid.k8s.io/sig-storage-csi-ci
 
-### Command line options
+It is possible to reproduce the Prow testing locally on a suitable machine:
+- Linux host
+- Docker installed
+- code to be tested checkout out in `$GOPATH/src/<import path>`
+- `cd $GOPATH/src/<import path> && ./.prow.sh`
 
-#### Important optional arguments that are highly recommended to be used
+Beware that the script intentionally doesn't clean up after itself and
+modifies the content of `$GOPATH`, in particular the `kubernetes` and
+`kind` repositories there. Better run it in an empty, disposable
+`$GOPATH`.
 
-* `--csi-address <path to CSI socket>`: This is the path to the CSI driver socket inside the pod that the external-attacher container will use to issue CSI operations (`/run/csi/socket` is used by default).
+When it terminates, the following command can be used to get access to
+the Kubernetes cluster that was brought up for testing (assuming that
+this step succeeded):
 
-* `--leader-election`: Enables leader election. This is useful when there are multiple replicas of the same external-attacher running for one CSI driver. Only one of them may be active (=leader). A new leader will be re-elected when current leader dies or becomes unresponsive for ~15 seconds.
+    export KUBECONFIG="$(kind get kubeconfig-path --name="csi-prow")"
 
-* `--leader-election-namespace <namespace>`: Namespace where the external-attacher runs and where leader election object will be created. It is recommended that this parameter is populated from Kubernetes DownwardAPI.
+It is possible to control the execution via environment variables. See
+`prow.sh` for details. Particularly useful is testing against different
+Kubernetes releases:
 
-* `--timeout <duration>`: Timeout of all calls to CSI driver. It should be set to value that accommodates majority of `ControllerPublish` and `ControllerUnpublish` calls. See [CSI error and timeout handling](#csi-error-and-timeout-handling) for details. 15 seconds is used by default.
+    CSI_PROW_KUBERNETES_VERSION=1.13.3 ./.prow.sh
+    CSI_PROW_KUBERNETES_VERSION=latest ./.prow.sh
 
-* `--worker-threads`: The number of goroutines for processing VolumeAttachments. 10 workers is used by default.
+Dependencies and vendoring
+--------------------------
 
-* `--max-entries`: The max number of entries per page for processing ListVolumes. 0 means no limit and it is the default value.
+Most projects will (eventually) use `go mod` to manage
+dependencies. `dep` is also still supported by `csi-release-tools`,
+but not documented here because it's not recommended anymore.
 
-* `--retry-interval-start`: The exponential backoff for failures. See [CSI error and timeout handling](#csi-error-and-timeout-handling) for details. 1 second is used by default.
+The usual instructions for using [go
+modules](https://github.com/golang/go/wiki/Modules) apply. Here's a cheat sheet
+for some of the relevant commands:
+- list available updates: `GO111MODULE=on go list -u -m all`
+- update or add a single dependency: `GO111MODULE=on go get <package>`
+- update all dependencies to their next minor or patch release:
+  `GO111MODULE=on go get ./...` (add `-u=patch` to limit to patch
+  releases)
+- lock onto a specific version: `GO111MODULE=on go get <package>@<version>`
+- clean up `go.mod`: `GO111MODULE=on go mod tidy`
+- update vendor directory: `GO111MODULE=on go mod vendor`
 
-* `--retry-interval-max`: The exponential backoff maximum value. See [CSI error and timeout handling](#csi-error-and-timeout-handling) for details. 5 minutes is used by default.
+`GO111MODULE=on` can be left out when using Go >= 1.13 or when the
+source is checked out outside of `$GOPATH`.
 
-* `--http-endpoint`: The TCP network address where the HTTP server for diagnostics, including metrics and leader election health check, will listen (example: `:8080` which corresponds to port 8080 on local host). The default is empty string, which means the server is disabled.
+`go mod tidy` must be used to ensure that the listed dependencies are
+really still needed. Changing import statements or a tentative `go
+get` can result in stale dependencies.
 
-* `--metrics-path`: The HTTP path where prometheus metrics will be exposed. Default is `/metrics`.
+The `test-vendor` verifies that it was used when run locally or in a
+pre-merge CI job. If a `vendor` directory is present, it will also
+verify that it's content is up-to-date.
 
-* `--reconcile-sync`: Resync frequency of the attached volumes with the driver. See [Periodic re-sync](#periodic-re-sync) for details. 1 minute is used by default.
+The `vendor` directory is optional. It is still present in projects
+because it avoids downloading sources during CI builds. If this is no
+longer deemed necessary, then a project can also remove the directory.
 
-* `--kube-api-qps`: The number of requests per second sent by a Kubernetes client to the Kubernetes API server. Defaults to `5.0`.
+Conversion of a repository that uses `dep` to `go mod` can be done with:
 
-* `--kube-api-burst`: The number of requests to the Kubernetes API server, exceeding the QPS, that can be sent at any given time. Defaults to `10`.
+    GO111MODULE=on go mod init
+    release-tools/go-get-kubernetes.sh <current Kubernetes version from Gopkg.toml>
+    GO111MODULE=on go mod tidy
+    GO111MODULE=on go mod vendor
+    git rm -f Gopkg.toml Gopkg.lock
+    git add go.mod go.sum vendor
 
-* `--leader-election-lease-duration <duration>`: Duration, in seconds, that non-leader candidates will wait to force acquire leadership. Defaults to 15 seconds.
+### Updating Kubernetes dependencies
 
-* `--leader-election-renew-deadline <duration>`: Duration, in seconds, that the acting leader will retry refreshing leadership before giving up. Defaults to 10 seconds.
-
-* `--leader-election-retry-period <duration>`: Duration, in seconds, the LeaderElector clients should wait between tries of actions. Defaults to 5 seconds.
-
-* `--default-fstype <type>`: The default filesystem type of the volume to publish. Defaults to empty string.
-
-#### Other recognized arguments
-
-* `--kubeconfig <path>`: Path to Kubernetes client configuration that the external-attacher uses to connect to Kubernetes API server. When omitted, default token provided by Kubernetes will be used. This option is useful only when the external-attacher does not run as a Kubernetes pod, e.g. for debugging.
-
-* `--metrics-address`: (deprecated) The TCP network address where the prometheus metrics endpoint and leader election health check will run (example: `:8080` which corresponds to port 8080 on local host). The default is empty string, which means metrics and leader election check endpoint is disabled.
-
-* `--resync <duration>`: Internal resync interval when the external-attacher re-evaluates all existing `VolumeAttachment` instances and tries to fulfill them, i.e. attach / detach corresponding volumes. It does not affect re-tries of failed CSI calls! It should be used only when there is a bug in Kubernetes watch logic.
-
-* `--version`: Prints current external-attacher version and quits.
-
-* All glog / klog arguments are supported, such as `-v <log level>` or `-alsologtostderr`.
-
-### CSI error and timeout handling
-
-The external-attacher invokes all gRPC calls to CSI driver with timeout provided by `--timeout` command line argument (15 seconds by default).
-
-* `ControllerPublish`: The call might have timed out just before the driver attached a volume and was sending a response. From that reason, timeouts from `ControllerPublish` is considered as "*volume may be attached*" or "*volume is being attached in the background*." The external-attacher will re-try calling `ControllerPublish` after exponential backoff until it gets either successful response or final (non-timeout) error that the volume cannot be attached.
-* `ControllerUnpublish`: This is similar to `ControllerPublish`, The external-attacher will re-try calling `ControllerUnpublish` with exponential backoff after timeout until it gets either successful response or a final error that the volume cannot be detached.
-* `Probe`: The external-attacher re-tries calling Probe until the driver reports it's ready. It re-tries also when it receives timeout from `Probe` call. The external-attacher has no limit of retries. It is expected that ReadinessProbe on the driver container will catch case when the driver takes too long time to get ready.
-* `GetPluginInfo`, `GetPluginCapabilitiesRequest`, `ControllerGetCapabilities`: The external-attacher expects that these calls are quick and does not retry them on any error, including timeout. Instead, it assumes that the driver is faulty and exits. Note that Kubernetes will likely start a new attacher container and it will start with `Probe` call.
-
-Correct timeout value depends on the storage backend and how quickly it is able to processes `ControllerPublish` and `ControllerUnpublish` calls. The value should be set to accommodate majority of them. It is fine if some calls time out - such calls will be re-tried after exponential backoff (starting with `--retry-interval-start`), however, this backoff will introduce delay when the call times out several times for a single volume (up to `--retry-interval-max`).
-
-### Periodic re-sync
-
-When CSI driver supports `LIST_VOLUMES` and `LIST_VOLUMES_PUBLISHED_NODES` capabilities, the external attacher periodically syncs volume attachments requested by Kubernetes with the actual state reported by CSI driver. Volumes detached by any 3rd party, but still required to be attached by Kubernetes, will be re-attached back. Frequency of this re-sync is controlled by `--reconcile-sync` command line parameter.
-
-### HTTP endpoint
-
-The external-attacher optionally exposes an HTTP endpoint at address:port specified by `--http-endpoint` argument. When set, these two paths are exposed:
-
-* Metrics path, as set by `--metrics-path` argument (default is `/metrics`).
-* Leader election health check at `/healthz/leader-election`. It is recommended to run a liveness probe against this endpoint when leader election is used to kill external-attacher leader that fails to connect to the API server to renew its leadership. See https://github.com/kubernetes-csi/csi-lib-utils/issues/66 for details.
-
-## Community, discussion, contribution, and support
-
-Learn how to engage with the Kubernetes community on the [community page](http://kubernetes.io/community/).
-
-You can reach the maintainers of this project at:
-
-* Slack channels
-  * [#wg-csi](https://kubernetes.slack.com/messages/wg-csi)
-  * [#sig-storage](https://kubernetes.slack.com/messages/sig-storage)
-* [Mailing list](https://groups.google.com/forum/#!forum/kubernetes-sig-storage)
-
-### Code of conduct
-
-Participation in the Kubernetes community is governed by the [Kubernetes Code of Conduct](code-of-conduct.md).
+When using packages that are part of the Kubernetes source code, the
+commands above are not enough because the [lack of semantic
+versioning](https://github.com/kubernetes/kubernetes/issues/72638)
+prevents `go mod` from finding newer releases. Importing directly from
+`kubernetes/kubernetes` also needs `replace` statements to override
+the fake `v0.0.0` versions
+(https://github.com/kubernetes/kubernetes/issues/79384). The
+`go-get-kubernetes.sh` script can be used to update all packages in
+lockstep to a different Kubernetes version. Example usage:
+```
+$ ./release-tools/go-get-kubernetes.sh 1.16.4
+```

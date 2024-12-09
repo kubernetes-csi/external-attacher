@@ -1,27 +1,23 @@
-#! /bin/bash
+#! /bin/bash -e
 
-. release-tools/prow.sh
+# Copyright 2021 The Kubernetes Authors.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
 
-# This check assumes that the current configuration uses a driver deployment
-# which has been updated to use v1 APIs that aren't available in Kubernetes < 1.17.
-# TODO: The check can be removed when all Prow jobs for Kubernetes < 1.17 are removed.
-if ! (version_gt "${CSI_PROW_KUBERNETES_VERSION}" "1.16.255" || [ "${CSI_PROW_KUBERNETES_VERSION}" == "latest" ]); then
-    filtered_tests=
-    skipped_tests=
-    for test in ${CSI_PROW_TESTS}; do
-	case "$test" in
-	    parallel | parallel | serial | parallel-alpha | serial-alpha)
-		skipped_tests="$skipped_tests $test"
-		;;
-	    *)
-		filtered_tests="$filtered_tests $test"
-		;;
-	esac
-    done
-    if [ "$skipped_tests" ]; then
-	info "Testing on Kubernetes ${CSI_PROW_KUBERNETES_VERSION} is no longer supported. Skipping CSI_PROW_TESTS: $skipped_tests."
-	CSI_PROW_TESTS="$filtered_tests"
-    fi
-fi
+# This is for testing csi-release-tools itself in Prow. All other
+# repos use prow.sh for that, but as csi-release-tools isn't a normal
+# repo with some Go code in it, it has a custom Prow test script.
 
-main
+./verify-shellcheck.sh "$(pwd)"
+./verify-spelling.sh "$(pwd)"
+./verify-boilerplate.sh "$(pwd)"
