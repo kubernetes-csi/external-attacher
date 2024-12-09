@@ -20,9 +20,11 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strconv"
 	"sync"
 	"time"
 
+	"github.com/kubernetes-csi/csi-lib-utils/connection"
 	"github.com/kubernetes-csi/external-attacher/pkg/attacher"
 	v1 "k8s.io/api/core/v1"
 	storage "k8s.io/api/storage/v1"
@@ -56,19 +58,21 @@ var _ VolumeLister = &attacher.CSIVolumeLister{}
 // It adds finalizer to VolumeAttachment instance to make sure they're detached
 // before deletion.
 type csiHandler struct {
-	client                  kubernetes.Interface
-	attacherName            string
-	attacher                attacher.Attacher
-	CSIVolumeLister         VolumeLister
-	pvLister                corelisters.PersistentVolumeLister
-	csiNodeLister           storagelisters.CSINodeLister
-	vaLister                storagelisters.VolumeAttachmentLister
-	vaQueue, pvQueue        workqueue.RateLimitingInterface
-	forceSync               map[string]bool
-	forceSyncMux            sync.Mutex
-	timeout                 time.Duration
-	supportsPublishReadOnly bool
-	translator              AttacherCSITranslator
+	client                        kubernetes.Interface
+	attacherName                  string
+	attacher                      attacher.Attacher
+	CSIVolumeLister               VolumeLister
+	pvLister                      corelisters.PersistentVolumeLister
+	csiNodeLister                 storagelisters.CSINodeLister
+	vaLister                      storagelisters.VolumeAttachmentLister
+	vaQueue, pvQueue              workqueue.RateLimitingInterface
+	forceSync                     map[string]bool
+	forceSyncMux                  sync.Mutex
+	timeout                       time.Duration
+	supportsPublishReadOnly       bool
+	supportsSingleNodeMultiWriter bool
+	translator                    AttacherCSITranslator
+	defaultFSType                 string
 }
 
 var _ Handler = &csiHandler{}
@@ -84,21 +88,25 @@ func NewCSIHandler(
 	vaLister storagelisters.VolumeAttachmentLister,
 	timeout *time.Duration,
 	supportsPublishReadOnly bool,
-	translator AttacherCSITranslator) Handler {
+	supportsSingleNodeMultiWriter bool,
+	translator AttacherCSITranslator,
+	defaultFSType string) Handler {
 
 	return &csiHandler{
-		client:                  client,
-		attacherName:            attacherName,
-		attacher:                attacher,
-		CSIVolumeLister:         CSIVolumeLister,
-		pvLister:                pvLister,
-		csiNodeLister:           csiNodeLister,
-		vaLister:                vaLister,
-		timeout:                 *timeout,
-		supportsPublishReadOnly: supportsPublishReadOnly,
-		translator:              translator,
-		forceSync:               map[string]bool{},
-		forceSyncMux:            sync.Mutex{},
+		client:                        client,
+		attacherName:                  attacherName,
+		attacher:                      attacher,
+		CSIVolumeLister:               CSIVolumeLister,
+		pvLister:                      pvLister,
+		csiNodeLister:                 csiNodeLister,
+		vaLister:                      vaLister,
+		timeout:                       *timeout,
+		supportsPublishReadOnly:       supportsPublishReadOnly,
+		supportsSingleNodeMultiWriter: supportsSingleNodeMultiWriter,
+		translator:                    translator,
+		forceSync:                     map[string]bool{},
+		forceSyncMux:                  sync.Mutex{},
+		defaultFSType:                 defaultFSType,
 	}
 }
 
@@ -111,10 +119,11 @@ func (h *csiHandler) Init(vaQueue workqueue.RateLimitingInterface, pvQueue workq
 // status with the corresponding VolumeAttachment object. If the attachment
 // status of the volume is different from the state on the VolumeAttachment the
 // VolumeAttachment object is patched to the correct state.
-func (h *csiHandler) ReconcileVA() error {
-	klog.V(4).Info("Reconciling VolumeAttachments with driver backend state")
+func (h *csiHandler) ReconcileVA(ctx context.Context) error {
+	logger := klog.FromContext(ctx)
+	logger.V(4).Info("Reconciling VolumeAttachments with driver backend state")
 
-	ctx, cancel := context.WithTimeout(context.Background(), h.timeout)
+	ctx, cancel := context.WithTimeout(ctx, h.timeout)
 	defer cancel()
 
 	// Loop over all volume attachment objects
@@ -129,26 +138,26 @@ func (h *csiHandler) ReconcileVA() error {
 	}
 
 	for _, va := range vas {
-		nodeID, ok := va.Annotations[vaNodeIDAnnotation]
-		if !ok {
-			klog.Warningf("Failed to find node ID in VolumeAttachment %s annotation", va.Name)
+		nodeID, err := h.getNodeID(logger, h.attacherName, va.Spec.NodeName, va)
+		if err != nil {
+			logger.Error(err, "Failed to find node ID err")
 			continue
 		}
 		pvSpec, err := h.getProcessedPVSpec(va)
 		if err != nil {
-			klog.Warningf("Failed to get PV Spec: %v", err)
+			logger.Error(err, "Failed to get PV Spec")
 			continue
 		}
 
 		source, err := getCSISource(pvSpec)
 		if err != nil {
-			klog.Warningf("Failed to get CSI Source: %v", err)
+			logger.Error(err, "Failed to get CSI Source")
 			continue
 		}
 
 		volumeHandle, _, err := GetVolumeHandle(source)
 		if err != nil {
-			klog.Warningf("Failed to get volume handle: %v", err)
+			logger.Error(err, "Failed to get volume handle")
 			continue
 		}
 		attachedStatus := va.Status.Attached
@@ -156,13 +165,13 @@ func (h *csiHandler) ReconcileVA() error {
 		// If volume driver has corresponding in-tree plugin, generate a correct volumehandle
 		isMig, err := h.isMigratable(va)
 		if err != nil {
-			klog.Warningf("Failed to check if migratable for volume handle %s (driver %s): %v", volumeHandle, source.Driver, err)
+			logger.Error(err, "Failed to check if migratable for volume handle", "volumeHandle", volumeHandle, "sourceDriver", source.Driver)
 			continue
 		}
 		if isMig {
 			volumeHandle, err = h.translator.RepairVolumeHandle(source.Driver, volumeHandle, nodeID)
 			if err != nil {
-				klog.Warningf("Failed to repair volume handle %s for driver %s: %v", volumeHandle, source.Driver, err)
+				logger.Error(err, "Failed to repair volume handle for driver", "volumeHandle", volumeHandle, "sourceDriver", source.Driver)
 				continue
 			}
 		}
@@ -178,7 +187,14 @@ func (h *csiHandler) ReconcileVA() error {
 
 		// If ListVolumes Attached Status is different, add to shared workQueue.
 		if attachedStatus != found {
-			klog.Warningf("VA %s for volume %s has attached status %v but actual state %v. Adding back to VA queue for forced reprocessing", va.Name, volumeHandle, attachedStatus, found)
+			logger.Error(
+				nil,
+				"VolumeAttachment attached status and actual state do not match. Adding back to VolumeAttachment queue for forced reprocessing",
+				"VolumeAttachment", va.Name,
+				"volumeHandle", volumeHandle,
+				"attachedStatus", attachedStatus,
+				"found", found,
+			)
 			// Add this item to the vaQueue with forceSync so that it is force
 			// processed again, we avoid UPDATE on the VA or forcing a direct
 			// attach/detach as to avoid race conditions with the main attacher
@@ -212,88 +228,90 @@ func (h *csiHandler) consumeForceSync(vaName string) bool {
 	return s
 }
 
-func (h *csiHandler) SyncNewOrUpdatedVolumeAttachment(va *storage.VolumeAttachment) {
-	klog.V(4).Infof("CSIHandler: processing VA %q", va.Name)
+func (h *csiHandler) SyncNewOrUpdatedVolumeAttachment(ctx context.Context, va *storage.VolumeAttachment) {
+	logger := klog.FromContext(ctx)
+	logger.V(4).Info("CSIHandler: processing VolumeAttachment")
 
 	var err error
 	if va.DeletionTimestamp == nil {
-		err = h.syncAttach(va)
+		err = h.syncAttach(ctx, va)
 	} else {
-		err = h.syncDetach(va)
+		err = h.syncDetach(ctx, va)
 	}
 	if err != nil {
 		// Re-queue with exponential backoff
-		klog.V(2).Infof("Error processing %q: %s", va.Name, err)
+		logger.V(2).Info("Error processing", "err", err)
 		h.vaQueue.AddRateLimited(va.Name)
 		return
 	}
 	// The operation has finished successfully, reset exponential backoff
 	h.vaQueue.Forget(va.Name)
-	klog.V(4).Infof("CSIHandler: finished processing %q", va.Name)
+	logger.V(4).Info("CSIHandler: finished processing")
 }
 
-func (h *csiHandler) syncAttach(va *storage.VolumeAttachment) error {
+func (h *csiHandler) syncAttach(ctx context.Context, va *storage.VolumeAttachment) error {
+	logger := klog.FromContext(ctx)
 	if !h.consumeForceSync(va.Name) && va.Status.Attached {
 		// Volume is attached and no force sync, there is nothing to be done.
-		klog.V(4).Infof("%q is already attached", va.Name)
+		logger.V(4).Info("VolumeAttachment is already attached")
 		return nil
 	}
 
 	// Attach and report any error
-	klog.V(2).Infof("Attaching %q", va.Name)
-	va, metadata, err := h.csiAttach(va)
+	logger.V(2).Info("Attaching")
+	va, metadata, err := h.csiAttach(ctx, va)
 	if err != nil {
-		var saveErr error
-		va, saveErr = h.saveAttachError(va, err)
+		_, saveErr := h.saveAttachError(ctx, va, err)
 		if saveErr != nil {
 			// Just log it, propagate the attach error.
-			klog.V(2).Infof("Failed to save attach error to %q: %s", va.Name, saveErr.Error())
+			logger.V(2).Info("Failed to save attach error to VolumeAttachment", "err", saveErr.Error())
 		}
 		// Add context to the error for logging
 		err := fmt.Errorf("failed to attach: %s", err)
 		return err
 	}
-	klog.V(2).Infof("Attached %q", va.Name)
+	logger.V(2).Info("Attached")
 
 	// Mark as attached
-	if _, err := markAsAttached(h.client, va, metadata); err != nil {
+	if _, err := markAsAttached(ctx, h.client, va, metadata); err != nil {
 		return fmt.Errorf("failed to mark as attached: %s", err)
 	}
-	klog.V(4).Infof("Fully attached %q", va.Name)
+	logger.V(4).Info("Fully attached")
 	return nil
 }
 
-func (h *csiHandler) syncDetach(va *storage.VolumeAttachment) error {
-	klog.V(4).Infof("Starting detach operation for %q", va.Name)
+func (h *csiHandler) syncDetach(ctx context.Context, va *storage.VolumeAttachment) error {
+	logger := klog.FromContext(ctx)
+	logger.V(4).Info("Starting detach operation")
 	if !h.consumeForceSync(va.Name) && !h.hasVAFinalizer(va) {
-		klog.V(4).Infof("%q is already detached", va.Name)
+		logger.V(4).Info("VolumeAttachment is already detached")
 		return nil
 	}
 
 	// Detach and report any error
-	klog.V(2).Infof("Detaching %q", va.Name)
-	va, err := h.csiDetach(va)
+	logger.V(2).Info("Detaching")
+	va, err := h.csiDetach(ctx, va)
 	if err != nil {
 		var saveErr error
-		va, saveErr = h.saveDetachError(va, err)
+		_, saveErr = h.saveDetachError(ctx, va, err)
 		if saveErr != nil {
 			// Just log it, propagate the detach error.
-			klog.V(2).Infof("Failed to save detach error to %q: %s", va.Name, saveErr.Error())
+			logger.V(2).Info("Failed to save detach error to VolumeAttachment", "err", saveErr.Error())
 		}
 		// Add context to the error for logging
 		err := fmt.Errorf("failed to detach: %s", err)
 		return err
 	}
-	klog.V(4).Infof("Fully detached %q", va.Name)
+	logger.V(4).Info("Fully detached")
 	return nil
 }
 
-func (h *csiHandler) prepareVAFinalizer(va *storage.VolumeAttachment) (newVA *storage.VolumeAttachment, modified bool) {
+func (h *csiHandler) prepareVAFinalizer(logger klog.Logger, va *storage.VolumeAttachment) (newVA *storage.VolumeAttachment, modified bool) {
 	finalizerName := GetFinalizerName(h.attacherName)
 	for _, f := range va.Finalizers {
 		if f == finalizerName {
 			// Finalizer is already present
-			klog.V(4).Infof("VA finalizer is already set on %q", va.Name)
+			logger.V(4).Info("VolumeAttachment finalizer is already set")
 			return va, false
 		}
 	}
@@ -301,13 +319,14 @@ func (h *csiHandler) prepareVAFinalizer(va *storage.VolumeAttachment) (newVA *st
 	// Finalizer is not present, add it
 	clone := va.DeepCopy()
 	clone.Finalizers = append(clone.Finalizers, finalizerName)
-	klog.V(4).Infof("VA finalizer added to %q", va.Name)
+	logger.V(4).Info("VolumeAttachment finalizer added")
 	return clone, true
 }
 
-func (h *csiHandler) prepareVANodeID(va *storage.VolumeAttachment, nodeID string) (newVA *storage.VolumeAttachment, modified bool) {
+func (h *csiHandler) prepareVANodeID(logger klog.Logger, va *storage.VolumeAttachment, nodeID string) (newVA *storage.VolumeAttachment, modified bool) {
+	logger = klog.LoggerWithValues(logger, "nodeID", nodeID)
 	if existingID, ok := va.Annotations[vaNodeIDAnnotation]; ok && existingID == nodeID {
-		klog.V(4).Infof("NodeID annotation is already set on %q", va.Name)
+		logger.V(4).Info("NodeID annotation is already set")
 		return va, false
 	}
 	clone := va.DeepCopy()
@@ -315,40 +334,32 @@ func (h *csiHandler) prepareVANodeID(va *storage.VolumeAttachment, nodeID string
 		clone.Annotations = map[string]string{}
 	}
 	clone.Annotations[vaNodeIDAnnotation] = nodeID
-	klog.V(4).Infof("NodeID annotation added to %q", va.Name)
+	logger.V(4).Info("NodeID annotation added")
 	return clone, true
 }
 
-func (h *csiHandler) saveVA(va *storage.VolumeAttachment, patch []byte) (*storage.VolumeAttachment, error) {
-	newVA, err := h.client.StorageV1().VolumeAttachments().Patch(context.TODO(), va.Name, types.MergePatchType, patch, metav1.PatchOptions{})
-	if err != nil {
-		return va, err
-	}
-	klog.V(4).Infof("VolumeAttachment %q updated with finalizer and/or NodeID annotation", va.Name)
-	return newVA, nil
-}
-
-func (h *csiHandler) addPVFinalizer(pv *v1.PersistentVolume) (*v1.PersistentVolume, error) {
+func (h *csiHandler) addPVFinalizer(ctx context.Context, pv *v1.PersistentVolume) (*v1.PersistentVolume, error) {
+	logger := klog.LoggerWithValues(klog.FromContext(ctx), "PersistentVolume", pv.Name)
 	finalizerName := GetFinalizerName(h.attacherName)
 	for _, f := range pv.Finalizers {
 		if f == finalizerName {
 			// Finalizer is already present
-			klog.V(4).Infof("PV finalizer is already set on %q", pv.Name)
+			logger.V(4).Info("PersistentVolume finalizer is already set")
 			return pv, nil
 		}
 	}
 
 	// Finalizer is not present, add it
-	klog.V(4).Infof("Adding finalizer to PV %q", pv.Name)
+	logger.V(4).Info("Adding finalizer to PersistentVolume")
 	clone := pv.DeepCopy()
 	clone.Finalizers = append(clone.Finalizers, finalizerName)
 
-	newPV, err := h.patchPV(pv, clone)
+	newPV, err := h.patchPV(ctx, pv, clone)
 	if err != nil {
 		return pv, err
 	}
 
-	klog.V(4).Infof("PV finalizer added to %q", pv.Name)
+	logger.V(4).Info("PersistentVolume finalizer added")
 	return newPV, nil
 }
 
@@ -418,13 +429,15 @@ func (h *csiHandler) getProcessedPVSpec(va *storage.VolumeAttachment) (*v1.Persi
 	}
 }
 
-func (h *csiHandler) csiAttach(va *storage.VolumeAttachment) (*storage.VolumeAttachment, map[string]string, error) {
-	klog.V(4).Infof("Starting attach operation for %q", va.Name)
+func (h *csiHandler) csiAttach(ctx context.Context, va *storage.VolumeAttachment) (*storage.VolumeAttachment, map[string]string, error) {
+	logger := klog.FromContext(ctx)
+	logger.V(4).Info("Starting attach operation")
 	// Check as much as possible before adding VA finalizer - it would block
 	// deletion of VA on error.
 
 	var csiSource *v1.CSIPersistentVolumeSource
 	var pvSpec *v1.PersistentVolumeSpec
+	var migratable bool
 	if va.Spec.Source.PersistentVolumeName != nil {
 		if va.Spec.Source.InlineVolumeSpec != nil {
 			return va, nil, errors.New("both InlineCSIVolumeSource and PersistentVolumeName specified in VA source")
@@ -437,7 +450,7 @@ func (h *csiHandler) csiAttach(va *storage.VolumeAttachment) (*storage.VolumeAtt
 		if pv.DeletionTimestamp != nil {
 			return va, nil, fmt.Errorf("PersistentVolume %q is marked for deletion", pv.Name)
 		}
-		pv, err = h.addPVFinalizer(pv)
+		pv, err = h.addPVFinalizer(ctx, pv)
 		if err != nil {
 			return va, nil, fmt.Errorf("could not add PersistentVolume finalizer: %s", err)
 		}
@@ -447,6 +460,7 @@ func (h *csiHandler) csiAttach(va *storage.VolumeAttachment) (*storage.VolumeAtt
 			if err != nil {
 				return va, nil, fmt.Errorf("failed to translate in tree pv to CSI: %v", err)
 			}
+			migratable = true
 		}
 
 		// Both csiSource and pvSpec could be translated here if the PV was
@@ -484,31 +498,33 @@ func (h *csiHandler) csiAttach(va *storage.VolumeAttachment) (*storage.VolumeAtt
 		readOnly = false
 	}
 
-	volumeCapabilities, err := GetVolumeCapabilities(pvSpec)
-	if err != nil {
-		return va, nil, err
-	}
-	secrets, err := h.getCredentialsFromPV(csiSource)
+	volumeCapabilities, err := GetVolumeCapabilities(logger, pvSpec, h.supportsSingleNodeMultiWriter, h.defaultFSType)
 	if err != nil {
 		return va, nil, err
 	}
 
-	nodeID, err := h.getNodeID(h.attacherName, va.Spec.NodeName, nil)
+	secrets, err := h.getCredentialsFromPV(ctx, csiSource)
+	if err != nil {
+		return va, nil, err
+	}
+
+	nodeID, err := h.getNodeID(logger, h.attacherName, va.Spec.NodeName, nil)
 	if err != nil {
 		return va, nil, err
 	}
 
 	originalVA := va
-	va, finalizerAdded := h.prepareVAFinalizer(va)
-	va, nodeIDAdded := h.prepareVANodeID(va, nodeID)
+	va, finalizerAdded := h.prepareVAFinalizer(logger, va)
+	va, nodeIDAdded := h.prepareVANodeID(logger, va, nodeID)
 
 	if finalizerAdded || nodeIDAdded {
-		if va, err = h.patchVA(originalVA, va); err != nil {
+		if va, err = h.patchVA(ctx, originalVA, va); err != nil {
 			return originalVA, nil, fmt.Errorf("could not save VolumeAttachment: %s", err)
 		}
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), h.timeout)
+	ctx, cancel := context.WithTimeout(ctx, h.timeout)
+	ctx = markAsMigrated(ctx, migratable)
 	defer cancel()
 	// We're not interested in `detached` return value, the controller will
 	// issue Detach to be sure the volume is really detached.
@@ -520,8 +536,9 @@ func (h *csiHandler) csiAttach(va *storage.VolumeAttachment) (*storage.VolumeAtt
 	return va, publishInfo, nil
 }
 
-func (h *csiHandler) csiDetach(va *storage.VolumeAttachment) (*storage.VolumeAttachment, error) {
+func (h *csiHandler) csiDetach(ctx context.Context, va *storage.VolumeAttachment) (*storage.VolumeAttachment, error) {
 	var csiSource *v1.CSIPersistentVolumeSource
+	var migratable bool
 	if va.Spec.Source.PersistentVolumeName != nil {
 		if va.Spec.Source.InlineVolumeSpec != nil {
 			return va, errors.New("both InlineCSIVolumeSource and PersistentVolumeName specified in VA source")
@@ -535,6 +552,7 @@ func (h *csiHandler) csiDetach(va *storage.VolumeAttachment) (*storage.VolumeAtt
 			if err != nil {
 				return va, fmt.Errorf("failed to translate in tree pv to CSI: %v", err)
 			}
+			migratable = true
 		}
 		csiSource, err = getCSISource(&pv.Spec)
 		if err != nil {
@@ -554,17 +572,19 @@ func (h *csiHandler) csiDetach(va *storage.VolumeAttachment) (*storage.VolumeAtt
 	if err != nil {
 		return va, err
 	}
-	secrets, err := h.getCredentialsFromPV(csiSource)
+	secrets, err := h.getCredentialsFromPV(ctx, csiSource)
 	if err != nil {
 		return va, err
 	}
 
-	nodeID, err := h.getNodeID(h.attacherName, va.Spec.NodeName, va)
+	logger := klog.FromContext(ctx)
+	nodeID, err := h.getNodeID(logger, h.attacherName, va.Spec.NodeName, va)
 	if err != nil {
 		return va, err
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), h.timeout)
+	ctx, cancel := context.WithTimeout(ctx, h.timeout)
+	ctx = markAsMigrated(ctx, migratable)
 	defer cancel()
 	err = h.attacher.Detach(ctx, volumeHandle, nodeID, secrets)
 	if err != nil {
@@ -572,17 +592,18 @@ func (h *csiHandler) csiDetach(va *storage.VolumeAttachment) (*storage.VolumeAtt
 		// after backoff.
 		return va, err
 	}
-	klog.V(2).Infof("Detached %q", va.Name)
+	logger.V(2).Info("Detached")
 
-	if va, err := markAsDetached(h.client, va); err != nil {
+	if va, err := markAsDetached(ctx, h.client, va); err != nil {
 		return va, fmt.Errorf("could not mark as detached: %s", err)
 	}
 
 	return va, nil
 }
 
-func (h *csiHandler) saveAttachError(va *storage.VolumeAttachment, err error) (*storage.VolumeAttachment, error) {
-	klog.V(4).Infof("Saving attach error to %q", va.Name)
+func (h *csiHandler) saveAttachError(ctx context.Context, va *storage.VolumeAttachment, err error) (*storage.VolumeAttachment, error) {
+	logger := klog.FromContext(ctx)
+	logger.V(4).Info("Saving attach error")
 	clone := va.DeepCopy()
 	clone.Status.AttachError = &storage.VolumeError{
 		Message: err.Error(),
@@ -590,15 +611,16 @@ func (h *csiHandler) saveAttachError(va *storage.VolumeAttachment, err error) (*
 	}
 
 	var newVa *storage.VolumeAttachment
-	if newVa, err = h.patchVA(va, clone, "status"); err != nil {
+	if newVa, err = h.patchVA(ctx, va, clone, "status"); err != nil {
 		return va, err
 	}
-	klog.V(4).Infof("Saved attach error to %q", va.Name)
+	logger.V(4).Info("Saved attach error")
 	return newVa, nil
 }
 
-func (h *csiHandler) saveDetachError(va *storage.VolumeAttachment, err error) (*storage.VolumeAttachment, error) {
-	klog.V(4).Infof("Saving detach error to %q", va.Name)
+func (h *csiHandler) saveDetachError(ctx context.Context, va *storage.VolumeAttachment, err error) (*storage.VolumeAttachment, error) {
+	logger := klog.FromContext(ctx)
+	logger.V(4).Info("Saving detach error")
 	clone := va.DeepCopy()
 	clone.Status.DetachError = &storage.VolumeError{
 		Message: err.Error(),
@@ -606,21 +628,43 @@ func (h *csiHandler) saveDetachError(va *storage.VolumeAttachment, err error) (*
 	}
 
 	var newVa *storage.VolumeAttachment
-	if newVa, err = h.patchVA(va, clone, "status"); err != nil {
+	if newVa, err = h.patchVA(ctx, va, clone, "status"); err != nil {
 		return va, err
 	}
-	klog.V(4).Infof("Saved detach error to %q", va.Name)
+	logger.V(4).Info("Saved detach error")
 	return newVa, nil
 }
 
-func (h *csiHandler) SyncNewOrUpdatedPersistentVolume(pv *v1.PersistentVolume) {
-	klog.V(4).Infof("CSIHandler: processing PV %q", pv.Name)
+func (h *csiHandler) SyncNewOrUpdatedPersistentVolume(ctx context.Context, pv *v1.PersistentVolume) {
+	logger := klog.FromContext(ctx)
+	logger.V(4).Info("CSIHandler: processing PersistentVolume")
 	// Sync and remove finalizer on given PV
 	if pv.DeletionTimestamp == nil {
-		// Don't process anything that has no deletion timestamp.
-		klog.V(4).Infof("CSIHandler: processing PV %q: no deletion timestamp, ignoring", pv.Name)
-		h.pvQueue.Forget(pv.Name)
-		return
+		ignore := true
+
+		// if the PV is migrated this means CSIMigration is disabled so we need to remove the finalizer
+		// to give back the control of the PV to Kube-Controller-Manager
+		if h.translator.IsPVMigratable(pv) {
+			ignore = false
+			if ann := pv.Annotations; ann != nil {
+				if migratedToDriver := ann[annMigratedTo]; migratedToDriver == h.attacherName {
+					ignore = true
+				} else {
+					logger.V(4).Info(
+						"CSIHandler: PersistentVolume is an in-tree PV but does not have migrated-to annotation or the annotation does not match. Remove the finalizer for this PersistentVolume",
+						"expect", h.attacherName,
+						"get", migratedToDriver,
+					)
+				}
+			}
+		}
+
+		if ignore {
+			// Don't process anything that has no deletion timestamp.
+			logger.V(4).Info("CSIHandler: processing PersistentVolume: no deletion timestamp, ignoring")
+			h.pvQueue.Forget(pv.Name)
+			return
+		}
 	}
 
 	// Check if the PV has finalizer
@@ -634,7 +678,7 @@ func (h *csiHandler) SyncNewOrUpdatedPersistentVolume(pv *v1.PersistentVolume) {
 	}
 	if !found {
 		// No finalizer -> no action required
-		klog.V(4).Infof("CSIHandler: processing PV %q: no finalizer, ignoring", pv.Name)
+		logger.V(4).Info("CSIHandler: processing PersistentVolume: no finalizer, ignoring")
 		h.pvQueue.Forget(pv.Name)
 		return
 	}
@@ -643,20 +687,20 @@ func (h *csiHandler) SyncNewOrUpdatedPersistentVolume(pv *v1.PersistentVolume) {
 	vas, err := h.vaLister.List(labels.Everything())
 	if err != nil {
 		// Failed listing VAs? Try again with exp. backoff
-		klog.Errorf("Failed to list VolumeAttachments for PV %q: %s", pv.Name, err.Error())
+		logger.Error(err, "Failed to list VolumeAttachments for PersistentVolume")
 		h.pvQueue.AddRateLimited(pv.Name)
 		return
 	}
 	for _, va := range vas {
 		if va.Spec.Source.PersistentVolumeName != nil && *va.Spec.Source.PersistentVolumeName == pv.Name {
 			// This PV is needed by this VA, don't remove finalizer
-			klog.V(4).Infof("CSIHandler: processing PV %q: VA %q found", pv.Name, va.Name)
+			logger.V(4).Info("CSIHandler: processing PersistentVolume: VolumeAttachment was found", "VolumeAttachment", va.Name)
 			h.pvQueue.Forget(pv.Name)
 			return
 		}
 	}
 	// No VA found -> remove finalizer
-	klog.V(4).Infof("CSIHandler: processing PV %q: no VA found, removing finalizer", pv.Name)
+	logger.V(4).Info("CSIHandler: processing PersistentVolume: no VolumeAttachment found, removing finalizer")
 	clone := pv.DeepCopy()
 	newFinalizers := []string{}
 	for _, f := range pv.Finalizers {
@@ -672,19 +716,17 @@ func (h *csiHandler) SyncNewOrUpdatedPersistentVolume(pv *v1.PersistentVolume) {
 	}
 	clone.Finalizers = newFinalizers
 
-	if _, err = h.patchPV(pv, clone); err != nil {
-		klog.Errorf("Failed to remove finalizer from PV %q: %s", pv.Name, err.Error())
+	if _, err = h.patchPV(ctx, pv, clone); err != nil {
+		logger.Error(err, "Failed to remove finalizer from PersistentVolume")
 		h.pvQueue.AddRateLimited(pv.Name)
 		return
 	}
 
-	klog.V(2).Infof("Removed finalizer from PV %q", pv.Name)
+	logger.V(2).Info("Removed finalizer from PersistentVolume")
 	h.pvQueue.Forget(pv.Name)
-
-	return
 }
 
-func (h *csiHandler) getCredentialsFromPV(csiSource *v1.CSIPersistentVolumeSource) (map[string]string, error) {
+func (h *csiHandler) getCredentialsFromPV(ctx context.Context, csiSource *v1.CSIPersistentVolumeSource) (map[string]string, error) {
 	if csiSource == nil {
 		return nil, fmt.Errorf("CSI volume source was nil")
 	}
@@ -693,7 +735,7 @@ func (h *csiHandler) getCredentialsFromPV(csiSource *v1.CSIPersistentVolumeSourc
 		return nil, nil
 	}
 
-	secret, err := h.client.CoreV1().Secrets(secretRef.Namespace).Get(context.TODO(), secretRef.Name, metav1.GetOptions{})
+	secret, err := h.client.CoreV1().Secrets(secretRef.Namespace).Get(ctx, secretRef.Name, metav1.GetOptions{})
 	if err != nil {
 		return nil, fmt.Errorf("failed to load secret \"%s/%s\": %s", secretRef.Namespace, secretRef.Name, err)
 	}
@@ -707,22 +749,23 @@ func (h *csiHandler) getCredentialsFromPV(csiSource *v1.CSIPersistentVolumeSourc
 
 // getNodeID finds node ID from CSINode API object. If caller wants, it can find
 // node ID stored in VolumeAttachment annotation.
-func (h *csiHandler) getNodeID(driver string, nodeName string, va *storage.VolumeAttachment) (string, error) {
+func (h *csiHandler) getNodeID(logger klog.Logger, driver string, nodeName string, va *storage.VolumeAttachment) (string, error) {
 	// Try to find CSINode first.
 	csiNode, err := h.csiNodeLister.Get(nodeName)
 	if err == nil {
 		if nodeID, found := GetNodeIDFromCSINode(driver, csiNode); found {
-			klog.V(4).Infof("Found NodeID %s in CSINode %s", nodeID, nodeName)
+			logger.V(4).Info("Found nodeID in CSINode", "nodeID", nodeID, "CSINode", nodeName)
 			return nodeID, nil
 		}
-		// CSINode exists, but does not have the requested driver.
-		errMessage := fmt.Sprintf("CSINode %s does not contain driver %s", nodeName, driver)
-		klog.V(4).Info(errMessage)
-		return "", errors.New(errMessage)
+		// CSINode exists, but does not have the requested driver; this can happen if the CSI pod is not running, for
+		// example the node might be currently shut down. We don't want to block the controller unpublish in that scenario.
+		// We should treat missing driver in the same way as missing CSINode; attempt to use the node ID from the volume
+		// attachment.
+		err = fmt.Errorf("CSINode %s does not contain driver %s", nodeName, driver)
 	}
 
 	// Can't get CSINode, check Volume Attachment.
-	klog.V(4).Infof("Can't get CSINode %s: %s", nodeName, err)
+	logger.V(4).Info("Failed to get nodeID from CSINode", "nodeName", nodeName, "err", err.Error())
 
 	// Check VolumeAttachment annotation as the last resort if caller wants so (i.e. has provided one).
 	if va == nil {
@@ -736,30 +779,33 @@ func (h *csiHandler) getNodeID(driver string, nodeName string, va *storage.Volum
 	return "", err
 }
 
-func (h *csiHandler) patchVA(va, clone *storage.VolumeAttachment, subresources ...string) (*storage.VolumeAttachment,
+func (h *csiHandler) patchVA(ctx context.Context, va, clone *storage.VolumeAttachment, subresources ...string) (*storage.VolumeAttachment,
 	error) {
 	patch, err := createMergePatch(va, clone)
 	if err != nil {
 		return va, err
 	}
 
-	newVa, err := h.client.StorageV1().VolumeAttachments().Patch(context.TODO(), va.Name, types.MergePatchType, patch,
-		metav1.PatchOptions{}, subresources...)
+	newVa, err := h.client.StorageV1().VolumeAttachments().Patch(ctx, va.Name, types.MergePatchType, patch, metav1.PatchOptions{}, subresources...)
 	if err != nil {
 		return va, err
 	}
 	return newVa, nil
 }
 
-func (h *csiHandler) patchPV(pv, clone *v1.PersistentVolume) (*v1.PersistentVolume, error) {
+func (h *csiHandler) patchPV(ctx context.Context, pv, clone *v1.PersistentVolume) (*v1.PersistentVolume, error) {
 	patch, err := createMergePatch(pv, clone)
 	if err != nil {
 		return pv, err
 	}
 
-	newPV, err := h.client.CoreV1().PersistentVolumes().Patch(context.TODO(), pv.Name, types.MergePatchType, patch, metav1.PatchOptions{})
+	newPV, err := h.client.CoreV1().PersistentVolumes().Patch(ctx, pv.Name, types.MergePatchType, patch, metav1.PatchOptions{})
 	if err != nil {
 		return pv, err
 	}
 	return newPV, nil
+}
+
+func markAsMigrated(parent context.Context, hasMigrated bool) context.Context {
+	return context.WithValue(parent, connection.AdditionalInfoKey, connection.AdditionalInfo{Migrated: strconv.FormatBool(hasMigrated)})
 }

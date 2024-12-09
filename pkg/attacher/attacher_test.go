@@ -19,7 +19,6 @@ package attacher
 import (
 	"context"
 	"fmt"
-	"io/ioutil"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -30,14 +29,10 @@ import (
 	"github.com/golang/protobuf/proto"
 	"github.com/kubernetes-csi/csi-lib-utils/connection"
 	"github.com/kubernetes-csi/csi-lib-utils/metrics"
-	"github.com/kubernetes-csi/csi-test/v3/driver"
+	"github.com/kubernetes-csi/csi-test/v5/driver"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
-)
-
-const (
-	driverName = "foo/bar"
 )
 
 type pbMatcher struct {
@@ -59,7 +54,7 @@ func pbMatch(x interface{}) gomock.Matcher {
 }
 
 func tempDir(t *testing.T) string {
-	dir, err := ioutil.TempDir("", "external-attacher-test-")
+	dir, err := os.MkdirTemp("", "external-attacher-test-")
 	if err != nil {
 		t.Fatalf("Cannot create temporary directory: %s", err)
 	}
@@ -81,7 +76,8 @@ func createMockServer(t *testing.T, tmpdir string) (*gomock.Controller, *driver.
 	// Create a client connection to it
 	addr := drv.Address()
 	t.Logf("adds: %s", addr)
-	csiConn, err := connection.Connect(addr, metricsManager)
+	ctx := context.Background()
+	csiConn, err := connection.Connect(ctx, addr, metricsManager)
 	if err != nil {
 		return nil, nil, nil, nil, nil, err
 	}

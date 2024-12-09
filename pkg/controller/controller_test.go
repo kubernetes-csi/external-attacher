@@ -19,8 +19,10 @@ package controller
 import (
 	"testing"
 
+	v1 "k8s.io/api/core/v1"
 	storage "k8s.io/api/storage/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	csitrans "k8s.io/csi-translation-lib"
 )
 
 func TestShouldEnqueueVAChange(t *testing.T) {
@@ -71,6 +73,19 @@ func TestShouldEnqueueVAChange(t *testing.T) {
 		Time:    metav1.Time{},
 	}
 
+	va2AppendManagedFields := va1.DeepCopy()
+	va2AppendManagedFields.ResourceVersion = "2"
+	va2AppendManagedFields.ManagedFields = append(va2AppendManagedFields.ManagedFields,
+		metav1.ManagedFieldsEntry{
+			APIVersion: "storage.k8s.io/v1beta1",
+			Manager:    "csi-attacher",
+			Operation:  "Update",
+			FieldsType: "FieldsV1",
+			FieldsV1: &metav1.FieldsV1{
+				Raw: []byte(`{"f:metadata":{"f:annotations":{".":{},"f:csi.alpha.kubernetes.io/node-id":{}},"f:finalizers":{".":{},"v:\\\"external-attacher/csi-cdsplugin\\\"":{}}},"f:status":{"f:attached":{},"f:attachmentMetadata":{".":{},"f:devName":{},"f:serial":{}}}}`),
+			},
+		})
+
 	tests := []struct {
 		name           string
 		oldVA, newVA   *storage.VolumeAttachment
@@ -118,6 +133,12 @@ func TestShouldEnqueueVAChange(t *testing.T) {
 			newVA:          va2ChangedDetachError,
 			expectedResult: false,
 		},
+		{
+			name:           "appended managedFields",
+			oldVA:          va1,
+			newVA:          va2AppendManagedFields,
+			expectedResult: false,
+		},
 	}
 
 	for _, test := range tests {
@@ -127,5 +148,98 @@ func TestShouldEnqueueVAChange(t *testing.T) {
 				t.Errorf("Error: expected result %t, got %t", test.expectedResult, result)
 			}
 		})
+	}
+}
+
+func TestProcessFinalizers(t *testing.T) {
+	type testcase struct {
+		name           string
+		pv             *v1.PersistentVolume
+		expectedResult bool
+	}
+
+	c := &CSIAttachController{}
+	c.translator = csitrans.New()
+	c.attacherName = "pd.csi.storage.gke.io"
+	time := metav1.Now()
+
+	testcases := []testcase{
+		{
+			name:           "nothing interesting in the PV",
+			pv:             &v1.PersistentVolume{},
+			expectedResult: false,
+		},
+		{
+			name: "no deletion timestamp, has finalizer",
+			pv: &v1.PersistentVolume{
+				ObjectMeta: metav1.ObjectMeta{
+					Finalizers: []string{"external-attacher/pd-csi-storage-gke-io"},
+				},
+			},
+			expectedResult: false,
+		},
+		{
+			name: "Has deletion timestamp, has finalizer",
+			pv: &v1.PersistentVolume{
+				ObjectMeta: metav1.ObjectMeta{
+					DeletionTimestamp: &time,
+					Finalizers:        []string{"external-attacher/pd-csi-storage-gke-io"},
+				},
+			},
+			expectedResult: true,
+		},
+		{
+			name: "no deletion timestamp, has finalizer, migrated PV, no migrated-to annotation",
+			pv: &v1.PersistentVolume{
+				ObjectMeta: metav1.ObjectMeta{
+					Finalizers: []string{"external-attacher/pd-csi-storage-gke-io"},
+				},
+				Spec: v1.PersistentVolumeSpec{
+					PersistentVolumeSource: v1.PersistentVolumeSource{
+						GCEPersistentDisk: &v1.GCEPersistentDiskVolumeSource{},
+					},
+				},
+			},
+			expectedResult: true,
+		},
+		{
+			name: "no deletion timestamp, has finalizer, migrated PV, no migrated-to annotation with random anno",
+			pv: &v1.PersistentVolume{
+				ObjectMeta: metav1.ObjectMeta{
+					Finalizers:  []string{"external-attacher/pd-csi-storage-gke-io"},
+					Annotations: map[string]string{"random": "random"},
+				},
+				Spec: v1.PersistentVolumeSpec{
+					PersistentVolumeSource: v1.PersistentVolumeSource{
+						GCEPersistentDisk: &v1.GCEPersistentDiskVolumeSource{},
+					},
+				},
+			},
+			expectedResult: true,
+		},
+		{
+			name: "no deletion timestamp, has finalizer, migrated PV, has migrated-to annotation",
+			pv: &v1.PersistentVolume{
+				ObjectMeta: metav1.ObjectMeta{
+					Finalizers: []string{"external-attacher/pd-csi-storage-gke-io"},
+					Annotations: map[string]string{
+						"pv.kubernetes.io/migrated-to": "pd.csi.storage.gke.io",
+					},
+				},
+				Spec: v1.PersistentVolumeSpec{
+					PersistentVolumeSource: v1.PersistentVolumeSource{
+						GCEPersistentDisk: &v1.GCEPersistentDiskVolumeSource{},
+					},
+				},
+			},
+			expectedResult: false,
+		},
+	}
+
+	for _, tc := range testcases {
+		result := c.processFinalizers(tc.pv)
+		if result != tc.expectedResult {
+			t.Errorf("Error executing test %v: expected result %v, got %v", tc.name, tc.expectedResult, result)
+		}
 	}
 }

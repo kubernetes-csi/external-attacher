@@ -17,11 +17,13 @@ limitations under the License.
 package controller
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"testing"
 	"time"
 
+	"github.com/kubernetes-csi/csi-lib-utils/connection"
 	"github.com/kubernetes-csi/external-attacher/pkg/attacher"
 
 	v1 "k8s.io/api/core/v1"
@@ -36,11 +38,14 @@ import (
 	core "k8s.io/client-go/testing"
 	csitranslator "k8s.io/csi-translation-lib"
 	"k8s.io/klog/v2"
+	_ "k8s.io/klog/v2/ktesting/init"
 )
 
 const (
 	// Finalizer value
 	fin = "external-attacher/csi-test"
+
+	defaultFSType = "ext4"
 )
 
 var (
@@ -61,8 +66,10 @@ func csiHandlerFactory(client kubernetes.Interface, informerFactory informers.Sh
 		informerFactory.Storage().V1().CSINodes().Lister(),
 		informerFactory.Storage().V1().VolumeAttachments().Lister(),
 		&timeout,
-		true, /* supports PUBLISH_READONLY */
+		true,  /* supports PUBLISH_READONLY */
+		false, /* does not support SINGLE_NODE_MULTI_WRITER access mode */
 		csitranslator.New(),
+		defaultFSType,
 	)
 }
 
@@ -77,7 +84,9 @@ func csiHandlerFactoryNoReadOnly(client kubernetes.Interface, informerFactory in
 		informerFactory.Storage().V1().VolumeAttachments().Lister(),
 		&timeout,
 		false, /* does not support PUBLISH_READONLY */
+		false, /* does not support SINGLE_NODE_MULTI_WRITER access mode */
 		csitranslator.New(),
+		defaultFSType,
 	)
 }
 
@@ -254,7 +263,7 @@ func secret() *v1.Secret {
 func patch(original, new interface{}) []byte {
 	patch, err := createMergePatch(original, new)
 	if err != nil {
-		klog.Fatalf("Failed to create patch %+v", err)
+		klog.Background().Error(err, "Failed to create patch")
 		return nil
 	}
 	return patch
@@ -1432,7 +1441,7 @@ func TestCSIHandlerReconcileVA(t *testing.T) {
 				pvWithFinalizer(),
 			},
 			listerResponse: map[string][]string{
-				testVolumeHandle: []string{testNodeID},
+				testVolumeHandle: {testNodeID},
 			},
 			expectedActions: []core.Action{
 				// Intentionally empty
@@ -1445,7 +1454,7 @@ func TestCSIHandlerReconcileVA(t *testing.T) {
 				pvWithFinalizer(),
 			},
 			listerResponse: map[string][]string{
-				testVolumeHandle: []string{testNodeID},
+				testVolumeHandle: {testNodeID},
 			},
 			expectedActions: []core.Action{},
 			expectedCSICalls: []csiCall{
@@ -1456,7 +1465,7 @@ func TestCSIHandlerReconcileVA(t *testing.T) {
 			name:           "no volume attachments but existing lister response results in no action",
 			initialObjects: []runtime.Object{},
 			listerResponse: map[string][]string{
-				testVolumeHandle: []string{testNodeID},
+				testVolumeHandle: {testNodeID},
 			},
 			expectedActions: []core.Action{},
 		},
@@ -1518,4 +1527,21 @@ func TestCSIHandlerReadOnly(t *testing.T) {
 		},
 	}
 	runTests(t, csiHandlerFactoryNoReadOnly, tests)
+}
+
+func TestMarkAsMigrated(t *testing.T) {
+	t.Run("context has the migrated label for the migratable plugins", func(t *testing.T) {
+		ctx := context.Background()
+		migratedCtx := markAsMigrated(ctx, true)
+		additionalInfo := migratedCtx.Value(connection.AdditionalInfoKey)
+		if additionalInfo == nil {
+			t.Errorf("test: %s, no migrated label found in the context", t.Name())
+		}
+		additionalInfoVal := additionalInfo.(connection.AdditionalInfo)
+		migrated := additionalInfoVal.Migrated
+
+		if migrated != "true" {
+			t.Errorf("test: %s, expected: %v, got: %v", t.Name(), "true", migrated)
+		}
+	})
 }

@@ -1,5 +1,3 @@
-[![Build Status](https://travis-ci.org/kubernetes-csi/external-attacher.svg?branch=master)](https://travis-ci.org/kubernetes-csi/external-attacher)
-
 # CSI attacher
 
 The external-attacher is a sidecar container that attaches volumes to nodes by calling `ControllerPublish` and `ControllerUnpublish` functions of CSI drivers. It is necessary because internal Attach/Detach controller running in Kubernetes controller-manager does not have any direct interfaces to CSI drivers.
@@ -14,15 +12,15 @@ It is **not** an attach/detach operation performed by a code running on a node, 
 
 ## Overview
 
-The external-attacher is an external controller that monitors `VolumeAttachment` objects created by controller-manager and attaches/detaches volumes to/from nodes (i.e. calls `ControllerPublish`/`ControllerUnpublish`. Full design can be found at Kubernetes proposal at [container-storage-interface.md](https://github.com/kubernetes/community/blob/master/contributors/design-proposals/storage/container-storage-interface.md)
+The external-attacher is an external controller that monitors `VolumeAttachment` objects created by controller-manager and attaches/detaches volumes to/from nodes (i.e. calls `ControllerPublish`/`ControllerUnpublish`. Full design can be found at Kubernetes proposal at [container-storage-interface.md](https://github.com/kubernetes/design-proposals-archive/blob/main/storage/container-storage-interface.md)
 
 ## Compatibility
 
 This information reflects the head of this branch.
 
 | Compatible with CSI Version                                                                | Container Image                     | [Min K8s Version](https://kubernetes-csi.github.io/docs/kubernetes-compatibility.html#minimum-version) | [Recommended K8s Version](https://kubernetes-csi.github.io/docs/kubernetes-compatibility.html#recommended-version) |
-| ------------------------------------------------------------------------------------------ | ------------------------------------| ---- | ---- |
-| [CSI Spec v1.2.0](https://github.com/container-storage-interface/spec/releases/tag/v1.2.0) | k8s.gcr.io/sig-storage/csi-attacher | 1.17 | 1.17 |
+| ------------------------------------------------------------------------------------------ | -----------------------------------------| ---- | ---- |
+| [CSI Spec v1.5.0](https://github.com/container-storage-interface/spec/releases/tag/v1.5.0) | registry.k8s.io/sig-storage/csi-attacher | 1.17 | 1.22 |
 
 ## Feature Status
 
@@ -32,7 +30,8 @@ The following table reflects the head of this branch.
 
 | Feature       | Status  | Default | Description                                                                                   |
 | ------------- | ------- | ------- | --------------------------------------------------------------------------------------------- |
-| CSIMigration* | Beta    | On      | [Migrating in-tree volume plugins to CSI](https://kubernetes.io/docs/concepts/storage/volumes/#csi-migration). |
+| CSIMigration*     | GA      | On      | [Migrating in-tree volume plugins to CSI](https://kubernetes.io/docs/concepts/storage/volumes/#csi-migration). |
+| ReadWriteOncePod* | Alpha   | Off     | [Single pod access mode for PersistentVolumes](https://kubernetes.io/docs/concepts/storage/persistent-volumes/#access-modes). |
 
 *) There is no special feature gate for this feature. It is enabled by turning on the corresponding features in Kubernetes.
 
@@ -64,19 +63,35 @@ Note that the external-attacher does not scale with more replicas. Only one exte
 
 * `--worker-threads`: The number of goroutines for processing VolumeAttachments. 10 workers is used by default.
 
+* `--max-entries`: The max number of entries per page for processing ListVolumes. 0 means no limit and it is the default value.
+
 * `--retry-interval-start`: The exponential backoff for failures. See [CSI error and timeout handling](#csi-error-and-timeout-handling) for details. 1 second is used by default.
 
 * `--retry-interval-max`: The exponential backoff maximum value. See [CSI error and timeout handling](#csi-error-and-timeout-handling) for details. 5 minutes is used by default.
 
-* `--metrics-address`: The TCP network address where the prometheus metrics endpoint will run (example: `:8080` which corresponds to port 8080 on local host). The default is empty string, which means metrics endpoint is disabled.
+* `--http-endpoint`: The TCP network address where the HTTP server for diagnostics, including metrics and leader election health check, will listen (example: `:8080` which corresponds to port 8080 on local host). The default is empty string, which means the server is disabled.
 
 * `--metrics-path`: The HTTP path where prometheus metrics will be exposed. Default is `/metrics`.
 
 * `--reconcile-sync`: Resync frequency of the attached volumes with the driver. See [Periodic re-sync](#periodic-re-sync) for details. 1 minute is used by default.
 
+* `--kube-api-qps`: The number of requests per second sent by a Kubernetes client to the Kubernetes API server. Defaults to `5.0`.
+
+* `--kube-api-burst`: The number of requests to the Kubernetes API server, exceeding the QPS, that can be sent at any given time. Defaults to `10`.
+
+* `--leader-election-lease-duration <duration>`: Duration, in seconds, that non-leader candidates will wait to force acquire leadership. Defaults to 15 seconds.
+
+* `--leader-election-renew-deadline <duration>`: Duration, in seconds, that the acting leader will retry refreshing leadership before giving up. Defaults to 10 seconds.
+
+* `--leader-election-retry-period <duration>`: Duration, in seconds, the LeaderElector clients should wait between tries of actions. Defaults to 5 seconds.
+
+* `--default-fstype <type>`: The default filesystem type of the volume to publish. Defaults to empty string.
+
 #### Other recognized arguments
 
 * `--kubeconfig <path>`: Path to Kubernetes client configuration that the external-attacher uses to connect to Kubernetes API server. When omitted, default token provided by Kubernetes will be used. This option is useful only when the external-attacher does not run as a Kubernetes pod, e.g. for debugging.
+
+* `--metrics-address`: (deprecated) The TCP network address where the prometheus metrics endpoint and leader election health check will run (example: `:8080` which corresponds to port 8080 on local host). The default is empty string, which means metrics and leader election check endpoint is disabled.
 
 * `--resync <duration>`: Internal resync interval when the external-attacher re-evaluates all existing `VolumeAttachment` instances and tries to fulfill them, i.e. attach / detach corresponding volumes. It does not affect re-tries of failed CSI calls! It should be used only when there is a bug in Kubernetes watch logic.
 
@@ -98,6 +113,13 @@ Correct timeout value depends on the storage backend and how quickly it is able 
 ### Periodic re-sync
 
 When CSI driver supports `LIST_VOLUMES` and `LIST_VOLUMES_PUBLISHED_NODES` capabilities, the external attacher periodically syncs volume attachments requested by Kubernetes with the actual state reported by CSI driver. Volumes detached by any 3rd party, but still required to be attached by Kubernetes, will be re-attached back. Frequency of this re-sync is controlled by `--reconcile-sync` command line parameter.
+
+### HTTP endpoint
+
+The external-attacher optionally exposes an HTTP endpoint at address:port specified by `--http-endpoint` argument. When set, these two paths are exposed:
+
+* Metrics path, as set by `--metrics-path` argument (default is `/metrics`).
+* Leader election health check at `/healthz/leader-election`. It is recommended to run a liveness probe against this endpoint when leader election is used to kill external-attacher leader that fails to connect to the API server to renew its leadership. See https://github.com/kubernetes-csi/csi-lib-utils/issues/66 for details.
 
 ## Community, discussion, contribution, and support
 

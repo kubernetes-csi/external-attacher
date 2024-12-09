@@ -17,3 +17,5 @@ all: build
 
 include release-tools/build.make
 
+# Check contextual logging.
+test: test-logcheck

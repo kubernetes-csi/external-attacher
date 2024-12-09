@@ -4,7 +4,7 @@
 well as for calculating & applying [RFC7396 JSON merge patches](https://tools.ietf.org/html/rfc7396).
 
 [![GoDoc](https://godoc.org/github.com/evanphx/json-patch?status.svg)](http://godoc.org/github.com/evanphx/json-patch)
-[![Build Status](https://travis-ci.org/evanphx/json-patch.svg?branch=master)](https://travis-ci.org/evanphx/json-patch)
+[![Build Status](https://github.com/evanphx/json-patch/actions/workflows/go.yml/badge.svg)](https://github.com/evanphx/json-patch/actions/workflows/go.yml)
 [![Report Card](https://goreportcard.com/badge/github.com/evanphx/json-patch)](https://goreportcard.com/report/github.com/evanphx/json-patch)
 
 # Get It!
@@ -38,6 +38,25 @@ go get -u github.com/evanphx/json-patch/v5
 * There is a global configuration variable `jsonpatch.AccumulatedCopySizeLimit`,
   which limits the total size increase in bytes caused by "copy" operations in a
   patch. It defaults to 0, which means there is no limit.
+
+These global variables control the behavior of `jsonpatch.Apply`.
+
+An alternative to `jsonpatch.Apply` is `jsonpatch.ApplyWithOptions` whose behavior
+is controlled by an `options` parameter of type `*jsonpatch.ApplyOptions`.
+
+Structure `jsonpatch.ApplyOptions` includes the configuration options above 
+and adds two new options: `AllowMissingPathOnRemove` and `EnsurePathExistsOnAdd`.
+
+When `AllowMissingPathOnRemove` is set to `true`, `jsonpatch.ApplyWithOptions` will ignore
+`remove` operations whose `path` points to a non-existent location in the JSON document.
+`AllowMissingPathOnRemove` defaults to `false` which will lead to `jsonpatch.ApplyWithOptions`
+returning an error when hitting a missing `path` on `remove`.
+
+When `EnsurePathExistsOnAdd` is set to `true`, `jsonpatch.ApplyWithOptions` will make sure
+that `add` operations produce all the `path` elements that are missing from the target object.
+
+Use `jsonpatch.NewApplyOptions` to create an instance of `jsonpatch.ApplyOptions`
+whose values are populated from the global configuration variables.
 
 ## Create and apply a merge patch
 Given both an original JSON document and a modified JSON document, you can create
@@ -295,4 +314,4 @@ go test -cover ./...
 ```
 
 Builds for pull requests are tested automatically 
-using [TravisCI](https://travis-ci.org/evanphx/json-patch).
+using [GitHub Actions](https://github.com/evanphx/json-patch/actions/workflows/go.yml).

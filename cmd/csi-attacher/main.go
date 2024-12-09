@@ -20,14 +20,20 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"net/http"
 	"os"
 	"time"
 
+	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/informers"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
 	"k8s.io/client-go/util/workqueue"
+	"k8s.io/component-base/featuregate"
+	"k8s.io/component-base/logs"
+	logsapi "k8s.io/component-base/logs/api/v1"
+	_ "k8s.io/component-base/logs/json/register"
 	csitrans "k8s.io/csi-translation-lib"
 	"k8s.io/klog/v2"
 
@@ -45,8 +51,6 @@ const (
 
 	// Default timeout of short CSI calls like GetPluginInfo
 	csiTimeout = time.Second
-
-	leaderElectionTypeLeases = "leases"
 )
 
 // Command line flags
@@ -57,55 +61,82 @@ var (
 	showVersion   = flag.Bool("version", false, "Show version.")
 	timeout       = flag.Duration("timeout", 15*time.Second, "Timeout for waiting for attaching or detaching the volume.")
 	workerThreads = flag.Uint("worker-threads", 10, "Number of attacher worker threads")
+	maxEntries    = flag.Int("max-entries", 0, "Max entries per each page in volume lister call, 0 means no limit.")
 
 	retryIntervalStart = flag.Duration("retry-interval-start", time.Second, "Initial retry interval of failed create volume or deletion. It doubles with each failure, up to retry-interval-max.")
 	retryIntervalMax   = flag.Duration("retry-interval-max", 5*time.Minute, "Maximum retry interval of failed create volume or deletion.")
 
-	enableLeaderElection    = flag.Bool("leader-election", false, "Enable leader election.")
-	leaderElectionNamespace = flag.String("leader-election-namespace", "", "Namespace where the leader election resource lives. Defaults to the pod namespace if not set.")
+	enableLeaderElection        = flag.Bool("leader-election", false, "Enable leader election.")
+	leaderElectionNamespace     = flag.String("leader-election-namespace", "", "Namespace where the leader election resource lives. Defaults to the pod namespace if not set.")
+	leaderElectionLeaseDuration = flag.Duration("leader-election-lease-duration", 15*time.Second, "Duration, in seconds, that non-leader candidates will wait to force acquire leadership. Defaults to 15 seconds.")
+	leaderElectionRenewDeadline = flag.Duration("leader-election-renew-deadline", 10*time.Second, "Duration, in seconds, that the acting leader will retry refreshing leadership before giving up. Defaults to 10 seconds.")
+	leaderElectionRetryPeriod   = flag.Duration("leader-election-retry-period", 5*time.Second, "Duration, in seconds, the LeaderElector clients should wait between tries of actions. Defaults to 5 seconds.")
+
+	defaultFSType = flag.String("default-fstype", "", "The default filesystem type of the volume to publish. Defaults to empty string")
 
 	reconcileSync = flag.Duration("reconcile-sync", 1*time.Minute, "Resync interval of the VolumeAttachment reconciler.")
 
-	metricsAddress = flag.String("metrics-address", "", "The TCP network address where the prometheus metrics endpoint will listen (example: `:8080`). The default is empty string, which means metrics endpoint is disabled.")
+	metricsAddress = flag.String("metrics-address", "", "(deprecated) The TCP network address where the prometheus metrics endpoint will listen (example: `:8080`). The default is empty string, which means metrics endpoint is disabled. Only one of `--metrics-address` and `--http-endpoint` can be set.")
+	httpEndpoint   = flag.String("http-endpoint", "", "The TCP network address where the HTTP server for diagnostics, including metrics and leader election health check, will listen (example: `:8080`). The default is empty string, which means the server is disabled. Only one of `--metrics-address` and `--http-endpoint` can be set.")
 	metricsPath    = flag.String("metrics-path", "/metrics", "The HTTP path where prometheus metrics will be exposed. Default is `/metrics`.")
+
+	kubeAPIQPS   = flag.Float64("kube-api-qps", 5, "QPS to use while communicating with the kubernetes apiserver. Defaults to 5.0.")
+	kubeAPIBurst = flag.Int("kube-api-burst", 10, "Burst to use while communicating with the kubernetes apiserver. Defaults to 10.")
+
+	maxGRPCLogLength = flag.Int("max-grpc-log-length", -1, "The maximum amount of characters logged for every grpc responses. Defaults to no limit")
 )
 
 var (
 	version = "unknown"
 )
 
-type leaderElection interface {
-	Run() error
-	WithNamespace(namespace string)
-}
-
 func main() {
-	klog.InitFlags(nil)
-	flag.Set("logtostderr", "true")
+	fg := featuregate.NewFeatureGate()
+	logsapi.AddFeatureGates(fg)
+	c := logsapi.NewLoggingConfiguration()
+	logsapi.AddGoFlags(c, flag.CommandLine)
+	logs.InitLogs()
 	flag.Parse()
+	logger := klog.Background()
+	if err := logsapi.ValidateAndApply(c, fg); err != nil {
+		logger.Error(err, "LoggingConfiguration is invalid")
+		klog.FlushAndExit(klog.ExitFlushTimeout, 1)
+	}
 
 	if *showVersion {
 		fmt.Println(os.Args[0], version)
 		return
 	}
-	klog.Infof("Version: %s", version)
+	logger.Info("Version", "version", version)
+
+	if *metricsAddress != "" && *httpEndpoint != "" {
+		logger.Error(nil, "Only one of `--metrics-address` and `--http-endpoint` can be set")
+		klog.FlushAndExit(klog.ExitFlushTimeout, 1)
+	}
+	addr := *metricsAddress
+	if addr == "" {
+		addr = *httpEndpoint
+	}
 
 	// Create the client config. Use kubeconfig if given, otherwise assume in-cluster.
 	config, err := buildConfig(*kubeconfig)
 	if err != nil {
-		klog.Error(err.Error())
-		os.Exit(1)
+		logger.Error(err, "Failed to build a Kubernetes config")
+		klog.FlushAndExit(klog.ExitFlushTimeout, 1)
 	}
+	config.QPS = (float32)(*kubeAPIQPS)
+	config.Burst = *kubeAPIBurst
+	config.ContentType = runtime.ContentTypeProtobuf
 
 	if *workerThreads == 0 {
-		klog.Error("option -worker-threads must be greater than zero")
-		os.Exit(1)
+		logger.Error(nil, "Option -worker-threads must be greater than zero")
+		klog.FlushAndExit(klog.ExitFlushTimeout, 1)
 	}
 
 	clientset, err := kubernetes.NewForConfig(config)
 	if err != nil {
-		klog.Error(err.Error())
-		os.Exit(1)
+		logger.Error(err, "Failed to create a Clientset")
+		klog.FlushAndExit(klog.ExitFlushTimeout, 1)
 	}
 
 	factory := informers.NewSharedInformerFactory(clientset, *resync)
@@ -113,69 +144,123 @@ func main() {
 	metricsManager := metrics.NewCSIMetricsManager("" /* driverName */)
 
 	// Connect to CSI.
-	csiConn, err := connection.Connect(*csiAddress, metricsManager, connection.OnConnectionLoss(connection.ExitOnConnectionLoss()))
+	connection.SetMaxGRPCLogLength(*maxGRPCLogLength)
+	ctx := context.Background()
+	csiConn, err := connection.Connect(ctx, *csiAddress, metricsManager, connection.OnConnectionLoss(connection.ExitOnConnectionLoss()))
 	if err != nil {
-		klog.Error(err.Error())
-		os.Exit(1)
+		logger.Error(err, "Failed to connect to the CSI driver", "csiAddress", *csiAddress)
+		klog.FlushAndExit(klog.ExitFlushTimeout, 1)
 	}
 
-	err = rpc.ProbeForever(csiConn, *timeout)
+	err = rpc.ProbeForever(ctx, csiConn, *timeout)
 	if err != nil {
-		klog.Error(err.Error())
-		os.Exit(1)
+		logger.Error(err, "Failed to probe the CSI driver")
+		klog.FlushAndExit(klog.ExitFlushTimeout, 1)
 	}
 
 	// Find driver name.
-	ctx, cancel := context.WithTimeout(context.Background(), csiTimeout)
+	cancelationCtx, cancel := context.WithTimeout(ctx, csiTimeout)
+	cancelationCtx = klog.NewContext(cancelationCtx, logger)
 	defer cancel()
-	csiAttacher, err := rpc.GetDriverName(ctx, csiConn)
+	csiAttacher, err := rpc.GetDriverName(cancelationCtx, csiConn)
 	if err != nil {
-		klog.Error(err.Error())
-		os.Exit(1)
+		logger.Error(err, "Failed to get the CSI driver name")
+		klog.FlushAndExit(klog.ExitFlushTimeout, 1)
 	}
-	klog.V(2).Infof("CSI driver name: %q", csiAttacher)
-	metricsManager.SetDriverName(csiAttacher)
-	metricsManager.StartMetricsEndpoint(*metricsAddress, *metricsPath)
+	logger = klog.LoggerWithValues(logger, "driver", csiAttacher)
+	logger.V(2).Info("CSI driver name")
 
-	supportsService, err := supportsPluginControllerService(ctx, csiConn)
-	if err != nil {
-		klog.Error(err.Error())
-		os.Exit(1)
+	translator := csitrans.New()
+	if translator.IsMigratedCSIDriverByName(csiAttacher) {
+		metricsManager = metrics.NewCSIMetricsManagerWithOptions(csiAttacher, metrics.WithMigration())
+		migratedCsiClient, err := connection.Connect(ctx, *csiAddress, metricsManager, connection.OnConnectionLoss(connection.ExitOnConnectionLoss()))
+		if err != nil {
+			logger.Error(err, "Failed to connect to the CSI driver", "csiAddress", *csiAddress, "migrated", true)
+			klog.FlushAndExit(klog.ExitFlushTimeout, 1)
+		}
+		csiConn.Close()
+		csiConn = migratedCsiClient
+
+		err = rpc.ProbeForever(ctx, csiConn, *timeout)
+		if err != nil {
+			logger.Error(err, "Failed to probe the CSI driver", "migrated", true)
+			klog.FlushAndExit(klog.ExitFlushTimeout, 1)
+		}
 	}
+
+	// Prepare http endpoint for metrics + leader election healthz
+	mux := http.NewServeMux()
+	if addr != "" {
+		metricsManager.RegisterToServer(mux, *metricsPath)
+		metricsManager.SetDriverName(csiAttacher)
+		go func() {
+			logger.Info("ServeMux listening", "address", addr, "metricsPath", *metricsPath)
+			err := http.ListenAndServe(addr, mux)
+			if err != nil {
+				logger.Error(err, "Failed to start HTTP server at specified address and metrics path", "address", addr, "metricsPath", *metricsPath)
+				klog.FlushAndExit(klog.ExitFlushTimeout, 1)
+			}
+		}()
+	}
+
+	cancelationCtx, cancel = context.WithTimeout(ctx, csiTimeout)
+	cancelationCtx = klog.NewContext(cancelationCtx, logger)
+	defer cancel()
+	supportsService, err := supportsPluginControllerService(cancelationCtx, csiConn)
+	if err != nil {
+		logger.Error(err, "Failed to check if the CSI Driver supports the CONTROLLER_SERVICE")
+		klog.FlushAndExit(klog.ExitFlushTimeout, 1)
+	}
+
+	var (
+		supportsAttach                    bool
+		supportsReadOnly                  bool
+		supportsListVolumesPublishedNodes bool
+		supportsSingleNodeMultiWriter     bool
+	)
 	if !supportsService {
 		handler = controller.NewTrivialHandler(clientset)
-		klog.V(2).Infof("CSI driver does not support Plugin Controller Service, using trivial handler")
+		logger.V(2).Info("CSI driver does not support Plugin Controller Service, using trivial handler")
 	} else {
-		// Find out if the driver supports attach/detach.
-		supportsAttach, supportsReadOnly, err := supportsControllerPublish(ctx, csiConn)
+		supportsAttach, supportsReadOnly, supportsListVolumesPublishedNodes, supportsSingleNodeMultiWriter, err = supportsControllerCapabilities(cancelationCtx, csiConn)
 		if err != nil {
-			klog.Error(err.Error())
-			os.Exit(1)
+			logger.Error(err, "Failed to controller capability check")
+			klog.FlushAndExit(klog.ExitFlushTimeout, 1)
 		}
+
 		if supportsAttach {
 			pvLister := factory.Core().V1().PersistentVolumes().Lister()
 			vaLister := factory.Storage().V1().VolumeAttachments().Lister()
 			csiNodeLister := factory.Storage().V1().CSINodes().Lister()
 			volAttacher := attacher.NewAttacher(csiConn)
-			CSIVolumeLister := attacher.NewVolumeLister(csiConn)
-			handler = controller.NewCSIHandler(clientset, csiAttacher, volAttacher, CSIVolumeLister, pvLister, csiNodeLister, vaLister, timeout, supportsReadOnly, csitrans.New())
-			klog.V(2).Infof("CSI driver supports ControllerPublishUnpublish, using real CSI handler")
+			CSIVolumeLister := attacher.NewVolumeLister(csiConn, *maxEntries)
+			handler = controller.NewCSIHandler(
+				clientset,
+				csiAttacher,
+				volAttacher,
+				CSIVolumeLister,
+				pvLister,
+				csiNodeLister,
+				vaLister,
+				timeout,
+				supportsReadOnly,
+				supportsSingleNodeMultiWriter,
+				csitrans.New(),
+				*defaultFSType,
+			)
+			logger.V(2).Info("CSI driver supports ControllerPublishUnpublish, using real CSI handler")
 		} else {
 			handler = controller.NewTrivialHandler(clientset)
-			klog.V(2).Infof("CSI driver does not support ControllerPublishUnpublish, using trivial handler")
+			logger.V(2).Info("CSI driver does not support ControllerPublishUnpublish, using trivial handler")
 		}
 	}
 
-	slvpn, err := supportsListVolumesPublishedNodes(ctx, csiConn)
-	if err != nil {
-		klog.Errorf("Failed to check if driver supports ListVolumesPublishedNodes, assuming it does not: %v", err)
-	}
-
-	if slvpn {
-		klog.V(2).Infof("CSI driver supports list volumes published nodes. Using capability to reconcile volume attachment objects with actual backend state")
+	if supportsListVolumesPublishedNodes {
+		logger.V(2).Info("CSI driver supports list volumes published nodes. Using capability to reconcile volume attachment objects with actual backend state")
 	}
 
 	ctrl := controller.NewCSIAttachController(
+		logger,
 		clientset,
 		csiAttacher,
 		handler,
@@ -183,37 +268,46 @@ func main() {
 		factory.Core().V1().PersistentVolumes(),
 		workqueue.NewItemExponentialFailureRateLimiter(*retryIntervalStart, *retryIntervalMax),
 		workqueue.NewItemExponentialFailureRateLimiter(*retryIntervalStart, *retryIntervalMax),
-		slvpn,
+		supportsListVolumesPublishedNodes,
 		*reconcileSync,
 	)
 
 	run := func(ctx context.Context) {
 		stopCh := ctx.Done()
 		factory.Start(stopCh)
-		ctrl.Run(int(*workerThreads), stopCh)
+		ctrl.Run(ctx, int(*workerThreads))
 	}
 
 	if !*enableLeaderElection {
-		run(context.TODO())
+		run(klog.NewContext(context.Background(), logger))
 	} else {
 		// Create a new clientset for leader election. When the attacher
 		// gets busy and its client gets throttled, the leader election
 		// can proceed without issues.
 		leClientset, err := kubernetes.NewForConfig(config)
 		if err != nil {
-			klog.Fatalf("Failed to create leaderelection client: %v", err)
+			logger.Error(err, "Failed to create leaderelection client")
+			klog.FlushAndExit(klog.ExitFlushTimeout, 1)
 		}
 
 		// Name of config map with leader election lock
 		lockName := "external-attacher-leader-" + csiAttacher
 		le := leaderelection.NewLeaderElection(leClientset, lockName, run)
+		if *httpEndpoint != "" {
+			le.PrepareHealthCheck(mux, leaderelection.DefaultHealthCheckTimeout)
+		}
 
 		if *leaderElectionNamespace != "" {
 			le.WithNamespace(*leaderElectionNamespace)
 		}
 
+		le.WithLeaseDuration(*leaderElectionLeaseDuration)
+		le.WithRenewDeadline(*leaderElectionRenewDeadline)
+		le.WithRetryPeriod(*leaderElectionRetryPeriod)
+
 		if err := le.Run(); err != nil {
-			klog.Fatalf("failed to initialize leader election: %v", err)
+			logger.Error(err, "Failed to initialize leader election")
+			klog.FlushAndExit(klog.ExitFlushTimeout, 1)
 		}
 	}
 }
@@ -225,24 +319,17 @@ func buildConfig(kubeconfig string) (*rest.Config, error) {
 	return rest.InClusterConfig()
 }
 
-func supportsControllerPublish(ctx context.Context, csiConn *grpc.ClientConn) (supportsControllerPublish bool, supportsPublishReadOnly bool, err error) {
+func supportsControllerCapabilities(ctx context.Context, csiConn *grpc.ClientConn) (bool, bool, bool, bool, error) {
 	caps, err := rpc.GetControllerCapabilities(ctx, csiConn)
 	if err != nil {
-		return false, false, err
+		return false, false, false, false, err
 	}
 
-	supportsControllerPublish = caps[csi.ControllerServiceCapability_RPC_PUBLISH_UNPUBLISH_VOLUME]
-	supportsPublishReadOnly = caps[csi.ControllerServiceCapability_RPC_PUBLISH_READONLY]
-	return supportsControllerPublish, supportsPublishReadOnly, nil
-}
-
-func supportsListVolumesPublishedNodes(ctx context.Context, csiConn *grpc.ClientConn) (bool, error) {
-	caps, err := rpc.GetControllerCapabilities(ctx, csiConn)
-	if err != nil {
-		return false, fmt.Errorf("failed to get controller capabilities: %v", err)
-	}
-
-	return caps[csi.ControllerServiceCapability_RPC_LIST_VOLUMES] && caps[csi.ControllerServiceCapability_RPC_LIST_VOLUMES_PUBLISHED_NODES], nil
+	supportsControllerPublish := caps[csi.ControllerServiceCapability_RPC_PUBLISH_UNPUBLISH_VOLUME]
+	supportsPublishReadOnly := caps[csi.ControllerServiceCapability_RPC_PUBLISH_READONLY]
+	supportsListVolumesPublishedNodes := caps[csi.ControllerServiceCapability_RPC_LIST_VOLUMES] && caps[csi.ControllerServiceCapability_RPC_LIST_VOLUMES_PUBLISHED_NODES]
+	supportsSingleNodeMultiWriter := caps[csi.ControllerServiceCapability_RPC_SINGLE_NODE_MULTI_WRITER]
+	return supportsControllerPublish, supportsPublishReadOnly, supportsListVolumesPublishedNodes, supportsSingleNodeMultiWriter, nil
 }
 
 func supportsPluginControllerService(ctx context.Context, csiConn *grpc.ClientConn) (bool, error) {

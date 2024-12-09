@@ -25,6 +25,7 @@ import (
 
 	"github.com/container-storage-interface/spec/lib/go/csi"
 	jsonpatch "github.com/evanphx/json-patch"
+	"github.com/kubernetes-csi/csi-lib-utils/accessmodes"
 	v1 "k8s.io/api/core/v1"
 	storage "k8s.io/api/storage/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -33,8 +34,9 @@ import (
 	"k8s.io/klog/v2"
 )
 
-func markAsAttached(client kubernetes.Interface, va *storage.VolumeAttachment, metadata map[string]string) (*storage.VolumeAttachment, error) {
-	klog.V(4).Infof("Marking as attached %q", va.Name)
+func markAsAttached(ctx context.Context, client kubernetes.Interface, va *storage.VolumeAttachment, metadata map[string]string) (*storage.VolumeAttachment, error) {
+	logger := klog.FromContext(ctx)
+	logger.V(4).Info("Marking as attached")
 	clone := va.DeepCopy()
 	clone.Status.Attached = true
 	clone.Status.AttachmentMetadata = metadata
@@ -43,16 +45,16 @@ func markAsAttached(client kubernetes.Interface, va *storage.VolumeAttachment, m
 	if err != nil {
 		return va, err
 	}
-	newVA, err := client.StorageV1().VolumeAttachments().Patch(context.TODO(), va.Name, types.MergePatchType, patch,
+	newVA, err := client.StorageV1().VolumeAttachments().Patch(ctx, va.Name, types.MergePatchType, patch,
 		metav1.PatchOptions{}, "status")
 	if err != nil {
 		return va, err
 	}
-	klog.V(4).Infof("Marked as attached %q", va.Name)
+	logger.V(4).Info("Marked as attached")
 	return newVA, nil
 }
 
-func markAsDetached(client kubernetes.Interface, va *storage.VolumeAttachment) (*storage.VolumeAttachment, error) {
+func markAsDetached(ctx context.Context, client kubernetes.Interface, va *storage.VolumeAttachment) (*storage.VolumeAttachment, error) {
 	finalizerName := GetFinalizerName(va.Spec.Attacher)
 
 	// Prepare new array of finalizers
@@ -70,13 +72,14 @@ func markAsDetached(client kubernetes.Interface, va *storage.VolumeAttachment) (
 		newFinalizers = nil
 	}
 
+	logger := klog.FromContext(ctx)
 	if !found && !va.Status.Attached {
 		// Finalizer was not present, nothing to update
-		klog.V(4).Infof("Already fully detached %q", va.Name)
+		logger.V(4).Info("Already fully detached")
 		return va, nil
 	}
 
-	klog.V(4).Infof("Marking as detached %q", va.Name)
+	logger.V(4).Info("Marking as detached")
 	clone := va.DeepCopy()
 	clone.Status.Attached = false
 	clone.Status.DetachError = nil
@@ -85,8 +88,7 @@ func markAsDetached(client kubernetes.Interface, va *storage.VolumeAttachment) (
 	if err != nil {
 		return va, err
 	}
-	newVA, err := client.StorageV1().VolumeAttachments().Patch(context.TODO(), va.Name, types.MergePatchType, patch,
-		metav1.PatchOptions{}, "status")
+	newVA, err := client.StorageV1().VolumeAttachments().Patch(ctx, va.Name, types.MergePatchType, patch, metav1.PatchOptions{}, "status")
 	if err != nil {
 		return va, err
 	}
@@ -98,18 +100,16 @@ func markAsDetached(client kubernetes.Interface, va *storage.VolumeAttachment) (
 	if err != nil {
 		return newVA, err
 	}
-	newVA, err = client.StorageV1().VolumeAttachments().Patch(context.TODO(), newVA.Name, types.MergePatchType, patch, metav1.PatchOptions{}, "")
+	newVA, err = client.StorageV1().VolumeAttachments().Patch(ctx, newVA.Name, types.MergePatchType, patch, metav1.PatchOptions{}, "")
 	if err != nil {
 		return newVA, err
 	}
-	klog.V(4).Infof("Finalizer removed from %q", va.Name)
+	logger.V(4).Info("Finalizer removed")
 	return newVA, nil
 }
 
 const (
-	defaultFSType              = "ext4"
-	csiVolAttribsAnnotationKey = "csi.volume.kubernetes.io/volume-attributes"
-	vaNodeIDAnnotation         = "csi.alpha.kubernetes.io/node-id"
+	vaNodeIDAnnotation = "csi.alpha.kubernetes.io/node-id"
 )
 
 // SanitizeDriverName sanitizes provided driver name.
@@ -138,13 +138,9 @@ func GetNodeIDFromCSINode(driver string, csiNode *storage.CSINode) (string, bool
 	return "", false
 }
 
-// GetVolumeCapabilities returns volumecapability from PV spec
-func GetVolumeCapabilities(pvSpec *v1.PersistentVolumeSpec) (*csi.VolumeCapability, error) {
-	m := map[v1.PersistentVolumeAccessMode]bool{}
-	for _, mode := range pvSpec.AccessModes {
-		m[mode] = true
-	}
-
+// GetVolumeCapabilities returns a VolumeCapability from the PV spec. Which access mode will be set depends if the driver supports the
+// SINGLE_NODE_MULTI_WRITER capability.
+func GetVolumeCapabilities(logger klog.Logger, pvSpec *v1.PersistentVolumeSpec, singleNodeMultiWriterCapable bool, defaultFSType string) (*csi.VolumeCapability, error) {
 	if pvSpec.CSI == nil {
 		return nil, errors.New("CSI volume source was nil")
 	}
@@ -162,6 +158,7 @@ func GetVolumeCapabilities(pvSpec *v1.PersistentVolumeSpec) (*csi.VolumeCapabili
 		fsType := pvSpec.CSI.FSType
 		if len(fsType) == 0 {
 			fsType = defaultFSType
+			logger.V(4).Info("Filesystem type not found in PV spec. Using defaultFSType", "defaultFSType", fsType)
 		}
 
 		cap = &csi.VolumeCapability{
@@ -175,27 +172,12 @@ func GetVolumeCapabilities(pvSpec *v1.PersistentVolumeSpec) (*csi.VolumeCapabili
 		}
 	}
 
-	// Translate array of modes into single VolumeCapability
-	switch {
-	case m[v1.ReadWriteMany]:
-		// ReadWriteMany trumps everything, regardless what other modes are set
-		cap.AccessMode.Mode = csi.VolumeCapability_AccessMode_MULTI_NODE_MULTI_WRITER
-
-	case m[v1.ReadOnlyMany] && m[v1.ReadWriteOnce]:
-		// This is no way how to translate this to CSI...
-		return nil, fmt.Errorf("CSI does not support ReadOnlyMany and ReadWriteOnce on the same PersistentVolume")
-
-	case m[v1.ReadOnlyMany]:
-		// There is only ReadOnlyMany set
-		cap.AccessMode.Mode = csi.VolumeCapability_AccessMode_MULTI_NODE_READER_ONLY
-
-	case m[v1.ReadWriteOnce]:
-		// There is only ReadWriteOnce set
-		cap.AccessMode.Mode = csi.VolumeCapability_AccessMode_SINGLE_NODE_WRITER
-
-	default:
-		return nil, fmt.Errorf("unsupported AccessMode combination: %+v", pvSpec.AccessModes)
+	am, err := accessmodes.ToCSIAccessMode(pvSpec.AccessModes, singleNodeMultiWriterCapable)
+	if err != nil {
+		return nil, err
 	}
+
+	cap.AccessMode.Mode = am
 	return cap, nil
 }
 

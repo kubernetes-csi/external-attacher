@@ -27,7 +27,7 @@ import (
 
 	"github.com/container-storage-interface/spec/lib/go/csi"
 
-	"k8s.io/klog"
+	"k8s.io/klog/v2"
 )
 
 const (
@@ -104,12 +104,44 @@ func GetControllerCapabilities(ctx context.Context, conn *grpc.ClientConn) (Cont
 	return caps, nil
 }
 
+// GroupControllerCapabilitySet is set of CSI groupcontroller capabilities. Only supported capabilities are in the map.
+type GroupControllerCapabilitySet map[csi.GroupControllerServiceCapability_RPC_Type]bool
+
+// GetGroupControllerCapabilities returns set of supported group controller capabilities of CSI driver.
+func GetGroupControllerCapabilities(ctx context.Context, conn *grpc.ClientConn) (GroupControllerCapabilitySet, error) {
+	client := csi.NewGroupControllerClient(conn)
+	req := csi.GroupControllerGetCapabilitiesRequest{}
+	rsp, err := client.GroupControllerGetCapabilities(ctx, &req)
+	if err != nil {
+		return nil, err
+	}
+
+	caps := GroupControllerCapabilitySet{}
+	for _, cap := range rsp.GetCapabilities() {
+		if cap == nil {
+			continue
+		}
+		rpc := cap.GetRpc()
+		if rpc == nil {
+			continue
+		}
+		t := rpc.GetType()
+		caps[t] = true
+	}
+	return caps, nil
+}
+
 // ProbeForever calls Probe() of a CSI driver and waits until the driver becomes ready.
 // Any error other than timeout is returned.
-func ProbeForever(conn *grpc.ClientConn, singleProbeTimeout time.Duration) error {
+func ProbeForever(ctx context.Context, conn *grpc.ClientConn, singleProbeTimeout time.Duration) error {
+	logger := klog.FromContext(ctx)
+	ticker := time.NewTicker(probeInterval)
+	defer ticker.Stop()
+
 	for {
-		klog.Info("Probing CSI driver for readiness")
-		ready, err := probeOnce(conn, singleProbeTimeout)
+		// Run the probe once before waiting for the ticker
+		logger.Info("Probing CSI driver for readiness")
+		ready, err := probeOnce(ctx, conn, singleProbeTimeout)
 		if err != nil {
 			st, ok := status.FromError(err)
 			if !ok {
@@ -121,21 +153,25 @@ func ProbeForever(conn *grpc.ClientConn, singleProbeTimeout time.Duration) error
 				return fmt.Errorf("CSI driver probe failed: %s", err)
 			}
 			// Timeout -> driver is not ready. Fall through to sleep() below.
-			klog.Warning("CSI driver probe timed out")
+			logger.Info("CSI driver probe timed out")
 		} else {
 			if ready {
 				return nil
 			}
-			klog.Warning("CSI driver is not ready")
+			logger.Info("CSI driver is not ready")
 		}
-		// Timeout was returned or driver is not ready.
-		time.Sleep(probeInterval)
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-ticker.C:
+			continue
+		}
 	}
 }
 
 // probeOnce is a helper to simplify defer cancel()
-func probeOnce(conn *grpc.ClientConn, timeout time.Duration) (bool, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+func probeOnce(ctx context.Context, conn *grpc.ClientConn, timeout time.Duration) (bool, error) {
+	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 	return Probe(ctx, conn)
 }

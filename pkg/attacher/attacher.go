@@ -20,12 +20,10 @@ import (
 	"context"
 
 	"github.com/container-storage-interface/spec/lib/go/csi"
-	"github.com/kubernetes-csi/csi-lib-utils/protosanitizer"
 
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
-	"k8s.io/klog/v2"
 )
 
 // Attacher implements attach/detach operations against a remote CSI driver.
@@ -42,7 +40,7 @@ type Attacher interface {
 }
 
 type attacher struct {
-	conn         *grpc.ClientConn
+	client       csi.ControllerClient
 	capabilities []csi.ControllerServiceCapability
 }
 
@@ -53,13 +51,11 @@ var (
 // NewAttacher provides a new Attacher object.
 func NewAttacher(conn *grpc.ClientConn) Attacher {
 	return &attacher{
-		conn: conn,
+		client: csi.NewControllerClient(conn),
 	}
 }
 
 func (a *attacher) Attach(ctx context.Context, volumeID string, readOnly bool, nodeID string, caps *csi.VolumeCapability, context, secrets map[string]string) (metadata map[string]string, detached bool, err error) {
-	client := csi.NewControllerClient(a.conn)
-
 	req := csi.ControllerPublishVolumeRequest{
 		VolumeId:         volumeID,
 		NodeId:           nodeID,
@@ -69,7 +65,7 @@ func (a *attacher) Attach(ctx context.Context, volumeID string, readOnly bool, n
 		Secrets:          secrets,
 	}
 
-	rsp, err := client.ControllerPublishVolume(ctx, &req)
+	rsp, err := a.client.ControllerPublishVolume(ctx, &req)
 	if err != nil {
 		return nil, isFinalError(err), err
 	}
@@ -77,24 +73,13 @@ func (a *attacher) Attach(ctx context.Context, volumeID string, readOnly bool, n
 }
 
 func (a *attacher) Detach(ctx context.Context, volumeID string, nodeID string, secrets map[string]string) error {
-	client := csi.NewControllerClient(a.conn)
-
 	req := csi.ControllerUnpublishVolumeRequest{
 		VolumeId: volumeID,
 		NodeId:   nodeID,
 		Secrets:  secrets,
 	}
 
-	_, err := client.ControllerUnpublishVolume(ctx, &req)
-	return err
-}
-
-func logGRPC(ctx context.Context, method string, req, reply interface{}, cc *grpc.ClientConn, invoker grpc.UnaryInvoker, opts ...grpc.CallOption) error {
-	klog.V(5).Infof("GRPC call: %s", method)
-	klog.V(5).Infof("GRPC request: %s", protosanitizer.StripSecrets(req))
-	err := invoker(ctx, method, req, reply, cc, opts...)
-	klog.V(5).Infof("GRPC response: %s", protosanitizer.StripSecrets(reply))
-	klog.V(5).Infof("GRPC error: %v", err)
+	_, err := a.client.ControllerUnpublishVolume(ctx, &req)
 	return err
 }
 

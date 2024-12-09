@@ -26,32 +26,37 @@ import (
 )
 
 type CSIVolumeLister struct {
-	conn *grpc.ClientConn
+	client     csi.ControllerClient
+	maxEntries int32
 }
 
 // NewVolumeLister provides a new VolumeLister object.
-func NewVolumeLister(conn *grpc.ClientConn) *CSIVolumeLister {
+func NewVolumeLister(conn *grpc.ClientConn, maxEntries int) *CSIVolumeLister {
 	return &CSIVolumeLister{
-		conn: conn,
+		client:     csi.NewControllerClient(conn),
+		maxEntries: int32(maxEntries),
 	}
 }
 
 func (a *CSIVolumeLister) ListVolumes(ctx context.Context) (map[string]([]string), error) {
-	client := csi.NewControllerClient(a.conn)
-
 	p := map[string][]string{}
 
 	tok := ""
 	for {
-		rsp, err := client.ListVolumes(ctx, &csi.ListVolumesRequest{
+		rsp, err := a.client.ListVolumes(ctx, &csi.ListVolumesRequest{
 			StartingToken: tok,
+			MaxEntries:    a.maxEntries,
 		})
 		if err != nil {
 			return nil, fmt.Errorf("failed to list volumes: %v", err)
 		}
 
 		for _, e := range rsp.Entries {
-			p[e.GetVolume().VolumeId] = e.Status.PublishedNodeIds
+			if e.GetVolume() == nil || e.GetStatus() == nil {
+				continue
+			}
+
+			p[e.GetVolume().VolumeId] = e.GetStatus().GetPublishedNodeIds()
 		}
 		tok = rsp.NextToken
 
