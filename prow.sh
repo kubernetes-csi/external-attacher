@@ -441,7 +441,8 @@ run_with_go () {
     else
         version=local
     fi
-    GOTOOLCHAIN=$version run "$@"
+    # Set GOMODCACHE to make sure Kubernetes does not need to download again.
+    GOTOOLCHAIN=$version GOMODCACHE="$(go env GOMODCACHE)" run "$@"
 }
 
 # Ensure that we have the desired version of kind.
