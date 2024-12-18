@@ -39,7 +39,7 @@ import (
 )
 
 type AttacherCSITranslator interface {
-	TranslateInTreePVToCSI(pv *v1.PersistentVolume) (*v1.PersistentVolume, error)
+	TranslateInTreePVToCSI(logger klog.Logger, pv *v1.PersistentVolume) (*v1.PersistentVolume, error)
 	IsPVMigratable(pv *v1.PersistentVolume) bool
 	RepairVolumeHandle(pluginName, volumeHandle, nodeID string) (string, error)
 }
@@ -143,7 +143,7 @@ func (h *csiHandler) ReconcileVA(ctx context.Context) error {
 			logger.Error(err, "Failed to find node ID err")
 			continue
 		}
-		pvSpec, err := h.getProcessedPVSpec(va)
+		pvSpec, err := h.getProcessedPVSpec(ctx, va)
 		if err != nil {
 			logger.Error(err, "Failed to get PV Spec")
 			continue
@@ -402,7 +402,10 @@ func getCSISource(pvSpec *v1.PersistentVolumeSpec) (*v1.CSIPersistentVolumeSourc
 	return nil, errors.New("pv spec contained non-csi source that was not migrated")
 }
 
-func (h *csiHandler) getProcessedPVSpec(va *storage.VolumeAttachment) (*v1.PersistentVolumeSpec, error) {
+func (h *csiHandler) getProcessedPVSpec(ctx context.Context, va *storage.VolumeAttachment) (*v1.PersistentVolumeSpec, error) {
+	logger := klog.FromContext(ctx)
+	logger.V(4).Info("Starting processing PVSpec operation")
+
 	if va.Spec.Source.PersistentVolumeName != nil {
 		if va.Spec.Source.InlineVolumeSpec != nil {
 			return nil, errors.New("both InlineCSIVolumeSource and PersistentVolumeName specified in VA source")
@@ -412,7 +415,7 @@ func (h *csiHandler) getProcessedPVSpec(va *storage.VolumeAttachment) (*v1.Persi
 			return nil, err
 		}
 		if h.translator.IsPVMigratable(pv) {
-			pv, err = h.translator.TranslateInTreePVToCSI(pv)
+			pv, err = h.translator.TranslateInTreePVToCSI(logger, pv)
 			if err != nil {
 				return nil, fmt.Errorf("failed to TranslateInTreePVToCSI(%v): %v", pv, err)
 			}
@@ -456,7 +459,7 @@ func (h *csiHandler) csiAttach(ctx context.Context, va *storage.VolumeAttachment
 		}
 
 		if h.translator.IsPVMigratable(pv) {
-			pv, err = h.translator.TranslateInTreePVToCSI(pv)
+			pv, err = h.translator.TranslateInTreePVToCSI(logger, pv)
 			if err != nil {
 				return va, nil, fmt.Errorf("failed to translate in tree pv to CSI: %v", err)
 			}
@@ -537,6 +540,9 @@ func (h *csiHandler) csiAttach(ctx context.Context, va *storage.VolumeAttachment
 }
 
 func (h *csiHandler) csiDetach(ctx context.Context, va *storage.VolumeAttachment) (*storage.VolumeAttachment, error) {
+	logger := klog.FromContext(ctx)
+	logger.V(4).Info("Starting detach operation")
+
 	var csiSource *v1.CSIPersistentVolumeSource
 	var migratable bool
 	if va.Spec.Source.PersistentVolumeName != nil {
@@ -548,7 +554,7 @@ func (h *csiHandler) csiDetach(ctx context.Context, va *storage.VolumeAttachment
 			return va, err
 		}
 		if h.translator.IsPVMigratable(pv) {
-			pv, err = h.translator.TranslateInTreePVToCSI(pv)
+			pv, err = h.translator.TranslateInTreePVToCSI(logger, pv)
 			if err != nil {
 				return va, fmt.Errorf("failed to translate in tree pv to CSI: %v", err)
 			}
@@ -577,7 +583,6 @@ func (h *csiHandler) csiDetach(ctx context.Context, va *storage.VolumeAttachment
 		return va, err
 	}
 
-	logger := klog.FromContext(ctx)
 	nodeID, err := h.getNodeID(logger, h.attacherName, va.Spec.NodeName, va)
 	if err != nil {
 		return va, err
