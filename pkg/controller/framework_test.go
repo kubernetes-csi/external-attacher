@@ -108,212 +108,214 @@ type handlerFactory func(client kubernetes.Interface, informerFactory informers.
 
 func runTests(t *testing.T, handlerFactory handlerFactory, tests []testCase) {
 	for _, test := range tests {
-		logger, ctx := ktesting.NewTestContext(t)
-		logger = klog.LoggerWithValues(logger, "test", test.name)
-		ctx = klog.NewContext(ctx, logger)
-		logger.Info("Starting test")
-		objs := test.initialObjects
-		if test.addedVA != nil {
-			objs = append(objs, test.addedVA)
-		}
-		if test.updatedVA != nil {
-			objs = append(objs, test.updatedVA)
-		}
-		if test.updatedPV != nil {
-			objs = append(objs, test.updatedPV)
-		}
-
-		coreObjs := []runtime.Object{}
-		for _, obj := range objs {
-			switch obj.(type) {
-			case *storage.CSINode:
-			default:
-				coreObjs = append(coreObjs, obj)
+		t.Run(test.name, func(t *testing.T) {
+			logger, ctx := ktesting.NewTestContext(t)
+			logger = klog.LoggerWithValues(logger, "test", test.name)
+			ctx = klog.NewContext(ctx, logger)
+			logger.Info("Starting test")
+			objs := test.initialObjects
+			if test.addedVA != nil {
+				objs = append(objs, test.addedVA)
 			}
-		}
-
-		// Create client and informers
-		client := fake.NewSimpleClientset(coreObjs...)
-		informers := informers.NewSharedInformerFactory(client, time.Hour /* disable resync*/)
-		vaInformer := informers.Storage().V1().VolumeAttachments()
-		pvInformer := informers.Core().V1().PersistentVolumes()
-		nodeInformer := informers.Core().V1().Nodes()
-		csiNodeInformer := informers.Storage().V1().CSINodes()
-		// Fill the informers with initial objects so controller can Get() them
-		for _, obj := range objs {
-			switch obj.(type) {
-			case *v1.PersistentVolume:
-				pvInformer.Informer().GetStore().Add(obj)
-			case *v1.Node:
-				nodeInformer.Informer().GetStore().Add(obj)
-			case *storage.VolumeAttachment:
-				vaInformer.Informer().GetStore().Add(obj)
-			case *v1.Secret:
-				// Secrets are not cached in any informer
-			case *storage.CSINode:
-				csiNodeInformer.Informer().GetStore().Add(obj)
-			default:
-				t.Fatalf("Unknown initalObject type: %+v", obj)
+			if test.updatedVA != nil {
+				objs = append(objs, test.updatedVA)
 			}
-		}
-		// This reactor makes sure that all updates that the controller does are
-		// reflected in its informers so Lister.Get() finds them. This does not
-		// enqueue events!
-		client.Fake.PrependReactor("update", "*", func(action core.Action) (bool, runtime.Object, error) {
-			if action.GetVerb() == "update" {
-				switch action.GetResource().Resource {
-				case "volumeattachments":
-					logger.V(5).Info("Test reactor: updated VA")
-					vaInformer.Informer().GetStore().Update(action.(core.UpdateAction).GetObject())
-				case "persistentvolumes":
-					logger.V(5).Info("Test reactor: updated PV")
-					pvInformer.Informer().GetStore().Update(action.(core.UpdateAction).GetObject())
+			if test.updatedPV != nil {
+				objs = append(objs, test.updatedPV)
+			}
+
+			coreObjs := []runtime.Object{}
+			for _, obj := range objs {
+				switch obj.(type) {
+				case *storage.CSINode:
 				default:
-					t.Errorf("Unknown update resource: %s", action.GetResource())
-				}
-			}
-			return false, nil, nil
-		})
-		// Run any reactors that the test needs *before* the above one.
-		for _, reactor := range test.reactors {
-			client.Fake.PrependReactor(reactor.verb, reactor.resource, reactor.reactor(t))
-		}
-
-		// Construct controller
-		lister := &fakeLister{t: t, publishedNodes: test.listerResponse}
-		csiConnection := &fakeCSIConnection{t: t, calls: test.expectedCSICalls, lister: lister}
-		handler := handlerFactory(client, informers, csiConnection, lister)
-		ctrl := NewCSIAttachController(logger, client, testAttacherName, handler, vaInformer, pvInformer, workqueue.DefaultControllerRateLimiter(), workqueue.DefaultControllerRateLimiter(), test.listerResponse != nil, 1*time.Minute)
-
-		// Start the test by enqueueing the right event
-		if test.addedVA != nil {
-			ctrl.vaAdded(test.addedVA)
-		}
-		if test.updatedVA != nil {
-			ctrl.vaUpdatedFunc(logger)(test.updatedVA, test.updatedVA)
-		}
-		if test.deletedVA != nil {
-			ctrl.vaDeleted(test.deletedVA)
-		}
-		if test.updatedPV != nil {
-			ctrl.pvUpdated(test.updatedPV, test.updatedPV)
-		}
-
-		// Process the queue until we get expected results
-		timeout := time.Now().Add(10 * time.Second)
-		lastReportedActionCount := 0
-		for {
-			if time.Now().After(timeout) {
-				t.Errorf("Test %q: timed out", test.name)
-				break
-			}
-			if ctrl.vaQueue.Len() > 0 {
-				logger.V(5).Info("VA queue, processing one", "queueLength", ctrl.vaQueue.Len())
-				ctrl.syncVA(ctx)
-			}
-			if ctrl.pvQueue.Len() > 0 {
-				logger.V(5).Info("PV queue, processing one", "queueLength", ctrl.pvQueue.Len())
-				ctrl.syncPV(ctx)
-			}
-			if ctrl.vaQueue.Len() > 0 || ctrl.pvQueue.Len() > 0 {
-				// There is still some work in the queue, process it now
-				continue
-			}
-			if test.listerResponse != nil {
-				// Reconcile VA with the actual state
-				err := ctrl.handler.ReconcileVA(ctx)
-				if err != nil {
-					t.Errorf("Failed to reconcile Volume Attachment objects: %v", err)
-				}
-			}
-			if ctrl.vaQueue.Len() > 0 || ctrl.pvQueue.Len() > 0 {
-				// Reconciler created some work, process the queues once again
-				continue
-			}
-			currentActionCount := len(client.Actions())
-			if currentActionCount < len(test.expectedActions) {
-				if lastReportedActionCount < currentActionCount {
-					logger.V(5).Info("Waiting for the rest", "currentActionCount", currentActionCount, "expectedActionsCount", len(test.expectedActions))
-					lastReportedActionCount = currentActionCount
-				}
-				// The test expected more to happen, wait for them
-				time.Sleep(10 * time.Millisecond)
-				continue
-			}
-			break
-		}
-
-		actions := client.Actions()
-		for i, action := range actions {
-			if len(test.expectedActions) < i+1 {
-				t.Errorf("Test %q: %d unexpected actions: %+v", test.name, len(actions)-len(test.expectedActions), spew.Sdump(actions[i:]))
-				break
-			}
-
-			// Sanitize time in attach/detach errors
-			if action.GetVerb() == "update" && action.GetResource().Resource == "volumeattachments" {
-				obj := action.(core.UpdateAction).GetObject()
-				o := obj.(*storage.VolumeAttachment)
-				if o.Status.AttachError != nil {
-					o.Status.AttachError.Time = metav1.Time{}
-				}
-				if o.Status.DetachError != nil {
-					o.Status.DetachError.Time = metav1.Time{}
+					coreObjs = append(coreObjs, obj)
 				}
 			}
 
-			if action.GetVerb() == "patch" && action.GetResource().Resource == "volumeattachments" {
-				patchAction := action.(core.PatchActionImpl)
-				patch := patchAction.GetPatch()
-				var va storage.VolumeAttachment
-				err := json.Unmarshal(patch, &va)
-				if err != nil {
-					t.Errorf("Failed to unmarshal: %v", err)
+			// Create client and informers
+			client := fake.NewSimpleClientset(coreObjs...)
+			informers := informers.NewSharedInformerFactory(client, time.Hour /* disable resync*/)
+			vaInformer := informers.Storage().V1().VolumeAttachments()
+			pvInformer := informers.Core().V1().PersistentVolumes()
+			nodeInformer := informers.Core().V1().Nodes()
+			csiNodeInformer := informers.Storage().V1().CSINodes()
+			// Fill the informers with initial objects so controller can Get() them
+			for _, obj := range objs {
+				switch obj.(type) {
+				case *v1.PersistentVolume:
+					pvInformer.Informer().GetStore().Add(obj)
+				case *v1.Node:
+					nodeInformer.Informer().GetStore().Add(obj)
+				case *storage.VolumeAttachment:
+					vaInformer.Informer().GetStore().Add(obj)
+				case *v1.Secret:
+					// Secrets are not cached in any informer
+				case *storage.CSINode:
+					csiNodeInformer.Informer().GetStore().Add(obj)
+				default:
+					t.Fatalf("Unknown initalObject type: %+v", obj)
 				}
-				if va.Status.AttachError != nil {
-					va.Status.AttachError.Time = metav1.Time{}
-				}
-				if va.Status.DetachError != nil {
-					va.Status.DetachError.Time = metav1.Time{}
-				}
-
-				if va.Status.AttachError != nil || va.Status.DetachError != nil {
-
-					patch, err = createMergePatch(storage.VolumeAttachment{}, va)
-					if err != nil {
-						t.Errorf("Test %q create patch failed", t.Name())
+			}
+			// This reactor makes sure that all updates that the controller does are
+			// reflected in its informers so Lister.Get() finds them. This does not
+			// enqueue events!
+			client.Fake.PrependReactor("update", "*", func(action core.Action) (bool, runtime.Object, error) {
+				if action.GetVerb() == "update" {
+					switch action.GetResource().Resource {
+					case "volumeattachments":
+						logger.V(5).Info("Test reactor: updated VA")
+						vaInformer.Informer().GetStore().Update(action.(core.UpdateAction).GetObject())
+					case "persistentvolumes":
+						logger.V(5).Info("Test reactor: updated PV")
+						pvInformer.Informer().GetStore().Update(action.(core.UpdateAction).GetObject())
+					default:
+						t.Errorf("Unknown update resource: %s", action.GetResource())
 					}
-					patchAction.Patch = patch
-					action = patchAction
+				}
+				return false, nil, nil
+			})
+			// Run any reactors that the test needs *before* the above one.
+			for _, reactor := range test.reactors {
+				client.Fake.PrependReactor(reactor.verb, reactor.resource, reactor.reactor(t))
+			}
+
+			// Construct controller
+			lister := &fakeLister{t: t, publishedNodes: test.listerResponse}
+			csiConnection := &fakeCSIConnection{t: t, calls: test.expectedCSICalls, lister: lister}
+			handler := handlerFactory(client, informers, csiConnection, lister)
+			ctrl := NewCSIAttachController(logger, client, testAttacherName, handler, vaInformer, pvInformer, workqueue.DefaultControllerRateLimiter(), workqueue.DefaultControllerRateLimiter(), test.listerResponse != nil, 1*time.Minute)
+
+			// Start the test by enqueueing the right event
+			if test.addedVA != nil {
+				ctrl.vaAdded(test.addedVA)
+			}
+			if test.updatedVA != nil {
+				ctrl.vaUpdatedFunc(logger)(test.updatedVA, test.updatedVA)
+			}
+			if test.deletedVA != nil {
+				ctrl.vaDeleted(test.deletedVA)
+			}
+			if test.updatedPV != nil {
+				ctrl.pvUpdated(test.updatedPV, test.updatedPV)
+			}
+
+			// Process the queue until we get expected results
+			timeout := time.Now().Add(10 * time.Second)
+			lastReportedActionCount := 0
+			for {
+				if time.Now().After(timeout) {
+					t.Errorf("Test %q: timed out", test.name)
+					break
+				}
+				if ctrl.vaQueue.Len() > 0 {
+					logger.V(5).Info("VA queue, processing one", "queueLength", ctrl.vaQueue.Len())
+					ctrl.syncVA(ctx)
+				}
+				if ctrl.pvQueue.Len() > 0 {
+					logger.V(5).Info("PV queue, processing one", "queueLength", ctrl.pvQueue.Len())
+					ctrl.syncPV(ctx)
+				}
+				if ctrl.vaQueue.Len() > 0 || ctrl.pvQueue.Len() > 0 {
+					// There is still some work in the queue, process it now
+					continue
+				}
+				if test.listerResponse != nil {
+					// Reconcile VA with the actual state
+					err := ctrl.handler.ReconcileVA(ctx)
+					if err != nil {
+						t.Errorf("Failed to reconcile Volume Attachment objects: %v", err)
+					}
+				}
+				if ctrl.vaQueue.Len() > 0 || ctrl.pvQueue.Len() > 0 {
+					// Reconciler created some work, process the queues once again
+					continue
+				}
+				currentActionCount := len(client.Actions())
+				if currentActionCount < len(test.expectedActions) {
+					if lastReportedActionCount < currentActionCount {
+						logger.V(5).Info("Waiting for the rest", "currentActionCount", currentActionCount, "expectedActionsCount", len(test.expectedActions))
+						lastReportedActionCount = currentActionCount
+					}
+					// The test expected more to happen, wait for them
+					time.Sleep(10 * time.Millisecond)
+					continue
+				}
+				break
+			}
+
+			actions := client.Actions()
+			for i, action := range actions {
+				if len(test.expectedActions) < i+1 {
+					t.Errorf("Test %q: %d unexpected actions: %+v", test.name, len(actions)-len(test.expectedActions), spew.Sdump(actions[i:]))
+					break
 				}
 
+				// Sanitize time in attach/detach errors
+				if action.GetVerb() == "update" && action.GetResource().Resource == "volumeattachments" {
+					obj := action.(core.UpdateAction).GetObject()
+					o := obj.(*storage.VolumeAttachment)
+					if o.Status.AttachError != nil {
+						o.Status.AttachError.Time = metav1.Time{}
+					}
+					if o.Status.DetachError != nil {
+						o.Status.DetachError.Time = metav1.Time{}
+					}
+				}
+
+				if action.GetVerb() == "patch" && action.GetResource().Resource == "volumeattachments" {
+					patchAction := action.(core.PatchActionImpl)
+					patch := patchAction.GetPatch()
+					var va storage.VolumeAttachment
+					err := json.Unmarshal(patch, &va)
+					if err != nil {
+						t.Errorf("Failed to unmarshal: %v", err)
+					}
+					if va.Status.AttachError != nil {
+						va.Status.AttachError.Time = metav1.Time{}
+					}
+					if va.Status.DetachError != nil {
+						va.Status.DetachError.Time = metav1.Time{}
+					}
+
+					if va.Status.AttachError != nil || va.Status.DetachError != nil {
+
+						patch, err = createMergePatch(storage.VolumeAttachment{}, va)
+						if err != nil {
+							t.Errorf("Test %q create patch failed", t.Name())
+						}
+						patchAction.Patch = patch
+						action = patchAction
+					}
+
+				}
+
+				expectedAction := test.expectedActions[i]
+				if !reflect.DeepEqual(expectedAction, action) {
+					t.Errorf("Test %q: action %d\nExpected:\n%s\ngot:\n%s", test.name, i, spew.Sdump(expectedAction), spew.Sdump(action))
+					continue
+				}
 			}
 
-			expectedAction := test.expectedActions[i]
-			if !reflect.DeepEqual(expectedAction, action) {
-				t.Errorf("Test %q: action %d\nExpected:\n%s\ngot:\n%s", test.name, i, spew.Sdump(expectedAction), spew.Sdump(action))
-				continue
+			if len(test.expectedActions) > len(actions) {
+				t.Errorf("Test %q: %d additional expected actions", test.name, len(test.expectedActions)-len(actions))
+				for _, a := range test.expectedActions[len(actions):] {
+					t.Logf("    %+v", a)
+				}
 			}
-		}
 
-		if len(test.expectedActions) > len(actions) {
-			t.Errorf("Test %q: %d additional expected actions", test.name, len(test.expectedActions)-len(actions))
-			for _, a := range test.expectedActions[len(actions):] {
-				t.Logf("    %+v", a)
+			if test.additionalCheck != nil {
+				test.additionalCheck(t, test)
 			}
-		}
-
-		if test.additionalCheck != nil {
-			test.additionalCheck(t, test)
-		}
-		// makesure all the csi calls were executed.
-		if csiConnection.index < len(csiConnection.calls) {
-			t.Errorf("Test %q: %d additional expected CSI calls", test.name, len(csiConnection.calls)-csiConnection.index)
-			for _, a := range csiConnection.calls[csiConnection.index:] {
-				t.Logf("   %+v", a)
+			// makesure all the csi calls were executed.
+			if csiConnection.index < len(csiConnection.calls) {
+				t.Errorf("Test %q: %d additional expected CSI calls", test.name, len(csiConnection.calls)-csiConnection.index)
+				for _, a := range csiConnection.calls[csiConnection.index:] {
+					t.Logf("   %+v", a)
+				}
 			}
-		}
-		logger.Info("Test was finished")
+			logger.Info("Test was finished")
+		})
 	}
 }
 

@@ -28,6 +28,7 @@ import (
 	"github.com/kubernetes-csi/csi-lib-utils/accessmodes"
 	v1 "k8s.io/api/core/v1"
 	storage "k8s.io/api/storage/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/kubernetes"
@@ -55,28 +56,47 @@ func markAsAttached(ctx context.Context, client kubernetes.Interface, va *storag
 }
 
 func markAsDetached(ctx context.Context, client kubernetes.Interface, va *storage.VolumeAttachment) (*storage.VolumeAttachment, error) {
+	logger := klog.FromContext(ctx)
 	finalizerName := GetFinalizerName(va.Spec.Attacher)
 
 	// Prepare new array of finalizers
 	newFinalizers := make([]string, 0, len(va.Finalizers))
-	found := false
+	finalizerFound := false
 	for _, f := range va.Finalizers {
 		if f == finalizerName {
-			found = true
+			finalizerFound = true
 			continue
 		}
 		newFinalizers = append(newFinalizers, f)
+	}
+	if !finalizerFound && !va.Status.Attached {
+		// Finalizer was not present, nothing to update
+		logger.V(4).Info("Already fully detached")
+		return va, nil
 	}
 	// Mostly to simplify unit tests, but it won't harm in production too
 	if len(newFinalizers) == 0 {
 		newFinalizers = nil
 	}
 
-	logger := klog.FromContext(ctx)
-	if !found && !va.Status.Attached {
-		// Finalizer was not present, nothing to update
-		logger.V(4).Info("Already fully detached")
-		return va, nil
+	// Remove the finalizer first. A VolumeAttachment with DeletionTimestamp and without Finalizer will be considered as detached
+	// even when status says `attached: true`. Therefore the attacher won't re-try detaching already detached volume.
+	// The other way around (mark as detached and then remove the finalizer) leads to a second ControllerUnpublish call,
+	// because a VolumeAttachment with the finalizer present and `attached: false` could mean the attachment could have timed out
+	// previously and the attacher needs to confirm the volume is detached with ControllerUnpublish.
+	if finalizerFound {
+		clone := va.DeepCopy()
+		clone.Finalizers = newFinalizers
+		patch, err := createMergePatch(va, clone)
+		if err != nil {
+			return va, err
+		}
+		newVA, err := client.StorageV1().VolumeAttachments().Patch(ctx, va.Name, types.MergePatchType, patch, metav1.PatchOptions{})
+		if err != nil {
+			return va, err
+		}
+		logger.V(4).Info("Finalizer removed")
+		va = newVA
 	}
 
 	logger.V(4).Info("Marking as detached")
@@ -90,21 +110,13 @@ func markAsDetached(ctx context.Context, client kubernetes.Interface, va *storag
 	}
 	newVA, err := client.StorageV1().VolumeAttachments().Patch(ctx, va.Name, types.MergePatchType, patch, metav1.PatchOptions{}, "status")
 	if err != nil {
+		if apierrors.IsNotFound(err) {
+			// The VolumeAttachment does not have any finalizer, it might have been deleted by the API server.
+			return va, nil
+		}
 		return va, err
 	}
 
-	// As Finalizers is not in the status subresource it must be patched separately. It is removed after the status update so the resource is not prematurely deleted.
-	clone = newVA.DeepCopy()
-	clone.Finalizers = newFinalizers
-	patch, err = createMergePatch(newVA, clone)
-	if err != nil {
-		return newVA, err
-	}
-	newVA, err = client.StorageV1().VolumeAttachments().Patch(ctx, newVA.Name, types.MergePatchType, patch, metav1.PatchOptions{}, "")
-	if err != nil {
-		return newVA, err
-	}
-	logger.V(4).Info("Finalizer removed")
 	return newVA, nil
 }
 
