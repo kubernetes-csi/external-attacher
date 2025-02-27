@@ -34,6 +34,9 @@ import (
 	"k8s.io/component-base/logs"
 	logsapi "k8s.io/component-base/logs/api/v1"
 	_ "k8s.io/component-base/logs/json/register"
+	"k8s.io/component-base/metrics/legacyregistry"
+	_ "k8s.io/component-base/metrics/prometheus/clientgo/leaderelection" // register leader election in the default legacy registry
+	_ "k8s.io/component-base/metrics/prometheus/workqueue"               // register work queues in the default legacy registry
 	csitrans "k8s.io/csi-translation-lib"
 	"k8s.io/klog/v2"
 
@@ -187,6 +190,10 @@ func main() {
 			klog.FlushAndExit(klog.ExitFlushTimeout, 1)
 		}
 	}
+
+	// Add default legacy registry so that metrics manager serves Go runtime and process metrics.
+	// Also registers the `k8s.io/component-base/` work queue and leader election metrics we anonymously import.
+	metricsManager.WithAdditionalRegistry(legacyregistry.DefaultGatherer)
 
 	// Prepare http endpoint for metrics + leader election healthz
 	mux := http.NewServeMux()

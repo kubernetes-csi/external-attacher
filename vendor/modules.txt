@@ -94,7 +94,7 @@ github.com/klauspost/compress/internal/cpuinfo
 github.com/klauspost/compress/internal/snapref
 github.com/klauspost/compress/zstd
 github.com/klauspost/compress/zstd/internal/xxhash
-# github.com/kubernetes-csi/csi-lib-utils v0.20.0
+# github.com/kubernetes-csi/csi-lib-utils v0.21.0
 ## explicit; go 1.23.1
 github.com/kubernetes-csi/csi-lib-utils/accessmodes
 github.com/kubernetes-csi/csi-lib-utils/connection
@@ -795,7 +795,9 @@ k8s.io/component-base/logs/json/register
 k8s.io/component-base/logs/klogflags
 k8s.io/component-base/metrics
 k8s.io/component-base/metrics/legacyregistry
+k8s.io/component-base/metrics/prometheus/clientgo/leaderelection
 k8s.io/component-base/metrics/prometheus/feature
+k8s.io/component-base/metrics/prometheus/workqueue
 k8s.io/component-base/metrics/prometheusextension
 k8s.io/component-base/version
 # k8s.io/csi-translation-lib v0.32.0

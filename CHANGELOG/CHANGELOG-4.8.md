@@ -1,3 +1,28 @@
+# Release notes for v4.8.1
+
+[Documentation](https://kubernetes-csi.github.io)
+
+## Changes by Kind
+
+### Feature
+
+- Serve additional leader election, work queue, process, and Go runtime metrics ([#630](https://github.com/kubernetes-csi/external-attacher/pull/630), [@AndrewSirenko](https://github.com/AndrewSirenko))
+
+### Bug or Regression
+
+- Fixed repeated call to ControllerUnpublishVolume by reordering its finalizer removal and marking VolumeAttachment as detached. The VolumeAttachment can now be deleted in the API server before it's marked as `attached: false`. ([#624](https://github.com/kubernetes-csi/external-attacher/pull/624), [@jsafrane](https://github.com/jsafrane))
+
+## Dependencies
+
+### Added
+_Nothing has changed._
+
+### Changed
+- github.com/kubernetes-csi/csi-lib-utils: [v0.20.0 → v0.21.0](https://github.com/kubernetes-csi/csi-lib-utils/compare/v0.20.0...v0.21.0)
+
+### Removed
+_Nothing has changed._
+
 # Release notes for v4.8.0
 
 [Documentation](https://kubernetes-csi.github.io)
