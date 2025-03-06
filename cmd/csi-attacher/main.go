@@ -280,6 +280,7 @@ func main() {
 		*reconcileSync,
 	)
 
+	// handle SIGTERM and SIGINT by cancelling the context.
 	shutdownCtx, cancel := context.WithCancel(ctx)
 	shutdownHandler := server.SetupSignalHandler()
 	ctx, terminate := context.WithCancel(shutdownCtx)
