@@ -25,6 +25,7 @@ import (
 	"time"
 
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apiserver/pkg/server"
 	"k8s.io/client-go/informers"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
@@ -279,6 +280,18 @@ func main() {
 		*reconcileSync,
 	)
 
+	// handle SIGTERM and SIGINT by cancelling the context.
+	shutdownCtx, cancel := context.WithCancel(ctx)
+	shutdownHandler := server.SetupSignalHandler()
+	ctx, terminate := context.WithCancel(shutdownCtx)
+	defer terminate()
+
+	go func() {
+		defer cancel()
+		<-shutdownHandler
+		klog.Infof("Received SIGTERM or SIGINT signal, shutting down controller.")
+	}()
+
 	run := func(ctx context.Context) {
 		stopCh := ctx.Done()
 		factory.Start(stopCh)
@@ -311,6 +324,8 @@ func main() {
 		le.WithLeaseDuration(*leaderElectionLeaseDuration)
 		le.WithRenewDeadline(*leaderElectionRenewDeadline)
 		le.WithRetryPeriod(*leaderElectionRetryPeriod)
+		le.WithReleaseOnCancel(true)
+		le.WithContext(ctx)
 
 		if err := le.Run(); err != nil {
 			logger.Error(err, "Failed to initialize leader election")
