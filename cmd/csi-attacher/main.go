@@ -22,9 +22,11 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"sync"
 	"time"
 
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apiserver/pkg/server"
 	"k8s.io/client-go/informers"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
@@ -279,10 +281,31 @@ func main() {
 		*reconcileSync,
 	)
 
+	// handle SIGTERM and SIGINT by cancelling the context.
+	ctx, terminate := context.WithCancel(ctx)
+	runCtx, cancelRun := context.WithCancel(ctx)
+	shutdownHandler := server.SetupSignalHandler()
+
+	defer terminate()
+
+	var signalReceived bool
+
+	go func() {
+		defer cancelRun()
+		<-shutdownHandler
+		signalReceived = true
+		logger.Info("Received SIGTERM or SIGINT signal, shutting down controller.")
+	}()
+
 	run := func(ctx context.Context) {
-		stopCh := ctx.Done()
+		var wg sync.WaitGroup
+		stopCh := shutdownHandler
 		factory.Start(stopCh)
-		ctrl.Run(ctx, int(*workerThreads))
+		ctrl.Run(runCtx, int(*workerThreads), &wg)
+		if signalReceived {
+			wg.Wait()
+			terminate()
+		}
 	}
 
 	if !*enableLeaderElection {
@@ -311,6 +334,8 @@ func main() {
 		le.WithLeaseDuration(*leaderElectionLeaseDuration)
 		le.WithRenewDeadline(*leaderElectionRenewDeadline)
 		le.WithRetryPeriod(*leaderElectionRetryPeriod)
+		le.WithReleaseOnCancel(true)
+		le.WithContext(ctx)
 
 		if err := le.Run(); err != nil {
 			logger.Error(err, "Failed to initialize leader election")

@@ -18,6 +18,7 @@ package controller
 
 import (
 	"context"
+	"sync"
 	"time"
 
 	v1 "k8s.io/api/core/v1"
@@ -121,7 +122,7 @@ func NewCSIAttachController(
 }
 
 // Run starts CSI attacher and listens on channel events
-func (ctrl *CSIAttachController) Run(ctx context.Context, workers int) {
+func (ctrl *CSIAttachController) Run(ctx context.Context, workers int, wg *sync.WaitGroup) {
 	defer ctrl.vaQueue.ShutDown()
 	defer ctrl.pvQueue.ShutDown()
 
@@ -134,17 +135,29 @@ func (ctrl *CSIAttachController) Run(ctx context.Context, workers int) {
 		return
 	}
 	for i := 0; i < workers; i++ {
-		go wait.UntilWithContext(ctx, ctrl.syncVA, 0)
-		go wait.UntilWithContext(ctx, ctrl.syncPV, 0)
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			wait.UntilWithContext(ctx, ctrl.syncVA, 0)
+		}()
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			wait.UntilWithContext(ctx, ctrl.syncPV, 0)
+		}()
 	}
 
 	if ctrl.shouldReconcileVolumeAttachment {
-		go wait.UntilWithContext(ctx, func(ctx context.Context) {
-			err := ctrl.handler.ReconcileVA(ctx)
-			if err != nil {
-				logger.Error(err, "Failed to reconcile VolumeAttachment")
-			}
-		}, ctrl.reconcileSync)
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			wait.UntilWithContext(ctx, func(ctx context.Context) {
+				err := ctrl.handler.ReconcileVA(ctx)
+				if err != nil {
+					logger.Error(err, "Failed to reconcile VolumeAttachment")
+				}
+			}, ctrl.reconcileSync)
+		}()
 	}
 
 	<-ctx.Done()
