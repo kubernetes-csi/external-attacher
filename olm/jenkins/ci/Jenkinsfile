@@ -1,0 +1,17 @@
+@Library('olcne-pipeline') _
+import com.oracle.olcne.pipeline.BranchPattern
+
+String version = '4.9.0'
+String imgTag  = "v" + version
+
+olcnePipeline(
+        branchPattern: new BranchPattern(master: 'oracle/release/.*', feature: '(?!^release/.*$)(^.*$)'),
+        containers: [('container-registry.oracle.com/olcne/csi-attacher:' + imgTag): 'olcne/csi-attacher:' + imgTag],
+        golang: '1.23.7',
+        architectures: ['x86_64', 'aarch64'],
+        platforms: ['ol8'],
+        publishImage: false,
+        ol8ModulesToDisable: ['go-toolset:ol8'],
+        yumOL8Repos: ['ol8_codeready_builder', 'ol8_UEKR7'],
+)
+
