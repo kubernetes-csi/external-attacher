@@ -95,6 +95,8 @@ Note that the external-attacher does not scale with more replicas. Only one exte
 
 * `--resync <duration>`: Internal resync interval when the external-attacher re-evaluates all existing `VolumeAttachment` instances and tries to fulfill them, i.e. attach / detach corresponding volumes. It does not affect re-tries of failed CSI calls! It should be used only when there is a bug in Kubernetes watch logic.
 
+* `--automaxprocs`: Automatically set the `GOMAXPROCS` environment variable to match the configured Linux container CPU quota. Defaults to false.
+
 * `--version`: Prints current external-attacher version and quits.
 
 * All glog / klog arguments are supported, such as `-v <log level>` or `-alsologtostderr`.
