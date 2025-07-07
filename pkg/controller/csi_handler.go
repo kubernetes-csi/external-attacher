@@ -24,6 +24,8 @@ import (
 	"sync"
 	"time"
 
+	"google.golang.org/grpc/status"
+
 	"github.com/kubernetes-csi/csi-lib-utils/connection"
 	"github.com/kubernetes-csi/external-attacher/pkg/attacher"
 	v1 "k8s.io/api/core/v1"
@@ -610,10 +612,18 @@ func (h *csiHandler) saveAttachError(ctx context.Context, va *storage.VolumeAtta
 	logger := klog.FromContext(ctx)
 	logger.V(4).Info("Saving attach error")
 	clone := va.DeepCopy()
-	clone.Status.AttachError = &storage.VolumeError{
+
+	volumeError := &storage.VolumeError{
 		Message: err.Error(),
 		Time:    metav1.Now(),
 	}
+
+	if st, ok := status.FromError(err); ok {
+		errorCode := int32(st.Code())
+		volumeError.ErrorCode = &errorCode
+	}
+
+	clone.Status.AttachError = volumeError
 
 	var newVa *storage.VolumeAttachment
 	if newVa, err = h.patchVA(ctx, va, clone, "status"); err != nil {
