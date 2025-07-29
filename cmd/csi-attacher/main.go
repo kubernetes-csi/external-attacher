@@ -117,7 +117,8 @@ func main() {
 	}
 
 	if err := utilfeature.DefaultMutableFeatureGate.SetFromMap(featureGates); err != nil {
-		klog.Fatal(err)
+		logger.Error(err, "failed to store flag gates", "featureGates", featureGates)
+		klog.FlushAndExit(klog.ExitFlushTimeout, 1)
 	}
 
 	if *showVersion {
