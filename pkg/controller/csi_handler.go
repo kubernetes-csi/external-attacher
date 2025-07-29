@@ -24,15 +24,16 @@ import (
 	"sync"
 	"time"
 
-	"google.golang.org/grpc/status"
-
 	"github.com/kubernetes-csi/csi-lib-utils/connection"
 	"github.com/kubernetes-csi/external-attacher/pkg/attacher"
+	"github.com/kubernetes-csi/external-attacher/pkg/features"
+	"google.golang.org/grpc/status"
 	v1 "k8s.io/api/core/v1"
 	storage "k8s.io/api/storage/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/types"
+	utilfeature "k8s.io/apiserver/pkg/util/feature"
 	"k8s.io/client-go/kubernetes"
 	corelisters "k8s.io/client-go/listers/core/v1"
 	storagelisters "k8s.io/client-go/listers/storage/v1"
@@ -618,9 +619,11 @@ func (h *csiHandler) saveAttachError(ctx context.Context, va *storage.VolumeAtta
 		Time:    metav1.Now(),
 	}
 
-	if st, ok := status.FromError(err); ok {
-		errorCode := int32(st.Code())
-		volumeError.ErrorCode = &errorCode
+	if utilfeature.DefaultFeatureGate.Enabled(features.MutableCSINodeAllocatableCount) {
+		if st, ok := status.FromError(err); ok {
+			errorCode := int32(st.Code())
+			volumeError.ErrorCode = &errorCode
+		}
 	}
 
 	clone.Status.AttachError = volumeError
