@@ -26,11 +26,14 @@ import (
 
 	"github.com/kubernetes-csi/csi-lib-utils/connection"
 	"github.com/kubernetes-csi/external-attacher/pkg/attacher"
+	"github.com/kubernetes-csi/external-attacher/pkg/features"
+	"google.golang.org/grpc/status"
 	v1 "k8s.io/api/core/v1"
 	storage "k8s.io/api/storage/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/types"
+	utilfeature "k8s.io/apiserver/pkg/util/feature"
 	"k8s.io/client-go/kubernetes"
 	corelisters "k8s.io/client-go/listers/core/v1"
 	storagelisters "k8s.io/client-go/listers/storage/v1"
@@ -610,10 +613,20 @@ func (h *csiHandler) saveAttachError(ctx context.Context, va *storage.VolumeAtta
 	logger := klog.FromContext(ctx)
 	logger.V(4).Info("Saving attach error")
 	clone := va.DeepCopy()
-	clone.Status.AttachError = &storage.VolumeError{
+
+	volumeError := &storage.VolumeError{
 		Message: err.Error(),
 		Time:    metav1.Now(),
 	}
+
+	if utilfeature.DefaultFeatureGate.Enabled(features.MutableCSINodeAllocatableCount) {
+		if st, ok := status.FromError(err); ok {
+			errorCode := int32(st.Code())
+			volumeError.ErrorCode = &errorCode
+		}
+	}
+
+	clone.Status.AttachError = volumeError
 
 	var newVa *storage.VolumeAttachment
 	if newVa, err = h.patchVA(ctx, va, clone, "status"); err != nil {

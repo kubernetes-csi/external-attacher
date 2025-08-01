@@ -22,9 +22,11 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"strings"
 	"time"
 
 	"k8s.io/apimachinery/pkg/runtime"
+	utilfeature "k8s.io/apiserver/pkg/util/feature"
 	"k8s.io/client-go/informers"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
@@ -49,6 +51,7 @@ import (
 	"github.com/kubernetes-csi/external-attacher/pkg/attacher"
 	"github.com/kubernetes-csi/external-attacher/pkg/controller"
 	"google.golang.org/grpc"
+	utilflag "k8s.io/component-base/cli/flag"
 )
 
 const (
@@ -88,6 +91,8 @@ var (
 	kubeAPIBurst = flag.Int("kube-api-burst", 10, "Burst to use while communicating with the kubernetes apiserver. Defaults to 10.")
 
 	maxGRPCLogLength = flag.Int("max-grpc-log-length", -1, "The maximum amount of characters logged for every grpc responses. Defaults to no limit")
+
+	featureGates map[string]bool
 )
 
 var (
@@ -95,6 +100,9 @@ var (
 )
 
 func main() {
+	flag.Var(utilflag.NewMapStringBool(&featureGates), "feature-gates", "A set of key=value pairs that describe feature gates for alpha/experimental features. "+
+		"Options are:\n"+strings.Join(utilfeature.DefaultFeatureGate.KnownFeatures(), "\n"))
+
 	fg := featuregate.NewFeatureGate()
 	logsapi.AddFeatureGates(fg)
 	c := logsapi.NewLoggingConfiguration()
@@ -105,6 +113,11 @@ func main() {
 	logger := klog.Background()
 	if err := logsapi.ValidateAndApply(c, fg); err != nil {
 		logger.Error(err, "LoggingConfiguration is invalid")
+		klog.FlushAndExit(klog.ExitFlushTimeout, 1)
+	}
+
+	if err := utilfeature.DefaultMutableFeatureGate.SetFromMap(featureGates); err != nil {
+		logger.Error(err, "failed to store flag gates", "featureGates", featureGates)
 		klog.FlushAndExit(klog.ExitFlushTimeout, 1)
 	}
 

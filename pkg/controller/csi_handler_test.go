@@ -23,9 +23,12 @@ import (
 	"testing"
 	"time"
 
+	"google.golang.org/grpc/codes"
+
 	"github.com/kubernetes-csi/csi-lib-utils/connection"
 	"github.com/kubernetes-csi/external-attacher/pkg/attacher"
-
+	"github.com/kubernetes-csi/external-attacher/pkg/features"
+	"google.golang.org/grpc/status"
 	v1 "k8s.io/api/core/v1"
 	storage "k8s.io/api/storage/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -33,9 +36,11 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
+	utilfeature "k8s.io/apiserver/pkg/util/feature"
 	"k8s.io/client-go/informers"
 	"k8s.io/client-go/kubernetes"
 	core "k8s.io/client-go/testing"
+	featuregatetesting "k8s.io/component-base/featuregate/testing"
 	csitranslator "k8s.io/csi-translation-lib"
 	"k8s.io/klog/v2"
 	_ "k8s.io/klog/v2/ktesting/init"
@@ -267,6 +272,16 @@ func patch(original, new interface{}) []byte {
 		return nil
 	}
 	return patch
+}
+
+func vaWithAttachErrorAndCode(va *storage.VolumeAttachment, message string, code codes.Code) *storage.VolumeAttachment {
+	errorCode := int32(code)
+	va.Status.AttachError = &storage.VolumeError{
+		Message:   message,
+		Time:      metav1.Time{},
+		ErrorCode: &errorCode,
+	}
+	return va
 }
 
 func TestCSIHandler(t *testing.T) {
@@ -1401,6 +1416,61 @@ func TestCSIHandler(t *testing.T) {
 	}
 
 	runTests(t, csiHandlerFactory, tests)
+}
+
+func TestVolumeAttachmentWithErrorCode(t *testing.T) {
+	featuregatetesting.SetFeatureGateDuringTest(t, utilfeature.DefaultFeatureGate, features.MutableCSINodeAllocatableCount, true)
+
+	vaGroupResourceVersion := schema.GroupVersionResource{
+		Group:    storage.GroupName,
+		Version:  "v1",
+		Resource: "volumeattachments",
+	}
+
+	var noMetadata map[string]string
+	var noAttrs map[string]string
+	var noSecrets map[string]string
+	var notDetached = false
+	var success error
+	var readWrite = false
+
+	test := testCase{
+		name:           "CSI attach fails with gRPC error -> controller saves ErrorCode and retries",
+		initialObjects: []runtime.Object{pvWithFinalizer(), csiNode()},
+		addedVA:        va(false, "", nil),
+		expectedActions: []core.Action{
+			core.NewPatchAction(vaGroupResourceVersion, metav1.NamespaceNone, testPVName+"-"+testNodeName,
+				types.MergePatchType, patch(va(false, "", nil), va(false, fin, ann))),
+
+			// The CSI call fails, so the controller saves the error status.
+			core.NewPatchSubresourceAction(vaGroupResourceVersion, metav1.NamespaceNone,
+				testPVName+"-"+testNodeName,
+				types.MergePatchType, patch(va(false, fin, ann),
+					vaWithAttachErrorAndCode(va(false, fin, ann), "rpc error: code = ResourceExhausted desc = mock rpc error", codes.ResourceExhausted)), "status"),
+
+			// On retry, the controller reads the original VA again and tries to re-apply the finalizer/annotation.
+			core.NewPatchAction(vaGroupResourceVersion, metav1.NamespaceNone, testPVName+"-"+testNodeName,
+				types.MergePatchType, patch(
+					vaWithAttachErrorAndCode(va(false, "", nil), "rpc error: code = ResourceExhausted desc = mock rpc error", codes.ResourceExhausted),
+					vaWithAttachErrorAndCode(va(false, fin, ann), "rpc error: code = ResourceExhausted desc = mock rpc error", codes.ResourceExhausted),
+				)),
+
+			// The CSI call succeeds now, and the controller clears the error and marks the VA as attached.
+			core.NewPatchSubresourceAction(vaGroupResourceVersion, metav1.NamespaceNone,
+				testPVName+"-"+testNodeName,
+				types.MergePatchType, patch(
+					vaWithAttachErrorAndCode(va(false, fin, ann), "rpc error: code = ResourceExhausted desc = mock rpc error", codes.ResourceExhausted),
+					va(true /*attached*/, fin, ann),
+				),
+				"status"),
+		},
+		expectedCSICalls: []csiCall{
+			{"attach", testVolumeHandle, testNodeID, noAttrs, noSecrets, readWrite, status.Error(codes.ResourceExhausted, "mock rpc error"), notDetached, noMetadata, 0},
+			{"attach", testVolumeHandle, testNodeID, noAttrs, noSecrets, readWrite, success, notDetached, noMetadata, 0},
+		},
+	}
+
+	runTests(t, csiHandlerFactory, []testCase{test})
 }
 
 func TestCSIHandlerReconcileVA(t *testing.T) {
