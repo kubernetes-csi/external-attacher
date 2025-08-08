@@ -30,6 +30,7 @@ const (
 	// Makes CSINode.Spec.Drivers[*].Allocatable.Count mutable, allowing CSI drivers to
 	// update the number of volumes that can be allocated on a node. Additionally, enables
 	// setting ErrorCode field in VolumeAttachment status.
+	ReleaseLeaderElectionOnExit    featuregate.Feature = "ReleaseLeaderElectionOnExit"
 	MutableCSINodeAllocatableCount featuregate.Feature = "MutableCSINodeAllocatableCount"
 )
 
@@ -40,5 +41,6 @@ func init() {
 // defaultKubernetesFeatureGates consists of all known feature keys specific to external-attacher.
 // To add a new feature, define a key for it above and add it here.
 var defaultKubernetesFeatureGates = map[featuregate.Feature]featuregate.FeatureSpec{
+	ReleaseLeaderElectionOnExit:    {Default: false, PreRelease: featuregate.Alpha},
 	MutableCSINodeAllocatableCount: {Default: false, PreRelease: featuregate.Beta},
 }

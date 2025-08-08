@@ -23,15 +23,18 @@ import (
 	"net/http"
 	"os"
 	"strings"
+	"sync"
 	"time"
 
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apiserver/pkg/server"
 	utilfeature "k8s.io/apiserver/pkg/util/feature"
 	"k8s.io/client-go/informers"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
 	"k8s.io/client-go/util/workqueue"
+	utilflag "k8s.io/component-base/cli/flag"
 	"k8s.io/component-base/featuregate"
 	"k8s.io/component-base/logs"
 	logsapi "k8s.io/component-base/logs/api/v1"
@@ -50,8 +53,8 @@ import (
 	"github.com/kubernetes-csi/csi-lib-utils/standardflags"
 	"github.com/kubernetes-csi/external-attacher/pkg/attacher"
 	"github.com/kubernetes-csi/external-attacher/pkg/controller"
+	"github.com/kubernetes-csi/external-attacher/pkg/features"
 	"google.golang.org/grpc"
-	utilflag "k8s.io/component-base/cli/flag"
 )
 
 const (
@@ -293,11 +296,40 @@ func main() {
 		supportsListVolumesPublishedNodes,
 		*reconcileSync,
 	)
+	// handle SIGTERM and SIGINT by cancelling the context.
+	var (
+		terminate       func()          // called when all controllers are finished
+		controllerCtx   context.Context // shuts down all controllers on a signal
+		shutdownHandler <-chan struct{} // called when the signal is received
+	)
+
+	if utilfeature.DefaultFeatureGate.Enabled(features.ReleaseLeaderElectionOnExit) {
+		ctx, terminate = context.WithCancel(ctx) // shuts down the whole process, incl. leader election
+		var cancelControllerCtx context.CancelFunc
+		controllerCtx, cancelControllerCtx = context.WithCancel(ctx)
+		shutdownHandler = server.SetupSignalHandler()
+
+		defer terminate()
+
+		go func() {
+			defer cancelControllerCtx()
+			<-shutdownHandler
+			logger.Info("Received SIGTERM or SIGINT signal, shutting down controller.")
+		}()
+	}
 
 	run := func(ctx context.Context) {
-		stopCh := ctx.Done()
-		factory.Start(stopCh)
-		ctrl.Run(ctx, int(*workerThreads))
+		if utilfeature.DefaultFeatureGate.Enabled(features.ReleaseLeaderElectionOnExit) {
+			var wg sync.WaitGroup
+			factory.Start(shutdownHandler)
+			ctrl.Run(controllerCtx, int(*workerThreads), &wg)
+			wg.Wait()
+			terminate()
+		} else {
+			stopCh := ctx.Done()
+			factory.Start(stopCh)
+			ctrl.Run(ctx, int(*workerThreads), nil)
+		}
 	}
 
 	if !*enableLeaderElection {
@@ -326,6 +358,10 @@ func main() {
 		le.WithLeaseDuration(*leaderElectionLeaseDuration)
 		le.WithRenewDeadline(*leaderElectionRenewDeadline)
 		le.WithRetryPeriod(*leaderElectionRetryPeriod)
+		if utilfeature.DefaultFeatureGate.Enabled(features.ReleaseLeaderElectionOnExit) {
+			le.WithReleaseOnCancel(true)
+			le.WithContext(ctx)
+		}
 
 		if err := le.Run(); err != nil {
 			logger.Error(err, "Failed to initialize leader election")
