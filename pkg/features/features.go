@@ -30,8 +30,13 @@ const (
 	// Makes CSINode.Spec.Drivers[*].Allocatable.Count mutable, allowing CSI drivers to
 	// update the number of volumes that can be allocated on a node. Additionally, enables
 	// setting ErrorCode field in VolumeAttachment status.
-	ReleaseLeaderElectionOnExit    featuregate.Feature = "ReleaseLeaderElectionOnExit"
 	MutableCSINodeAllocatableCount featuregate.Feature = "MutableCSINodeAllocatableCount"
+
+	// owner: @rhrmo
+	// alpha: v1.35
+	//
+	// Releases leader election lease on sigterm / sigint.
+	ReleaseLeaderElectionOnExit featuregate.Feature = "ReleaseLeaderElectionOnExit"
 )
 
 func init() {
