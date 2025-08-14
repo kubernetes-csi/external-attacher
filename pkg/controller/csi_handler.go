@@ -69,7 +69,7 @@ type csiHandler struct {
 	pvLister                      corelisters.PersistentVolumeLister
 	csiNodeLister                 storagelisters.CSINodeLister
 	vaLister                      storagelisters.VolumeAttachmentLister
-	vaQueue, pvQueue              workqueue.TypedRateLimitingInterface[any]
+	vaQueue, pvQueue              workqueue.TypedRateLimitingInterface[string]
 	forceSync                     map[string]bool
 	forceSyncMux                  sync.Mutex
 	timeout                       time.Duration
@@ -114,7 +114,7 @@ func NewCSIHandler(
 	}
 }
 
-func (h *csiHandler) Init(vaQueue workqueue.TypedRateLimitingInterface[any], pvQueue workqueue.TypedRateLimitingInterface[any]) {
+func (h *csiHandler) Init(vaQueue workqueue.TypedRateLimitingInterface[string], pvQueue workqueue.TypedRateLimitingInterface[string]) {
 	h.vaQueue = vaQueue
 	h.pvQueue = pvQueue
 }

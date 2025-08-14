@@ -49,8 +49,8 @@ type CSIAttachController struct {
 	client       kubernetes.Interface
 	attacherName string
 	handler      Handler
-	vaQueue      workqueue.TypedRateLimitingInterface[any]
-	pvQueue      workqueue.TypedRateLimitingInterface[any]
+	vaQueue      workqueue.TypedRateLimitingInterface[string]
+	pvQueue      workqueue.TypedRateLimitingInterface[string]
 
 	vaLister       storagelisters.VolumeAttachmentLister
 	vaListerSynced cache.InformerSynced
@@ -64,7 +64,7 @@ type CSIAttachController struct {
 
 // Handler is responsible for handling VolumeAttachment events from informer.
 type Handler interface {
-	Init(vaQueue workqueue.TypedRateLimitingInterface[any], pvQueue workqueue.TypedRateLimitingInterface[any])
+	Init(vaQueue workqueue.TypedRateLimitingInterface[string], pvQueue workqueue.TypedRateLimitingInterface[string])
 
 	// SyncNewOrUpdatedVolumeAttachment processes one Add/Updated event from
 	// VolumeAttachment informers. It runs in a workqueue, guaranting that only
@@ -88,7 +88,7 @@ func NewCSIAttachController(
 	handler Handler,
 	volumeAttachmentInformer storageinformers.VolumeAttachmentInformer,
 	pvInformer coreinformers.PersistentVolumeInformer,
-	vaRateLimiter, paRateLimiter workqueue.RateLimiter,
+	vaRateLimiter, paRateLimiter workqueue.TypedRateLimiter[string],
 	shouldReconcileVolumeAttachment bool,
 	reconcileSync time.Duration,
 ) *CSIAttachController {
@@ -96,8 +96,8 @@ func NewCSIAttachController(
 		client:                          client,
 		attacherName:                    attacherName,
 		handler:                         handler,
-		vaQueue:                         workqueue.NewNamedRateLimitingQueue(vaRateLimiter, "csi-attacher-va"),
-		pvQueue:                         workqueue.NewNamedRateLimitingQueue(paRateLimiter, "csi-attacher-pv"),
+		vaQueue:                         workqueue.NewTypedRateLimitingQueueWithConfig(vaRateLimiter, workqueue.TypedRateLimitingQueueConfig[string]{Name: "csi-attacher-va"}),
+		pvQueue:                         workqueue.NewTypedRateLimitingQueueWithConfig(paRateLimiter, workqueue.TypedRateLimitingQueueConfig[string]{Name: "csi-attacher-pv"}),
 		shouldReconcileVolumeAttachment: shouldReconcileVolumeAttachment,
 		reconcileSync:                   reconcileSync,
 		translator:                      csitrans.New(),
@@ -232,13 +232,12 @@ func (ctrl *CSIAttachController) pvUpdated(old, new any) {
 
 // syncVA deals with one key off the queue.  It returns false when it's time to quit.
 func (ctrl *CSIAttachController) syncVA(ctx context.Context) {
-	key, quit := ctrl.vaQueue.Get()
+	vaName, quit := ctrl.vaQueue.Get()
 	if quit {
 		return
 	}
-	defer ctrl.vaQueue.Done(key)
+	defer ctrl.vaQueue.Done(vaName)
 
-	vaName := key.(string)
 	logger := klog.LoggerWithValues(klog.FromContext(ctx), "VolumeAttachment", vaName)
 	ctx = klog.NewContext(ctx, logger)
 	logger.V(4).Info("Started VolumeAttachment processing")
@@ -285,13 +284,12 @@ func (ctrl *CSIAttachController) processFinalizers(pv *v1.PersistentVolume) bool
 
 // syncPV deals with one key off the queue.  It returns false when it's time to quit.
 func (ctrl *CSIAttachController) syncPV(ctx context.Context) {
-	key, quit := ctrl.pvQueue.Get()
+	pvName, quit := ctrl.pvQueue.Get()
 	if quit {
 		return
 	}
-	defer ctrl.pvQueue.Done(key)
+	defer ctrl.pvQueue.Done(pvName)
 
-	pvName := key.(string)
 	logger := klog.LoggerWithValues(klog.FromContext(ctx), "PersistentVolume", pvName)
 	ctx = klog.NewContext(ctx, logger)
 	logger.V(4).Info("Started PersistentVolume processing")
