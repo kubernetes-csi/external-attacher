@@ -291,8 +291,8 @@ func main() {
 		handler,
 		factory.Storage().V1().VolumeAttachments(),
 		factory.Core().V1().PersistentVolumes(),
-		workqueue.NewItemExponentialFailureRateLimiter(*retryIntervalStart, *retryIntervalMax),
-		workqueue.NewItemExponentialFailureRateLimiter(*retryIntervalStart, *retryIntervalMax),
+		workqueue.NewTypedItemExponentialFailureRateLimiter[any](*retryIntervalStart, *retryIntervalMax),
+		workqueue.NewTypedItemExponentialFailureRateLimiter[any](*retryIntervalStart, *retryIntervalMax),
 		supportsListVolumesPublishedNodes,
 		*reconcileSync,
 	)

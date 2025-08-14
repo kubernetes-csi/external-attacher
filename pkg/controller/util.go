@@ -210,7 +210,7 @@ func GetVolumeAttributes(csiSource *v1.CSIPersistentVolumeSource) (map[string]st
 }
 
 // createMergePatch return patch generated from original and new interfaces
-func createMergePatch(original, new interface{}) ([]byte, error) {
+func createMergePatch(original, new any) ([]byte, error) {
 	pvByte, err := json.Marshal(original)
 	if err != nil {
 		return nil, err

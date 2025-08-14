@@ -32,7 +32,7 @@ import (
 // nothing to detach).
 type trivialHandler struct {
 	client           kubernetes.Interface
-	vaQueue, pvQueue workqueue.RateLimitingInterface
+	vaQueue, pvQueue workqueue.TypedRateLimitingInterface[any]
 }
 
 var _ Handler = &trivialHandler{}
@@ -42,7 +42,7 @@ func NewTrivialHandler(client kubernetes.Interface) Handler {
 	return &trivialHandler{client: client}
 }
 
-func (h *trivialHandler) Init(vaQueue workqueue.RateLimitingInterface, pvQueue workqueue.RateLimitingInterface) {
+func (h *trivialHandler) Init(vaQueue workqueue.TypedRateLimitingInterface[any], pvQueue workqueue.TypedRateLimitingInterface[any]) {
 	h.vaQueue = vaQueue
 	h.pvQueue = pvQueue
 }

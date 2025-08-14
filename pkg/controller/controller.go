@@ -49,8 +49,8 @@ type CSIAttachController struct {
 	client       kubernetes.Interface
 	attacherName string
 	handler      Handler
-	vaQueue      workqueue.RateLimitingInterface
-	pvQueue      workqueue.RateLimitingInterface
+	vaQueue      workqueue.TypedRateLimitingInterface[any]
+	pvQueue      workqueue.TypedRateLimitingInterface[any]
 
 	vaLister       storagelisters.VolumeAttachmentLister
 	vaListerSynced cache.InformerSynced
@@ -64,7 +64,7 @@ type CSIAttachController struct {
 
 // Handler is responsible for handling VolumeAttachment events from informer.
 type Handler interface {
-	Init(vaQueue workqueue.RateLimitingInterface, pvQueue workqueue.RateLimitingInterface)
+	Init(vaQueue workqueue.TypedRateLimitingInterface[any], pvQueue workqueue.TypedRateLimitingInterface[any])
 
 	// SyncNewOrUpdatedVolumeAttachment processes one Add/Updated event from
 	// VolumeAttachment informers. It runs in a workqueue, guaranting that only
@@ -163,7 +163,7 @@ func (ctrl *CSIAttachController) Run(ctx context.Context, workers int, wg *sync.
 			}()
 		}
 	} else {
-		for i := 0; i < workers; i++ {
+		for range workers {
 			go wait.UntilWithContext(ctx, ctrl.syncVA, 0)
 			go wait.UntilWithContext(ctx, ctrl.syncPV, 0)
 		}
@@ -182,14 +182,14 @@ func (ctrl *CSIAttachController) Run(ctx context.Context, workers int, wg *sync.
 }
 
 // vaAdded reacts to a VolumeAttachment creation
-func (ctrl *CSIAttachController) vaAdded(obj interface{}) {
+func (ctrl *CSIAttachController) vaAdded(obj any) {
 	va := obj.(*storage.VolumeAttachment)
 	ctrl.vaQueue.Add(va.Name)
 }
 
 // vaUpdated return a function that reacts to a VolumeAttachment update
-func (ctrl *CSIAttachController) vaUpdatedFunc(logger klog.Logger) func(old, new interface{}) {
-	return func(old, new interface{}) {
+func (ctrl *CSIAttachController) vaUpdatedFunc(logger klog.Logger) func(old, new any) {
+	return func(old, new any) {
 		oldVA := old.(*storage.VolumeAttachment)
 		newVA := new.(*storage.VolumeAttachment)
 		if shouldEnqueueVAChange(oldVA, newVA) {
@@ -201,7 +201,7 @@ func (ctrl *CSIAttachController) vaUpdatedFunc(logger klog.Logger) func(old, new
 }
 
 // vaDeleted reacts to a VolumeAttachment deleted
-func (ctrl *CSIAttachController) vaDeleted(obj interface{}) {
+func (ctrl *CSIAttachController) vaDeleted(obj any) {
 	if unknown, ok := obj.(cache.DeletedFinalStateUnknown); ok && unknown.Obj != nil {
 		obj = unknown.Obj
 	}
@@ -213,7 +213,7 @@ func (ctrl *CSIAttachController) vaDeleted(obj interface{}) {
 }
 
 // pvAdded reacts to a PV creation
-func (ctrl *CSIAttachController) pvAdded(obj interface{}) {
+func (ctrl *CSIAttachController) pvAdded(obj any) {
 	pv := obj.(*v1.PersistentVolume)
 	if !ctrl.processFinalizers(pv) {
 		return
@@ -222,7 +222,7 @@ func (ctrl *CSIAttachController) pvAdded(obj interface{}) {
 }
 
 // pvUpdated reacts to a PV update
-func (ctrl *CSIAttachController) pvUpdated(old, new interface{}) {
+func (ctrl *CSIAttachController) pvUpdated(old, new any) {
 	pv := new.(*v1.PersistentVolume)
 	if !ctrl.processFinalizers(pv) {
 		return

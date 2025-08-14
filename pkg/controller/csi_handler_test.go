@@ -265,7 +265,7 @@ func secret() *v1.Secret {
 	}
 }
 
-func patch(original, new interface{}) []byte {
+func patch(original, new any) []byte {
 	patch, err := createMergePatch(original, new)
 	if err != nil {
 		klog.Background().Error(err, "Failed to create patch")
