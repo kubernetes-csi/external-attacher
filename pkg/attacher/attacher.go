@@ -40,8 +40,7 @@ type Attacher interface {
 }
 
 type attacher struct {
-	client       csi.ControllerClient
-	capabilities []csi.ControllerServiceCapability
+	client csi.ControllerClient
 }
 
 var (

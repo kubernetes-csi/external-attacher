@@ -26,20 +26,20 @@ import (
 
 	"github.com/container-storage-interface/spec/lib/go/csi"
 	"github.com/golang/mock/gomock"
-	"github.com/golang/protobuf/proto"
 	"github.com/kubernetes-csi/csi-lib-utils/connection"
 	"github.com/kubernetes-csi/csi-lib-utils/metrics"
 	"github.com/kubernetes-csi/csi-test/v5/driver"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/proto"
 )
 
 type pbMatcher struct {
 	x proto.Message
 }
 
-func (p pbMatcher) Matches(x interface{}) bool {
+func (p pbMatcher) Matches(x any) bool {
 	y := x.(proto.Message)
 	return proto.Equal(p.x, y)
 }
@@ -48,7 +48,7 @@ func (p pbMatcher) String() string {
 	return fmt.Sprintf("pb equal to %v", p.x)
 }
 
-func pbMatch(x interface{}) gomock.Matcher {
+func pbMatch(x any) gomock.Matcher {
 	v := x.(proto.Message)
 	return &pbMatcher{v}
 }

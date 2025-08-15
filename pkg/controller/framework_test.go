@@ -184,7 +184,7 @@ func runTests(t *testing.T, handlerFactory handlerFactory, tests []testCase) {
 			lister := &fakeLister{t: t, publishedNodes: test.listerResponse}
 			csiConnection := &fakeCSIConnection{t: t, calls: test.expectedCSICalls, lister: lister}
 			handler := handlerFactory(client, informers, csiConnection, lister)
-			ctrl := NewCSIAttachController(logger, client, testAttacherName, handler, vaInformer, pvInformer, workqueue.DefaultControllerRateLimiter(), workqueue.DefaultControllerRateLimiter(), test.listerResponse != nil, 1*time.Minute)
+			ctrl := NewCSIAttachController(logger, client, testAttacherName, handler, vaInformer, pvInformer, workqueue.DefaultTypedControllerRateLimiter[string](), workqueue.DefaultTypedControllerRateLimiter[string](), test.listerResponse != nil, 1*time.Minute)
 
 			// Start the test by enqueueing the right event
 			if test.addedVA != nil {

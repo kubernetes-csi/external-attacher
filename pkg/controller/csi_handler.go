@@ -20,6 +20,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 	"strconv"
 	"sync"
 	"time"
@@ -68,7 +69,7 @@ type csiHandler struct {
 	pvLister                      corelisters.PersistentVolumeLister
 	csiNodeLister                 storagelisters.CSINodeLister
 	vaLister                      storagelisters.VolumeAttachmentLister
-	vaQueue, pvQueue              workqueue.RateLimitingInterface
+	vaQueue, pvQueue              workqueue.TypedRateLimitingInterface[string]
 	forceSync                     map[string]bool
 	forceSyncMux                  sync.Mutex
 	timeout                       time.Duration
@@ -113,7 +114,7 @@ func NewCSIHandler(
 	}
 }
 
-func (h *csiHandler) Init(vaQueue workqueue.RateLimitingInterface, pvQueue workqueue.RateLimitingInterface) {
+func (h *csiHandler) Init(vaQueue workqueue.TypedRateLimitingInterface[string], pvQueue workqueue.TypedRateLimitingInterface[string]) {
 	h.vaQueue = vaQueue
 	h.pvQueue = pvQueue
 }
@@ -180,13 +181,7 @@ func (h *csiHandler) ReconcileVA(ctx context.Context) error {
 		}
 
 		// Check whether the volume is published to this node
-		found := false
-		for _, gotNodeID := range published[volumeHandle] {
-			if gotNodeID == nodeID {
-				found = true
-				break
-			}
-		}
+		found := slices.Contains(published[volumeHandle], nodeID)
 
 		// If ListVolumes Attached Status is different, add to shared workQueue.
 		if attachedStatus != found {
@@ -311,12 +306,10 @@ func (h *csiHandler) syncDetach(ctx context.Context, va *storage.VolumeAttachmen
 
 func (h *csiHandler) prepareVAFinalizer(logger klog.Logger, va *storage.VolumeAttachment) (newVA *storage.VolumeAttachment, modified bool) {
 	finalizerName := GetFinalizerName(h.attacherName)
-	for _, f := range va.Finalizers {
-		if f == finalizerName {
-			// Finalizer is already present
-			logger.V(4).Info("VolumeAttachment finalizer is already set")
-			return va, false
-		}
+	if slices.Contains(va.Finalizers, finalizerName) {
+		// Finalizer is already present
+		logger.V(4).Info("VolumeAttachment finalizer is already set")
+		return va, false
 	}
 
 	// Finalizer is not present, add it
@@ -344,12 +337,10 @@ func (h *csiHandler) prepareVANodeID(logger klog.Logger, va *storage.VolumeAttac
 func (h *csiHandler) addPVFinalizer(ctx context.Context, pv *v1.PersistentVolume) (*v1.PersistentVolume, error) {
 	logger := klog.LoggerWithValues(klog.FromContext(ctx), "PersistentVolume", pv.Name)
 	finalizerName := GetFinalizerName(h.attacherName)
-	for _, f := range pv.Finalizers {
-		if f == finalizerName {
-			// Finalizer is already present
-			logger.V(4).Info("PersistentVolume finalizer is already set")
-			return pv, nil
-		}
+	if slices.Contains(pv.Finalizers, finalizerName) {
+		// Finalizer is already present
+		logger.V(4).Info("PersistentVolume finalizer is already set")
+		return pv, nil
 	}
 
 	// Finalizer is not present, add it
@@ -368,12 +359,7 @@ func (h *csiHandler) addPVFinalizer(ctx context.Context, pv *v1.PersistentVolume
 
 func (h *csiHandler) hasVAFinalizer(va *storage.VolumeAttachment) bool {
 	finalizerName := GetFinalizerName(h.attacherName)
-	for _, f := range va.Finalizers {
-		if f == finalizerName {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(va.Finalizers, finalizerName)
 }
 
 // Checks if the PV (or) the inline-volume corresponding to the VA could have migrated from
@@ -687,13 +673,7 @@ func (h *csiHandler) SyncNewOrUpdatedPersistentVolume(ctx context.Context, pv *v
 
 	// Check if the PV has finalizer
 	finalizer := GetFinalizerName(h.attacherName)
-	found := false
-	for _, f := range pv.Finalizers {
-		if f == finalizer {
-			found = true
-			break
-		}
-	}
+	found := slices.Contains(pv.Finalizers, finalizer)
 	if !found {
 		// No finalizer -> no action required
 		logger.V(4).Info("CSIHandler: processing PersistentVolume: no finalizer, ignoring")
