@@ -33,7 +33,7 @@ import (
 )
 
 // UnstructuredToVal converts a Kubernetes unstructured data element to a CEL Val.
-// The root schema of custom resource schema is expected contain type meta and object meta schemas.
+// The root schema of custom resource schemas is expected to contain type meta and object meta schemas.
 // If Embedded resources do not contain type meta and object meta schemas, they will be added automatically.
 func UnstructuredToVal(unstructured interface{}, schema Schema) ref.Val {
 	if unstructured == nil {
@@ -358,9 +358,8 @@ func escapeKeyProps(idents []string) []string {
 // unstructuredSetList represents an unstructured data instance of an OpenAPI array with x-kubernetes-list-type=set.
 type unstructuredSetList struct {
 	unstructuredList
-	escapedKeyProps []string
 
-	sync.Once // for for lazy load of setOfList since it is only needed if Equals is called
+	sync.Once // for lazy load of setOfList since it is only needed if Equals is called
 	set       map[interface{}]struct{}
 }
 
@@ -415,7 +414,6 @@ func (t *unstructuredSetList) Add(other ref.Val) ref.Val {
 	}
 	return &unstructuredSetList{
 		unstructuredList: unstructuredList{elements: elements, itemsSchema: t.itemsSchema},
-		escapedKeyProps:  t.escapedKeyProps,
 	}
 }
 
@@ -600,13 +598,17 @@ func (t *unstructuredMap) Equal(other ref.Val) ref.Val {
 	if t.Size() != oMap.Size() {
 		return types.False
 	}
+
 	for key, value := range t.value {
-		if propSchema, ok := t.propSchema(key); ok {
-			ov, found := oMap.Find(types.String(key))
-			if !found {
+		if _, ok := t.propSchema(key); ok {
+			v, found := t.Find(types.String(key))
+			ov, oFound := oMap.Find(types.String(key))
+			if found != oFound {
 				return types.False
 			}
-			v := UnstructuredToVal(value, propSchema)
+			if !found {
+				continue
+			}
 			vEq := v.Equal(ov)
 			if vEq != types.True {
 				return vEq // either false or error
