@@ -33,7 +33,7 @@ const (
 	MutableCSINodeAllocatableCount featuregate.Feature = "MutableCSINodeAllocatableCount"
 
 	// owner: @rhrmo
-	// alpha: v1.35
+	// alpha: v1.34
 	//
 	// Releases leader election lease on sigterm / sigint.
 	ReleaseLeaderElectionOnExit featuregate.Feature = "ReleaseLeaderElectionOnExit"
