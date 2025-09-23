@@ -142,6 +142,11 @@ func (h *csiHandler) ReconcileVA(ctx context.Context) error {
 	}
 
 	for _, va := range vas {
+		if va.Spec.Attacher != h.attacherName {
+			// skip VolumeAttachments of other CSI drivers
+			continue
+		}
+
 		nodeID, err := h.getNodeID(logger, h.attacherName, va.Spec.NodeName, va)
 		if err != nil {
 			logger.Error(err, "Failed to find node ID err")
