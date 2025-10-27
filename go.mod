@@ -5,12 +5,12 @@ go 1.24.0
 toolchain go1.24.6
 
 require (
-	github.com/container-storage-interface/spec v1.11.0
+	github.com/container-storage-interface/spec v1.12.0
 	github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc
 	github.com/evanphx/json-patch v5.9.11+incompatible
 	github.com/golang/mock v1.6.0
 	github.com/kubernetes-csi/csi-lib-utils v0.22.0
-	github.com/kubernetes-csi/csi-test/v5 v5.3.1
+	github.com/kubernetes-csi/csi-test/v5 v5.4.0
 	google.golang.org/grpc v1.72.1
 	google.golang.org/protobuf v1.36.6
 	k8s.io/api v0.34.0
