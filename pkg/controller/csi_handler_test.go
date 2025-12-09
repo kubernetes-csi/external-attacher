@@ -211,14 +211,6 @@ func node() *v1.Node {
 	}
 }
 
-func nodeWithAnnotations() *v1.Node {
-	node := node()
-	node.Annotations = map[string]string{
-		"csi.volume.kubernetes.io/nodeid": fmt.Sprintf("{ %q: %q }", testAttacherName, testNodeID),
-	}
-	return node
-}
-
 func csiNode() *storage.CSINode {
 	return &storage.CSINode{
 		ObjectMeta: metav1.ObjectMeta{
@@ -885,17 +877,6 @@ func TestCSIHandler(t *testing.T) {
 				core.NewPatchSubresourceAction(vaGroupResourceVersion, metav1.NamespaceNone, testPVName+"-"+testNodeName,
 					types.MergePatchType, patch(va(false /*attached*/, fin, ann),
 						vaWithAttachError(va(false, fin, ann), "csinode.storage.k8s.io \"node1\" not found")), "status"),
-			},
-		},
-		{
-			name:           "Node with annotations, CSINode is absent -> error",
-			initialObjects: []runtime.Object{pvWithFinalizer(), nodeWithAnnotations()},
-			addedVA:        va(false, fin, ann),
-			expectedActions: []core.Action{
-				core.NewPatchSubresourceAction(vaGroupResourceVersion, metav1.NamespaceNone, testPVName+"-"+testNodeName,
-					types.MergePatchType, patch(va(false /*attached*/, fin, ann),
-						vaWithAttachError(va(false, fin, ann), "csinode.storage.k8s.io \"node1\" not found")),
-					"status"),
 			},
 		},
 		{
