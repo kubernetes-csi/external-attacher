@@ -3,12 +3,12 @@ module github.com/kubernetes-csi/external-attacher
 go 1.25.5
 
 require (
-	github.com/container-storage-interface/spec v1.11.0
+	github.com/container-storage-interface/spec v1.12.0
 	github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc
 	github.com/evanphx/json-patch v5.9.11+incompatible
 	github.com/golang/mock v1.6.0
 	github.com/kubernetes-csi/csi-lib-utils v0.23.1
-	github.com/kubernetes-csi/csi-test/v5 v5.3.1
+	github.com/kubernetes-csi/csi-test/v5 v5.4.0
 	google.golang.org/grpc v1.72.2
 	google.golang.org/protobuf v1.36.8
 	k8s.io/api v0.35.0
@@ -99,10 +99,10 @@ require (
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 	k8s.io/kube-openapi v0.0.0-20250910181357-589584f1c912 // indirect
 	k8s.io/utils v0.0.0-20251002143259-bc988d571ff4 // indirect
-	sigs.k8s.io/apiserver-network-proxy/konnectivity-client v0.33.0 // indirect
+	sigs.k8s.io/apiserver-network-proxy/konnectivity-client v0.34.0 // indirect
 	sigs.k8s.io/json v0.0.0-20250730193827-2d320260d730 // indirect
 	sigs.k8s.io/randfill v1.0.0 // indirect
-	sigs.k8s.io/structured-merge-diff/v6 v6.3.0 // indirect
+	sigs.k8s.io/structured-merge-diff/v6 v6.3.1 // indirect
 	sigs.k8s.io/yaml v1.6.0 // indirect
 )
 
