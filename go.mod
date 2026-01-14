@@ -1,4 +1,4 @@
-module github.com/kubernetes-csi/external-attacher
+module github.com/kubernetes-csi/external-attacher/v4
 
 go 1.25.5
 
