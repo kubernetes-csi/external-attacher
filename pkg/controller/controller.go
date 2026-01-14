@@ -21,7 +21,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/kubernetes-csi/external-attacher/pkg/features"
+	"github.com/kubernetes-csi/external-attacher/v4/pkg/features"
 	v1 "k8s.io/api/core/v1"
 	storage "k8s.io/api/storage/v1"
 	"k8s.io/apimachinery/pkg/api/equality"

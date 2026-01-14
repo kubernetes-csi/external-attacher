@@ -26,8 +26,8 @@ import (
 	"time"
 
 	"github.com/kubernetes-csi/csi-lib-utils/connection"
-	"github.com/kubernetes-csi/external-attacher/pkg/attacher"
-	"github.com/kubernetes-csi/external-attacher/pkg/features"
+	"github.com/kubernetes-csi/external-attacher/v4/pkg/attacher"
+	"github.com/kubernetes-csi/external-attacher/v4/pkg/features"
 	"google.golang.org/grpc/status"
 	v1 "k8s.io/api/core/v1"
 	storage "k8s.io/api/storage/v1"

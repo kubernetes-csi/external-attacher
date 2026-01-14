@@ -51,9 +51,9 @@ import (
 	"github.com/kubernetes-csi/csi-lib-utils/metrics"
 	"github.com/kubernetes-csi/csi-lib-utils/rpc"
 	"github.com/kubernetes-csi/csi-lib-utils/standardflags"
-	"github.com/kubernetes-csi/external-attacher/pkg/attacher"
-	"github.com/kubernetes-csi/external-attacher/pkg/controller"
-	"github.com/kubernetes-csi/external-attacher/pkg/features"
+	"github.com/kubernetes-csi/external-attacher/v4/pkg/attacher"
+	"github.com/kubernetes-csi/external-attacher/v4/pkg/controller"
+	"github.com/kubernetes-csi/external-attacher/v4/pkg/features"
 	"google.golang.org/grpc"
 )
 
