@@ -145,6 +145,7 @@ github.com/json-iterator/go
 # github.com/kubernetes-csi/csi-lib-utils v0.23.2
 ## explicit; go 1.24.6
 github.com/kubernetes-csi/csi-lib-utils/accessmodes
+github.com/kubernetes-csi/csi-lib-utils/config
 github.com/kubernetes-csi/csi-lib-utils/connection
 github.com/kubernetes-csi/csi-lib-utils/leaderelection
 github.com/kubernetes-csi/csi-lib-utils/metrics
