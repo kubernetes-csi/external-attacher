@@ -7,7 +7,7 @@ require (
 	github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc
 	github.com/evanphx/json-patch v5.9.11+incompatible
 	github.com/golang/mock v1.6.0
-	github.com/kubernetes-csi/csi-lib-utils v0.23.1
+	github.com/kubernetes-csi/csi-lib-utils v0.23.2
 	github.com/kubernetes-csi/csi-test/v5 v5.4.0
 	google.golang.org/grpc v1.72.2
 	google.golang.org/protobuf v1.36.8
