@@ -274,6 +274,106 @@ func TestGetFinalizerName(t *testing.T) {
 	}
 }
 
+func TestAddFinalizerPatch(t *testing.T) {
+	tests := []struct {
+		name       string
+		finalizers []string
+		finalizer  string
+		wantPatch  string
+		wantErr    bool
+	}{
+		{
+			name:       "add to nil finalizers",
+			finalizers: nil,
+			finalizer:  "external-attacher/ebs-csi-aws-com",
+			wantPatch:  `[{"op":"test","path":"/metadata/finalizers","value":null},{"op":"add","path":"/metadata/finalizers","value":["external-attacher/ebs-csi-aws-com"]}]`,
+		},
+		{
+			name:       "add to empty finalizers",
+			finalizers: []string{},
+			finalizer:  "external-attacher/ebs-csi-aws-com",
+			wantPatch:  `[{"op":"test","path":"/metadata/finalizers","value":[]},{"op":"replace","path":"/metadata/finalizers","value":["external-attacher/ebs-csi-aws-com"]}]`,
+		},
+		{
+			name:       "add to existing finalizers preserves others",
+			finalizers: []string{"external-provisioner.volume.kubernetes.io/finalizer", "kubernetes.io/pv-protection"},
+			finalizer:  "external-attacher/ebs-csi-aws-com",
+			wantPatch:  `[{"op":"add","path":"/metadata/finalizers/-","value":"external-attacher/ebs-csi-aws-com"}]`,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := addFinalizerPatch(tt.finalizers, tt.finalizer)
+			if (err != nil) != tt.wantErr {
+				t.Fatalf("addFinalizerPatch() error = %v, wantErr %v", err, tt.wantErr)
+			}
+			if string(got) != tt.wantPatch {
+				t.Errorf("addFinalizerPatch() =\n  %s\nwant:\n  %s", string(got), tt.wantPatch)
+			}
+		})
+	}
+}
+
+func TestRemoveFinalizerPatch(t *testing.T) {
+	tests := []struct {
+		name       string
+		finalizers []string
+		finalizer  string
+		wantPatch  string
+		wantErr    bool
+	}{
+		{
+			name:       "remove sole finalizer",
+			finalizers: []string{"external-attacher/ebs-csi-aws-com"},
+			finalizer:  "external-attacher/ebs-csi-aws-com",
+			wantPatch:  `[{"op":"test","path":"/metadata/finalizers/0","value":"external-attacher/ebs-csi-aws-com"},{"op":"remove","path":"/metadata/finalizers/0"}]`,
+		},
+		{
+			name:       "remove first of many",
+			finalizers: []string{"external-attacher/ebs-csi-aws-com", "kubernetes.io/pv-protection", "external-provisioner.volume.kubernetes.io/finalizer"},
+			finalizer:  "external-attacher/ebs-csi-aws-com",
+			wantPatch:  `[{"op":"test","path":"/metadata/finalizers/0","value":"external-attacher/ebs-csi-aws-com"},{"op":"remove","path":"/metadata/finalizers/0"}]`,
+		},
+		{
+			name:       "remove middle finalizer leaves others untouched",
+			finalizers: []string{"external-provisioner.volume.kubernetes.io/finalizer", "external-attacher/ebs-csi-aws-com", "kubernetes.io/pv-protection"},
+			finalizer:  "external-attacher/ebs-csi-aws-com",
+			wantPatch:  `[{"op":"test","path":"/metadata/finalizers/1","value":"external-attacher/ebs-csi-aws-com"},{"op":"remove","path":"/metadata/finalizers/1"}]`,
+		},
+		{
+			name:       "remove last finalizer",
+			finalizers: []string{"kubernetes.io/pv-protection", "external-attacher/ebs-csi-aws-com"},
+			finalizer:  "external-attacher/ebs-csi-aws-com",
+			wantPatch:  `[{"op":"test","path":"/metadata/finalizers/1","value":"external-attacher/ebs-csi-aws-com"},{"op":"remove","path":"/metadata/finalizers/1"}]`,
+		},
+		{
+			name:       "finalizer not found",
+			finalizers: []string{"kubernetes.io/pv-protection"},
+			finalizer:  "external-attacher/ebs-csi-aws-com",
+			wantErr:    true,
+		},
+		{
+			name:       "nil finalizers",
+			finalizers: nil,
+			finalizer:  "external-attacher/ebs-csi-aws-com",
+			wantErr:    true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := removeFinalizerPatch(tt.finalizers, tt.finalizer)
+			if (err != nil) != tt.wantErr {
+				t.Fatalf("removeFinalizerPatch() error = %v, wantErr %v", err, tt.wantErr)
+			}
+			if !tt.wantErr && string(got) != tt.wantPatch {
+				t.Errorf("removeFinalizerPatch() =\n  %s\nwant:\n  %s", string(got), tt.wantPatch)
+			}
+		})
+	}
+}
+
 func TestGetVolumeHandle(t *testing.T) {
 	pv := &v1.PersistentVolume{
 		Spec: v1.PersistentVolumeSpec{
