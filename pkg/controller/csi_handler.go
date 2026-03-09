@@ -343,17 +343,17 @@ func (h *csiHandler) addPVFinalizer(ctx context.Context, pv *v1.PersistentVolume
 	logger := klog.LoggerWithValues(klog.FromContext(ctx), "PersistentVolume", pv.Name)
 	finalizerName := GetFinalizerName(h.attacherName)
 	if slices.Contains(pv.Finalizers, finalizerName) {
-		// Finalizer is already present
 		logger.V(4).Info("PersistentVolume finalizer is already set")
 		return pv, nil
 	}
 
-	// Finalizer is not present, add it
 	logger.V(4).Info("Adding finalizer to PersistentVolume")
-	clone := pv.DeepCopy()
-	clone.Finalizers = append(clone.Finalizers, finalizerName)
+	patch, err := addFinalizerPatch(pv.Finalizers, finalizerName)
+	if err != nil {
+		return pv, fmt.Errorf("failed to create add-finalizer patch: %w", err)
+	}
 
-	newPV, err := h.patchPV(ctx, pv, clone)
+	newPV, err := h.client.CoreV1().PersistentVolumes().Patch(ctx, pv.Name, types.JSONPatchType, patch, metav1.PatchOptions{})
 	if err != nil {
 		return pv, err
 	}
@@ -704,22 +704,14 @@ func (h *csiHandler) SyncNewOrUpdatedPersistentVolume(ctx context.Context, pv *v
 	}
 	// No VA found -> remove finalizer
 	logger.V(4).Info("CSIHandler: processing PersistentVolume: no VolumeAttachment found, removing finalizer")
-	clone := pv.DeepCopy()
-	newFinalizers := []string{}
-	for _, f := range pv.Finalizers {
-		if f == finalizer {
-			continue
-		}
-		newFinalizers = append(newFinalizers, f)
+	patch, err := removeFinalizerPatch(pv.Finalizers, finalizer)
+	if err != nil {
+		logger.Error(err, "Failed to create remove-finalizer patch for PersistentVolume")
+		h.pvQueue.AddRateLimited(pv.Name)
+		return
 	}
-	if len(newFinalizers) == 0 {
-		// Canonize empty finalizers for unit test (so we don't need to
-		// distinguish nil and [] there)
-		newFinalizers = nil
-	}
-	clone.Finalizers = newFinalizers
 
-	if _, err = h.patchPV(ctx, pv, clone); err != nil {
+	if _, err = h.client.CoreV1().PersistentVolumes().Patch(ctx, pv.Name, types.JSONPatchType, patch, metav1.PatchOptions{}); err != nil {
 		logger.Error(err, "Failed to remove finalizer from PersistentVolume")
 		h.pvQueue.AddRateLimited(pv.Name)
 		return
@@ -794,19 +786,6 @@ func (h *csiHandler) patchVA(ctx context.Context, va, clone *storage.VolumeAttac
 		return va, err
 	}
 	return newVa, nil
-}
-
-func (h *csiHandler) patchPV(ctx context.Context, pv, clone *v1.PersistentVolume) (*v1.PersistentVolume, error) {
-	patch, err := createMergePatch(pv, clone)
-	if err != nil {
-		return pv, err
-	}
-
-	newPV, err := h.client.CoreV1().PersistentVolumes().Patch(ctx, pv.Name, types.MergePatchType, patch, metav1.PatchOptions{})
-	if err != nil {
-		return pv, err
-	}
-	return newPV, nil
 }
 
 func markAsMigrated(parent context.Context, hasMigrated bool) context.Context {

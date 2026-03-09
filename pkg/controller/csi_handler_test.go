@@ -266,6 +266,24 @@ func patch(original, new any) []byte {
 	return patch
 }
 
+func pvAddFinalizerJSON(pv *v1.PersistentVolume) []byte {
+	p, err := addFinalizerPatch(pv.Finalizers, fin)
+	if err != nil {
+		klog.Background().Error(err, "Failed to create add-finalizer patch")
+		return nil
+	}
+	return p
+}
+
+func pvRemoveFinalizerJSON(pv *v1.PersistentVolume) []byte {
+	p, err := removeFinalizerPatch(pv.Finalizers, fin)
+	if err != nil {
+		klog.Background().Error(err, "Failed to create remove-finalizer patch")
+		return nil
+	}
+	return p
+}
+
 func vaWithAttachErrorAndCode(va *storage.VolumeAttachment, message string, code codes.Code) *storage.VolumeAttachment {
 	errorCode := int32(code)
 	va.Status.AttachError = &storage.VolumeError{
@@ -535,7 +553,7 @@ func TestCSIHandler(t *testing.T) {
 			expectedActions: []core.Action{
 				// PV Finalizer after VA
 				core.NewPatchAction(pvGroupResourceVersion, metav1.NamespaceNone, testPVName,
-					types.MergePatchType, patch(pv(), pvWithFinalizer())),
+					types.JSONPatchType, pvAddFinalizerJSON(pv())),
 				// VA Finalizer is saved last
 				// Finalizer is saved first
 				core.NewPatchAction(vaGroupResourceVersion, metav1.NamespaceNone, testPVName+"-"+testNodeName,
@@ -574,7 +592,7 @@ func TestCSIHandler(t *testing.T) {
 			expectedActions: []core.Action{
 				// PV Finalizer - fails
 				core.NewPatchAction(pvGroupResourceVersion, metav1.NamespaceNone, testPVName,
-					types.MergePatchType, patch(pv(), pvWithFinalizer())),
+					types.JSONPatchType, pvAddFinalizerJSON(pv())),
 				// Error is saved
 				core.NewPatchSubresourceAction(vaGroupResourceVersion, metav1.NamespaceNone, testPVName+"-"+testNodeName,
 					types.MergePatchType, patch(va(false /*attached*/, "" /*finalizer*/, nil /* annotations */),
@@ -583,7 +601,7 @@ func TestCSIHandler(t *testing.T) {
 								" error")), "status"),
 				// Second PV Finalizer - succeeds
 				core.NewPatchAction(pvGroupResourceVersion, metav1.NamespaceNone, testPVName,
-					types.MergePatchType, patch(pv(), pvWithFinalizer())),
+					types.JSONPatchType, pvAddFinalizerJSON(pv())),
 				// VA Finalizer is saved first, error remains
 				core.NewPatchAction(vaGroupResourceVersion, metav1.NamespaceNone, testPVName+"-"+testNodeName,
 					types.MergePatchType, patch(
@@ -1295,8 +1313,7 @@ func TestCSIHandler(t *testing.T) {
 			deletedVA:      va(false, "", nil),
 			expectedActions: []core.Action{
 				core.NewPatchAction(pvGroupResourceVersion, metav1.NamespaceNone, testPVName,
-					types.MergePatchType, patch(pvDeleted(pvWithFinalizer()),
-						pvDeleted(pv()))),
+					types.JSONPatchType, pvRemoveFinalizerJSON(pvWithFinalizer())),
 			},
 		},
 		{
@@ -1305,8 +1322,7 @@ func TestCSIHandler(t *testing.T) {
 			deletedVA:      va(false, "", nil),
 			expectedActions: []core.Action{
 				core.NewPatchAction(pvGroupResourceVersion, metav1.NamespaceNone, testPVName,
-					types.MergePatchType, patch(pvDeleted(gcePDPVWithFinalizer()),
-						pvDeleted(gcePDPV()))),
+					types.JSONPatchType, pvRemoveFinalizerJSON(gcePDPVWithFinalizer())),
 			},
 		},
 		{
@@ -1325,8 +1341,7 @@ func TestCSIHandler(t *testing.T) {
 			updatedPV:      pvDeleted(pvWithFinalizer()),
 			expectedActions: []core.Action{
 				core.NewPatchAction(pvGroupResourceVersion, metav1.NamespaceNone, testPVName,
-					types.MergePatchType, patch(pvDeleted(pvWithFinalizer()),
-						pvDeleted(pv()))),
+					types.JSONPatchType, pvRemoveFinalizerJSON(pvWithFinalizer())),
 			},
 		},
 		{
@@ -1335,7 +1350,7 @@ func TestCSIHandler(t *testing.T) {
 			deletedVA:      va(false, "", nil),
 			expectedActions: []core.Action{
 				core.NewPatchAction(pvGroupResourceVersion, metav1.NamespaceNone, testPVName,
-					types.MergePatchType, patch(pvDeleted(pvWithFinalizers(pvWithFinalizer(), "foo/bar", "bar/baz")), pvDeleted(pvWithFinalizers(pv(), "foo/bar", "bar/baz")))),
+					types.JSONPatchType, pvRemoveFinalizerJSON(pvWithFinalizers(pvWithFinalizer(), "foo/bar", "bar/baz"))),
 			},
 		},
 		{
@@ -1361,13 +1376,13 @@ func TestCSIHandler(t *testing.T) {
 			expectedActions: []core.Action{
 				// This update fails
 				core.NewPatchAction(pvGroupResourceVersion, metav1.NamespaceNone, testPVName,
-					types.MergePatchType, patch(pvDeleted(pvWithFinalizer()), pvDeleted(pv()))),
+					types.JSONPatchType, pvRemoveFinalizerJSON(pvWithFinalizer())),
 				// This one fails too
 				core.NewPatchAction(pvGroupResourceVersion, metav1.NamespaceNone, testPVName,
-					types.MergePatchType, patch(pvDeleted(pvWithFinalizer()), pvDeleted(pv()))),
+					types.JSONPatchType, pvRemoveFinalizerJSON(pvWithFinalizer())),
 				// This one succeeds
 				core.NewPatchAction(pvGroupResourceVersion, metav1.NamespaceNone, testPVName,
-					types.MergePatchType, patch(pvDeleted(pvWithFinalizer()), pvDeleted(pv()))),
+					types.JSONPatchType, pvRemoveFinalizerJSON(pvWithFinalizer())),
 			},
 		},
 		{
