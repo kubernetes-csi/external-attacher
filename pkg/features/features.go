@@ -26,6 +26,7 @@ const (
 	// kep: https://kep.k8s.io/4876
 	// alpha: v1.33
 	// beta: v1.34
+	// stable: v1.36
 	//
 	// Makes CSINode.Spec.Drivers[*].Allocatable.Count mutable, allowing CSI drivers to
 	// update the number of volumes that can be allocated on a node. Additionally, enables
@@ -47,5 +48,5 @@ func init() {
 // To add a new feature, define a key for it above and add it here.
 var defaultKubernetesFeatureGates = map[featuregate.Feature]featuregate.FeatureSpec{
 	ReleaseLeaderElectionOnExit:    {Default: false, PreRelease: featuregate.Alpha},
-	MutableCSINodeAllocatableCount: {Default: false, PreRelease: featuregate.Beta},
+	MutableCSINodeAllocatableCount: {Default: true, PreRelease: featuregate.GA},
 }
