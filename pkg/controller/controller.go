@@ -59,6 +59,7 @@ type CSIAttachController struct {
 
 	shouldReconcileVolumeAttachment bool
 	reconcileSync                   time.Duration
+	logBacklogInterval              time.Duration
 	translator                      AttacherCSITranslator
 }
 
@@ -91,6 +92,7 @@ func NewCSIAttachController(
 	vaRateLimiter, paRateLimiter workqueue.TypedRateLimiter[string],
 	shouldReconcileVolumeAttachment bool,
 	reconcileSync time.Duration,
+	logBacklogInterval time.Duration,
 ) *CSIAttachController {
 	ctrl := &CSIAttachController{
 		client:                          client,
@@ -100,6 +102,7 @@ func NewCSIAttachController(
 		pvQueue:                         workqueue.NewTypedRateLimitingQueueWithConfig(paRateLimiter, workqueue.TypedRateLimitingQueueConfig[string]{Name: "csi-attacher-pv"}),
 		shouldReconcileVolumeAttachment: shouldReconcileVolumeAttachment,
 		reconcileSync:                   reconcileSync,
+		logBacklogInterval:              logBacklogInterval,
 		translator:                      csitrans.New(),
 	}
 
@@ -136,6 +139,14 @@ func (ctrl *CSIAttachController) Run(ctx context.Context, workers int, wg *sync.
 		logger.Error(nil, "Cannot sync caches")
 		return
 	}
+
+	// Periodically log the depth of the work queues so that an operator can
+	// see a growing backlog (e.g. when worker-threads is set too low) directly
+	// in the logs, without having to scrape the workqueue_depth metric.
+	if ctrl.logBacklogInterval > 0 {
+		go wait.UntilWithContext(ctx, ctrl.logBacklog, ctrl.logBacklogInterval)
+	}
+
 	if utilfeature.DefaultFeatureGate.Enabled(features.ReleaseLeaderElectionOnExit) {
 		for i := 0; i < workers; i++ {
 			wg.Add(1)
@@ -179,6 +190,20 @@ func (ctrl *CSIAttachController) Run(ctx context.Context, workers int, wg *sync.
 	}
 
 	<-ctx.Done()
+}
+
+// logBacklog logs the current depth of the VolumeAttachment and PersistentVolume
+// work queues. It only logs when there is a backlog, so that a healthy attacher
+// with empty queues stays quiet, but a growing backlog (which delays attach /
+// detach operations) becomes visible in the logs.
+func (ctrl *CSIAttachController) logBacklog(ctx context.Context) {
+	vaDepth := ctrl.vaQueue.Len()
+	pvDepth := ctrl.pvQueue.Len()
+	if vaDepth == 0 && pvDepth == 0 {
+		return
+	}
+	logger := klog.FromContext(ctx)
+	logger.Info("Work queue backlog", "volumeAttachmentQueueDepth", vaDepth, "persistentVolumeQueueDepth", pvDepth)
 }
 
 // vaAdded reacts to a VolumeAttachment creation
