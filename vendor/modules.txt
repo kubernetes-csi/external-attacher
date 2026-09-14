@@ -164,7 +164,7 @@ github.com/inconshreveable/mousetrap
 # github.com/json-iterator/go v1.1.12
 ## explicit; go 1.12
 github.com/json-iterator/go
-# github.com/kubernetes-csi/csi-lib-utils v0.24.0
+# github.com/kubernetes-csi/csi-lib-utils v0.25.0
 ## explicit; go 1.26.0
 github.com/kubernetes-csi/csi-lib-utils/accessmodes
 github.com/kubernetes-csi/csi-lib-utils/config
@@ -1207,7 +1207,7 @@ k8s.io/klog/v2/internal/verbosity
 k8s.io/klog/v2/ktesting
 k8s.io/klog/v2/ktesting/init
 k8s.io/klog/v2/textlogger
-# k8s.io/kube-openapi v0.0.0-20260721132016-d427ff9ee9ad
+# k8s.io/kube-openapi v0.0.0-20260821135717-be32def86098
 ## explicit; go 1.25.0
 k8s.io/kube-openapi/pkg/builder
 k8s.io/kube-openapi/pkg/builder3
@@ -1239,8 +1239,8 @@ k8s.io/kube-openapi/pkg/validation/strfmt/bson
 k8s.io/streaming/pkg/httpstream
 k8s.io/streaming/pkg/httpstream/wsstream
 k8s.io/streaming/pkg/runtime
-# k8s.io/utils v0.0.0-20260626114624-be93311217bd
-## explicit; go 1.23
+# k8s.io/utils v0.0.0-20260707023825-cf1189d6abe3
+## explicit; go 1.25
 k8s.io/utils/buffer
 k8s.io/utils/clock
 k8s.io/utils/dump
