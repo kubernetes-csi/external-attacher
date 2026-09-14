@@ -17,12 +17,17 @@ limitations under the License.
 package controller
 
 import (
+	"context"
 	"testing"
 
 	v1 "k8s.io/api/core/v1"
 	storage "k8s.io/api/storage/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/client-go/util/workqueue"
 	csitrans "k8s.io/csi-translation-lib"
+	"k8s.io/klog/v2"
+	"k8s.io/klog/v2/ktesting"
+	_ "k8s.io/klog/v2/ktesting/init"
 )
 
 func TestShouldEnqueueVAChange(t *testing.T) {
@@ -241,5 +246,60 @@ func TestProcessFinalizers(t *testing.T) {
 		if result != tc.expectedResult {
 			t.Errorf("Error executing test %v: expected result %v, got %v", tc.name, tc.expectedResult, result)
 		}
+	}
+}
+
+func TestLogBacklog(t *testing.T) {
+	testcases := []struct {
+		name      string
+		vaItems   []string
+		pvItems   []string
+		expectLog bool
+	}{
+		{
+			name:      "empty queues stay quiet",
+			expectLog: false,
+		},
+		{
+			name:      "VolumeAttachment backlog is logged",
+			vaItems:   []string{"va-1", "va-2"},
+			expectLog: true,
+		},
+		{
+			name:      "PersistentVolume backlog is logged",
+			pvItems:   []string{"pv-1"},
+			expectLog: true,
+		},
+	}
+
+	for _, tc := range testcases {
+		t.Run(tc.name, func(t *testing.T) {
+			logger := ktesting.NewLogger(t, ktesting.NewConfig(ktesting.BufferLogs(true)))
+			ctx := klog.NewContext(context.Background(), logger)
+
+			c := &CSIAttachController{
+				vaQueue: workqueue.NewTypedRateLimitingQueue(workqueue.DefaultTypedControllerRateLimiter[string]()),
+				pvQueue: workqueue.NewTypedRateLimitingQueue(workqueue.DefaultTypedControllerRateLimiter[string]()),
+			}
+			for _, item := range tc.vaItems {
+				c.vaQueue.Add(item)
+			}
+			for _, item := range tc.pvItems {
+				c.pvQueue.Add(item)
+			}
+
+			c.logBacklog(ctx)
+
+			var gotLog bool
+			for _, entry := range logger.GetSink().(ktesting.Underlier).GetBuffer().Data() {
+				if entry.Message == "Work queue backlog" {
+					gotLog = true
+					break
+				}
+			}
+			if gotLog != tc.expectLog {
+				t.Errorf("expected backlog log %v, got %v", tc.expectLog, gotLog)
+			}
+		})
 	}
 }
