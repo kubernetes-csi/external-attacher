@@ -75,6 +75,8 @@ Note that the external-attacher does not scale with more replicas. Only one exte
 
 * `--reconcile-sync`: Resync frequency of the attached volumes with the driver. See [Periodic re-sync](#periodic-re-sync) for details. 1 minute is used by default.
 
+* `--log-backlog-interval`: Interval at which the depth of the VolumeAttachment and PersistentVolume work queues is logged whenever there is a backlog. A growing backlog usually means `--worker-threads` is too low for the current attach/detach load. The depth is also exported as the `workqueue_depth` metric. 30 seconds is used by default. Set to 0 to disable.
+
 * `--kube-api-qps`: The number of requests per second sent by a Kubernetes client to the Kubernetes API server. Defaults to `5.0`.
 
 * `--kube-api-burst`: The number of requests to the Kubernetes API server, exceeding the QPS, that can be sent at any given time. Defaults to `10`.
