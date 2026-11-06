@@ -75,6 +75,8 @@ var (
 
 	reconcileSync = flag.Duration("reconcile-sync", 1*time.Minute, "Resync interval of the VolumeAttachment reconciler.")
 
+	logBacklogInterval = flag.Duration("log-backlog-interval", 30*time.Second, "Interval at which the depth of the VolumeAttachment and PersistentVolume work queues is logged when there is a backlog. Set to 0 to disable.")
+
 	maxGRPCLogLength = flag.Int("max-grpc-log-length", -1, "The maximum amount of characters logged for every grpc responses. Defaults to no limit")
 
 	featureGates map[string]bool
@@ -276,6 +278,7 @@ func main() {
 		workqueue.NewTypedItemExponentialFailureRateLimiter[string](*retryIntervalStart, *retryIntervalMax),
 		supportsListVolumesPublishedNodes,
 		*reconcileSync,
+		*logBacklogInterval,
 	)
 	// handle SIGTERM and SIGINT by cancelling the context.
 	var (
