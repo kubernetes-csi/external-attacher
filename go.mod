@@ -6,7 +6,7 @@ require (
 	github.com/container-storage-interface/spec v1.13.0
 	github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc
 	github.com/evanphx/json-patch v5.9.11+incompatible
-	github.com/kubernetes-csi/csi-lib-utils v0.25.0
+	github.com/kubernetes-csi/csi-lib-utils v0.25.1-0.20261005110441-76e421af0a18
 	github.com/kubernetes-csi/csi-test/v5 v5.6.0
 	go.uber.org/mock v0.6.0
 	google.golang.org/grpc v1.83.2
