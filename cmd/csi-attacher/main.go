@@ -27,7 +27,7 @@ import (
 	"time"
 
 	"k8s.io/apimachinery/pkg/runtime"
-	"k8s.io/apiserver/pkg/server"
+	"k8s.io/apiserver/pkg/server/signals"
 	utilfeature "k8s.io/apiserver/pkg/util/feature"
 	"k8s.io/client-go/informers"
 	"k8s.io/client-go/kubernetes"
@@ -288,7 +288,7 @@ func main() {
 		ctx, terminate = context.WithCancel(ctx) // shuts down the whole process, incl. leader election
 		var cancelControllerCtx context.CancelFunc
 		controllerCtx, cancelControllerCtx = context.WithCancel(ctx)
-		shutdownHandler = server.SetupSignalHandler()
+		shutdownHandler = signals.SetupSignalHandler()
 
 		defer terminate()
 

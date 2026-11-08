@@ -22,7 +22,7 @@ import (
 	fmt "fmt"
 	sync "sync"
 
-	typed "sigs.k8s.io/structured-merge-diff/v6/typed"
+	typed "sigs.k8s.io/structured-merge-diff/v7/typed"
 )
 
 func Parser() *typed.Parser {
@@ -3525,21 +3525,21 @@ var schemaYAML = typed.YAMLObject(`types:
     fields:
     - name: disruptionMode
       type:
-        namedType: io.k8s.api.scheduling.v1alpha3.WorkloadPodGroupDisruptionMode
+        namedType: io.k8s.api.scheduling.v1.WorkloadPodGroupDisruptionMode
     - name: resourceClaims
       type:
         list:
           elementType:
-            namedType: io.k8s.api.scheduling.v1alpha3.WorkloadPodGroupResourceClaim
+            namedType: io.k8s.api.scheduling.v1.WorkloadPodGroupResourceClaim
           elementRelationship: associative
           keys:
           - name
     - name: schedulingConstraints
       type:
-        namedType: io.k8s.api.scheduling.v1alpha3.WorkloadPodGroupSchedulingConstraints
+        namedType: io.k8s.api.scheduling.v1.WorkloadPodGroupSchedulingConstraints
     - name: schedulingPolicy
       type:
-        namedType: io.k8s.api.scheduling.v1alpha3.WorkloadPodGroupSchedulingPolicy
+        namedType: io.k8s.api.scheduling.v1.WorkloadPodGroupSchedulingPolicy
 - name: io.k8s.api.batch.v1.JobSpec
   map:
     fields:
@@ -3688,6 +3688,9 @@ var schemaYAML = typed.YAMLObject(`types:
       type:
         scalar: string
       default: ""
+    - name: name
+      type:
+        scalar: string
     - name: onExitCodes
       type:
         namedType: io.k8s.api.batch.v1.PodFailurePolicyOnExitCodesRequirement
@@ -5555,6 +5558,7 @@ var schemaYAML = typed.YAMLObject(`types:
     - name: lastObservedTime
       type:
         namedType: io.k8s.apimachinery.pkg.apis.meta.v1.MicroTime
+    elementRelationship: atomic
 - name: io.k8s.api.core.v1.EventSource
   map:
     fields:
@@ -7473,11 +7477,11 @@ var schemaYAML = typed.YAMLObject(`types:
     - name: startTime
       type:
         namedType: io.k8s.apimachinery.pkg.apis.meta.v1.Time
-    - name: volumeHealth
+    - name: volumeStatuses
       type:
         list:
           elementType:
-            namedType: io.k8s.api.core.v1.PodVolumeHealth
+            namedType: io.k8s.api.core.v1.PodVolumeStatus
           elementRelationship: associative
           keys:
           - name
@@ -7509,21 +7513,12 @@ var schemaYAML = typed.YAMLObject(`types:
       type:
         namedType: io.k8s.api.core.v1.PodSpec
       default: {}
-- name: io.k8s.api.core.v1.PodVolumeHealth
+- name: io.k8s.api.core.v1.PodVolumeStatus
   map:
     fields:
-    - name: healthConditions
+    - name: healthStatus
       type:
-        list:
-          elementType:
-            namedType: io.k8s.api.core.v1.VolumeHealthCondition
-          elementRelationship: associative
-          keys:
-          - status
-          - reason
-    - name: lastTransitionTime
-      type:
-        namedType: io.k8s.apimachinery.pkg.apis.meta.v1.Time
+        namedType: io.k8s.api.core.v1.VolumeHealthStatus
     - name: name
       type:
         scalar: string
@@ -8039,6 +8034,9 @@ var schemaYAML = typed.YAMLObject(`types:
     - name: localhostProfile
       type:
         scalar: string
+    - name: oci
+      type:
+        namedType: io.k8s.api.core.v1.SecurityProfileOCI
     - name: type
       type:
         scalar: string
@@ -8048,6 +8046,8 @@ var schemaYAML = typed.YAMLObject(`types:
       fields:
       - fieldName: localhostProfile
         discriminatorValue: LocalhostProfile
+      - fieldName: oci
+        discriminatorValue: OCI
 - name: io.k8s.api.core.v1.Secret
   map:
     fields:
@@ -8188,6 +8188,31 @@ var schemaYAML = typed.YAMLObject(`types:
     - name: windowsOptions
       type:
         namedType: io.k8s.api.core.v1.WindowsSecurityContextOptions
+- name: io.k8s.api.core.v1.SecurityProfileOCI
+  map:
+    fields:
+    - name: baseProfile
+      type:
+        namedType: io.k8s.api.core.v1.SecurityProfileOCIBase
+    - name: ref
+      type:
+        scalar: string
+      default: ""
+- name: io.k8s.api.core.v1.SecurityProfileOCIBase
+  map:
+    fields:
+    - name: localhostProfile
+      type:
+        scalar: string
+    - name: type
+      type:
+        scalar: string
+      default: ""
+    unions:
+    - discriminator: type
+      fields:
+      - fieldName: localhostProfile
+        discriminatorValue: LocalhostProfile
 - name: io.k8s.api.core.v1.Service
   map:
     fields:
@@ -9147,6 +9172,7 @@ var schemaYAML = typed.YAMLObject(`types:
     - name: lastObservedTime
       type:
         namedType: io.k8s.apimachinery.pkg.apis.meta.v1.MicroTime
+    elementRelationship: atomic
 - name: io.k8s.api.events.v1beta1.Event
   map:
     fields:
@@ -9214,6 +9240,7 @@ var schemaYAML = typed.YAMLObject(`types:
     - name: lastObservedTime
       type:
         namedType: io.k8s.apimachinery.pkg.apis.meta.v1.MicroTime
+    elementRelationship: atomic
 - name: io.k8s.api.extensions.v1beta1.DaemonSet
   map:
     fields:
@@ -13156,6 +13183,9 @@ var schemaYAML = typed.YAMLObject(`types:
           elementType:
             namedType: io.k8s.api.resource.v1.DeviceClassConfiguration
           elementRelationship: atomic
+    - name: extendedResourceCapacityRequests
+      type:
+        namedType: io.k8s.api.resource.v1.CapacityRequirements
     - name: extendedResourceName
       type:
         scalar: string
@@ -13385,6 +13415,9 @@ var schemaYAML = typed.YAMLObject(`types:
 - name: io.k8s.api.resource.v1.DeviceTaintSelector
   map:
     fields:
+    - name: all
+      type:
+        scalar: boolean
     - name: device
       type:
         scalar: string
@@ -13742,6 +13775,9 @@ var schemaYAML = typed.YAMLObject(`types:
 - name: io.k8s.api.resource.v1alpha3.DeviceTaintSelector
   map:
     fields:
+    - name: all
+      type:
+        scalar: boolean
     - name: device
       type:
         scalar: string
@@ -14212,6 +14248,9 @@ var schemaYAML = typed.YAMLObject(`types:
           elementType:
             namedType: io.k8s.api.resource.v1beta1.DeviceClassConfiguration
           elementRelationship: atomic
+    - name: extendedResourceCapacityRequests
+      type:
+        namedType: io.k8s.api.resource.v1beta1.CapacityRequirements
     - name: extendedResourceName
       type:
         scalar: string
@@ -14986,6 +15025,9 @@ var schemaYAML = typed.YAMLObject(`types:
           elementType:
             namedType: io.k8s.api.resource.v1beta2.DeviceClassConfiguration
           elementRelationship: atomic
+    - name: extendedResourceCapacityRequests
+      type:
+        namedType: io.k8s.api.resource.v1beta2.CapacityRequirements
     - name: extendedResourceName
       type:
         scalar: string
@@ -15215,6 +15257,9 @@ var schemaYAML = typed.YAMLObject(`types:
 - name: io.k8s.api.resource.v1beta2.DeviceTaintSelector
   map:
     fields:
+    - name: all
+      type:
+        scalar: boolean
     - name: device
       type:
         scalar: string
@@ -15536,6 +15581,107 @@ var schemaYAML = typed.YAMLObject(`types:
       type:
         scalar: numeric
       default: 0
+- name: io.k8s.api.scheduling.v1.WorkloadPodGroupAllDisruptionMode
+  map:
+    elementType:
+      scalar: untyped
+      list:
+        elementType:
+          namedType: __untyped_atomic_
+        elementRelationship: atomic
+      map:
+        elementType:
+          namedType: __untyped_deduced_
+        elementRelationship: separable
+- name: io.k8s.api.scheduling.v1.WorkloadPodGroupBasicSchedulingPolicy
+  map:
+    elementType:
+      scalar: untyped
+      list:
+        elementType:
+          namedType: __untyped_atomic_
+        elementRelationship: atomic
+      map:
+        elementType:
+          namedType: __untyped_deduced_
+        elementRelationship: separable
+- name: io.k8s.api.scheduling.v1.WorkloadPodGroupDisruptionMode
+  map:
+    fields:
+    - name: all
+      type:
+        namedType: io.k8s.api.scheduling.v1.WorkloadPodGroupAllDisruptionMode
+    - name: single
+      type:
+        namedType: io.k8s.api.scheduling.v1.WorkloadPodGroupSingleDisruptionMode
+    unions:
+    - fields:
+      - fieldName: all
+        discriminatorValue: All
+      - fieldName: single
+        discriminatorValue: Single
+- name: io.k8s.api.scheduling.v1.WorkloadPodGroupGangSchedulingPolicy
+  map:
+    fields:
+    - name: minCount
+      type:
+        scalar: numeric
+- name: io.k8s.api.scheduling.v1.WorkloadPodGroupResourceClaim
+  map:
+    fields:
+    - name: name
+      type:
+        scalar: string
+      default: ""
+    - name: resourceClaimName
+      type:
+        scalar: string
+    - name: resourceClaimTemplateName
+      type:
+        scalar: string
+- name: io.k8s.api.scheduling.v1.WorkloadPodGroupSchedulingConstraints
+  map:
+    fields:
+    - name: topology
+      type:
+        list:
+          elementType:
+            namedType: io.k8s.api.scheduling.v1.WorkloadTopologyConstraint
+          elementRelationship: atomic
+- name: io.k8s.api.scheduling.v1.WorkloadPodGroupSchedulingPolicy
+  map:
+    fields:
+    - name: basic
+      type:
+        namedType: io.k8s.api.scheduling.v1.WorkloadPodGroupBasicSchedulingPolicy
+    - name: gang
+      type:
+        namedType: io.k8s.api.scheduling.v1.WorkloadPodGroupGangSchedulingPolicy
+    unions:
+    - fields:
+      - fieldName: basic
+        discriminatorValue: Basic
+      - fieldName: gang
+        discriminatorValue: Gang
+- name: io.k8s.api.scheduling.v1.WorkloadPodGroupSingleDisruptionMode
+  map:
+    elementType:
+      scalar: untyped
+      list:
+        elementType:
+          namedType: __untyped_atomic_
+        elementRelationship: atomic
+      map:
+        elementType:
+          namedType: __untyped_deduced_
+        elementRelationship: separable
+- name: io.k8s.api.scheduling.v1.WorkloadTopologyConstraint
+  map:
+    fields:
+    - name: key
+      type:
+        scalar: string
+      default: ""
 - name: io.k8s.api.scheduling.v1alpha3.AllCompositeDisruptionMode
   map:
     elementType:
@@ -15977,100 +16123,6 @@ var schemaYAML = typed.YAMLObject(`types:
       type:
         namedType: io.k8s.api.scheduling.v1alpha3.WorkloadSpec
       default: {}
-- name: io.k8s.api.scheduling.v1alpha3.WorkloadPodGroupAllDisruptionMode
-  map:
-    elementType:
-      scalar: untyped
-      list:
-        elementType:
-          namedType: __untyped_atomic_
-        elementRelationship: atomic
-      map:
-        elementType:
-          namedType: __untyped_deduced_
-        elementRelationship: separable
-- name: io.k8s.api.scheduling.v1alpha3.WorkloadPodGroupBasicSchedulingPolicy
-  map:
-    elementType:
-      scalar: untyped
-      list:
-        elementType:
-          namedType: __untyped_atomic_
-        elementRelationship: atomic
-      map:
-        elementType:
-          namedType: __untyped_deduced_
-        elementRelationship: separable
-- name: io.k8s.api.scheduling.v1alpha3.WorkloadPodGroupDisruptionMode
-  map:
-    fields:
-    - name: all
-      type:
-        namedType: io.k8s.api.scheduling.v1alpha3.WorkloadPodGroupAllDisruptionMode
-    - name: single
-      type:
-        namedType: io.k8s.api.scheduling.v1alpha3.WorkloadPodGroupSingleDisruptionMode
-    unions:
-    - fields:
-      - fieldName: all
-        discriminatorValue: All
-      - fieldName: single
-        discriminatorValue: Single
-- name: io.k8s.api.scheduling.v1alpha3.WorkloadPodGroupGangSchedulingPolicy
-  map:
-    fields:
-    - name: minCount
-      type:
-        scalar: numeric
-- name: io.k8s.api.scheduling.v1alpha3.WorkloadPodGroupResourceClaim
-  map:
-    fields:
-    - name: name
-      type:
-        scalar: string
-      default: ""
-    - name: resourceClaimName
-      type:
-        scalar: string
-    - name: resourceClaimTemplateName
-      type:
-        scalar: string
-- name: io.k8s.api.scheduling.v1alpha3.WorkloadPodGroupSchedulingConstraints
-  map:
-    fields:
-    - name: topology
-      type:
-        list:
-          elementType:
-            namedType: io.k8s.api.scheduling.v1alpha3.TopologyConstraint
-          elementRelationship: atomic
-- name: io.k8s.api.scheduling.v1alpha3.WorkloadPodGroupSchedulingPolicy
-  map:
-    fields:
-    - name: basic
-      type:
-        namedType: io.k8s.api.scheduling.v1alpha3.WorkloadPodGroupBasicSchedulingPolicy
-    - name: gang
-      type:
-        namedType: io.k8s.api.scheduling.v1alpha3.WorkloadPodGroupGangSchedulingPolicy
-    unions:
-    - fields:
-      - fieldName: basic
-        discriminatorValue: Basic
-      - fieldName: gang
-        discriminatorValue: Gang
-- name: io.k8s.api.scheduling.v1alpha3.WorkloadPodGroupSingleDisruptionMode
-  map:
-    elementType:
-      scalar: untyped
-      list:
-        elementType:
-          namedType: __untyped_atomic_
-        elementRelationship: atomic
-      map:
-        elementType:
-          namedType: __untyped_deduced_
-        elementRelationship: separable
 - name: io.k8s.api.scheduling.v1alpha3.WorkloadReference
   map:
     fields:
@@ -16174,6 +16226,27 @@ var schemaYAML = typed.YAMLObject(`types:
       type:
         scalar: numeric
       default: 0
+- name: io.k8s.api.scheduling.v1beta1.CompositePodGroup
+  map:
+    fields:
+    - name: apiVersion
+      type:
+        scalar: string
+    - name: kind
+      type:
+        scalar: string
+    - name: metadata
+      type:
+        namedType: io.k8s.apimachinery.pkg.apis.meta.v1.ObjectMeta
+      default: {}
+    - name: spec
+      type:
+        namedType: io.k8s.api.scheduling.v1beta1.CompositePodGroupSpec
+      default: {}
+    - name: status
+      type:
+        namedType: io.k8s.api.scheduling.v1beta1.CompositePodGroupStatus
+      default: {}
 - name: io.k8s.api.scheduling.v1beta1.CompositePodGroupSchedulingConstraints
   map:
     fields:
@@ -16198,6 +16271,47 @@ var schemaYAML = typed.YAMLObject(`types:
         discriminatorValue: Basic
       - fieldName: gang
         discriminatorValue: Gang
+- name: io.k8s.api.scheduling.v1beta1.CompositePodGroupSpec
+  map:
+    fields:
+    - name: disruptionMode
+      type:
+        namedType: io.k8s.api.scheduling.v1beta1.CompositeDisruptionMode
+      default:
+        single: {}
+    - name: parentCompositePodGroupName
+      type:
+        scalar: string
+    - name: preemptionPolicy
+      type:
+        scalar: string
+    - name: priority
+      type:
+        scalar: numeric
+    - name: priorityClassName
+      type:
+        scalar: string
+    - name: schedulingConstraints
+      type:
+        namedType: io.k8s.api.scheduling.v1beta1.CompositePodGroupSchedulingConstraints
+    - name: schedulingPolicy
+      type:
+        namedType: io.k8s.api.scheduling.v1beta1.CompositePodGroupSchedulingPolicy
+      default: {}
+    - name: workloadRef
+      type:
+        namedType: io.k8s.api.scheduling.v1beta1.WorkloadReference
+- name: io.k8s.api.scheduling.v1beta1.CompositePodGroupStatus
+  map:
+    fields:
+    - name: conditions
+      type:
+        list:
+          elementType:
+            namedType: io.k8s.apimachinery.pkg.apis.meta.v1.Condition
+          elementRelationship: associative
+          keys:
+          - type
 - name: io.k8s.api.scheduling.v1beta1.CompositePodGroupTemplate
   map:
     fields:
