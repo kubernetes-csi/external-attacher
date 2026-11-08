@@ -81,9 +81,7 @@ func TestShouldEnqueueVAChange(t *testing.T) {
 			Manager:    "csi-attacher",
 			Operation:  "Update",
 			FieldsType: "FieldsV1",
-			FieldsV1: &metav1.FieldsV1{
-				Raw: []byte(`{"f:metadata":{"f:annotations":{".":{},"f:csi.alpha.kubernetes.io/node-id":{}},"f:finalizers":{".":{},"v:\\\"external-attacher/csi-cdsplugin\\\"":{}}},"f:status":{"f:attached":{},"f:attachmentMetadata":{".":{},"f:devName":{},"f:serial":{}}}}`),
-			},
+			FieldsV1:   metav1.NewFieldsV1(`{"f:metadata":{"f:annotations":{".":{},"f:csi.alpha.kubernetes.io/node-id":{}},"f:finalizers":{".":{},"v:\\\"external-attacher/csi-cdsplugin\\\"":{}}},"f:status":{"f:attached":{},"f:attachmentMetadata":{".":{},"f:devName":{},"f:serial":{}}}}`),
 		})
 
 	tests := []struct {
