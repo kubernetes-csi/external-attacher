@@ -20,6 +20,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 	"testing"
 	"time"
 
@@ -39,10 +40,13 @@ import (
 	utilfeature "k8s.io/apiserver/pkg/util/feature"
 	"k8s.io/client-go/informers"
 	"k8s.io/client-go/kubernetes"
+	"k8s.io/client-go/kubernetes/fake"
 	core "k8s.io/client-go/testing"
+	"k8s.io/client-go/util/workqueue"
 	featuregatetesting "k8s.io/component-base/featuregate/testing"
 	csitranslator "k8s.io/csi-translation-lib"
 	"k8s.io/klog/v2"
+	"k8s.io/klog/v2/ktesting"
 	_ "k8s.io/klog/v2/ktesting/init"
 )
 
@@ -225,6 +229,12 @@ func csiNode() *storage.CSINode {
 			},
 		},
 	}
+}
+
+func csiNodeWithNodeID(nodeID string) *storage.CSINode {
+	node := csiNode()
+	node.Spec.Drivers[0].NodeID = nodeID
+	return node
 }
 
 func csiNodeEmpty() *storage.CSINode {
@@ -1610,4 +1620,148 @@ func TestMarkAsMigrated(t *testing.T) {
 			t.Errorf("test: %s, expected: %v, got: %v", t.Name(), "true", migrated)
 		}
 	})
+}
+
+type recordingTranslator struct {
+	AttacherCSITranslator
+	repaired []string
+}
+
+func (r *recordingTranslator) RepairVolumeHandle(pluginName, volumeHandle, nodeID string) (string, error) {
+	r.repaired = append(r.repaired, volumeHandle)
+	return r.AttacherCSITranslator.RepairVolumeHandle(pluginName, volumeHandle, nodeID)
+}
+
+// newReconcileTestHandler returns a csiHandler that is ready for ReconcileVA,
+// with the given objects preloaded into the informer stores.
+func newReconcileTestHandler(t *testing.T, translator AttacherCSITranslator, lister VolumeLister, objects ...runtime.Object) *csiHandler {
+	t.Helper()
+	client := fake.NewSimpleClientset()
+	factory := informers.NewSharedInformerFactory(client, time.Hour)
+	pvInformer := factory.Core().V1().PersistentVolumes()
+	vaInformer := factory.Storage().V1().VolumeAttachments()
+	csiNodeInformer := factory.Storage().V1().CSINodes()
+	for _, obj := range objects {
+		var err error
+		switch obj := obj.(type) {
+		case *v1.PersistentVolume:
+			err = pvInformer.Informer().GetStore().Add(obj)
+		case *storage.VolumeAttachment:
+			err = vaInformer.Informer().GetStore().Add(obj)
+		case *storage.CSINode:
+			err = csiNodeInformer.Informer().GetStore().Add(obj)
+		default:
+			t.Fatalf("unsupported initial object type: %T", obj)
+		}
+		if err != nil {
+			t.Fatalf("add initial object: %v", err)
+		}
+	}
+
+	h := NewCSIHandler(
+		client,
+		testAttacherName,
+		nil, /* attacher is not used by ReconcileVA */
+		lister,
+		pvInformer.Lister(),
+		csiNodeInformer.Lister(),
+		vaInformer.Lister(),
+		&timeout,
+		true,  /* supports PUBLISH_READONLY */
+		false, /* does not support SINGLE_NODE_MULTI_WRITER access mode */
+		translator,
+		defaultFSType,
+	).(*csiHandler)
+	h.Init(workqueue.NewTypedRateLimitingQueue[string](workqueue.DefaultTypedControllerRateLimiter[string]()), nil)
+	return h
+}
+
+func TestReconcileVAMigratedVolumeHandle(t *testing.T) {
+	const (
+		gceDriver         = "pd.csi.storage.gke.io"
+		gceRawHandle      = "projects/UNSPECIFIED/zones/testZone/disks/testpd"
+		gceRepairedHandle = "projects/test-project/zones/testZone/disks/testpd"
+		gceNodeID         = "projects/test-project/zones/testZone/instances/test-node"
+	)
+	inlineVA := func() *storage.VolumeAttachment {
+		va := va(true /*attached*/, "" /*finalizer*/, nil /*annotations*/)
+		va.Spec.Source.PersistentVolumeName = nil
+		va.Spec.Source.InlineVolumeSpec = &v1.PersistentVolumeSpec{
+			AccessModes: []v1.PersistentVolumeAccessMode{v1.ReadWriteOnce},
+			PersistentVolumeSource: v1.PersistentVolumeSource{
+				CSI: &v1.CSIPersistentVolumeSource{
+					Driver:       gceDriver,
+					VolumeHandle: gceRawHandle,
+				},
+			},
+		}
+		return va
+	}
+
+	tests := []struct {
+		name string
+		// Initial objects, preloaded into the informer stores
+		objects []runtime.Object
+		// What ListVolumes reports
+		published map[string][]string
+		// Handles passed to RepairVolumeHandle
+		wantRepaired []string
+		// Whether the VA is enqueued for a forced attach/detach
+		wantForceSynced bool
+	}{
+		{
+			name:         "migrated PV is matched by the repaired volume handle",
+			objects:      []runtime.Object{va(true, "", nil), gcePDPV(), csiNodeWithNodeID(gceNodeID)},
+			published:    map[string][]string{gceRepairedHandle: {gceNodeID}},
+			wantRepaired: []string{gceRawHandle},
+		},
+		{
+			name:            "migrated PV is not matched by the unrepaired volume handle",
+			objects:         []runtime.Object{va(true, "", nil), gcePDPV(), csiNodeWithNodeID(gceNodeID)},
+			published:       map[string][]string{gceRawHandle: {gceNodeID}},
+			wantRepaired:    []string{gceRawHandle},
+			wantForceSynced: true,
+		},
+		{
+			name:      "CSI PV is never repaired",
+			objects:   []runtime.Object{va(true, "", nil), pv(), csiNode()},
+			published: map[string][]string{testVolumeHandle: {testNodeID}},
+		},
+		{
+			name:         "migrated inline volume is matched by the repaired volume handle",
+			objects:      []runtime.Object{inlineVA(), csiNodeWithNodeID(gceNodeID)},
+			published:    map[string][]string{gceRepairedHandle: {gceNodeID}},
+			wantRepaired: []string{gceRawHandle},
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			logger, ctx := ktesting.NewTestContext(t)
+			translator := &recordingTranslator{AttacherCSITranslator: csitranslator.New()}
+			lister := &fakeLister{t: t, publishedNodes: test.published}
+			h := newReconcileTestHandler(t, translator, lister, test.objects...)
+
+			if err := h.ReconcileVA(klog.NewContext(ctx, logger)); err != nil {
+				t.Fatalf("ReconcileVA failed: %v", err)
+			}
+			if !slices.Equal(translator.repaired, test.wantRepaired) {
+				t.Errorf("RepairVolumeHandle calls: want %v, got %v", test.wantRepaired, translator.repaired)
+			}
+			forceSynced := h.consumeForceSync(testPVName + "-" + testNodeName)
+			if forceSynced != test.wantForceSynced {
+				t.Errorf("forceSync: want %t, got %t", test.wantForceSynced, forceSynced)
+			}
+			if got, want := h.vaQueue.Len(), boolToInt(test.wantForceSynced); got != want {
+				t.Errorf("VA queue length: want %d, got %d", want, got)
+			}
+		})
+	}
+}
+
+func boolToInt(b bool) int {
+	if b {
+		return 1
+	}
+	return 0
 }
