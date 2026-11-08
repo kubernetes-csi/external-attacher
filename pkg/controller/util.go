@@ -193,22 +193,6 @@ func GetVolumeCapabilities(logger klog.Logger, pvSpec *v1.PersistentVolumeSpec, 
 	return cap, nil
 }
 
-// GetVolumeHandle returns VolumeHandle and Readonly flag from CSI PV source
-func GetVolumeHandle(csiSource *v1.CSIPersistentVolumeSource) (string, bool, error) {
-	if csiSource == nil {
-		return "", false, fmt.Errorf("csi source was nil")
-	}
-	return csiSource.VolumeHandle, csiSource.ReadOnly, nil
-}
-
-// GetVolumeAttributes returns a dictionary of volume attributes from CSI PV source
-func GetVolumeAttributes(csiSource *v1.CSIPersistentVolumeSource) (map[string]string, error) {
-	if csiSource == nil {
-		return nil, fmt.Errorf("csi source was nil")
-	}
-	return csiSource.VolumeAttributes, nil
-}
-
 // createMergePatch return patch generated from original and new interfaces
 func createMergePatch(original, new any) ([]byte, error) {
 	pvByte, err := json.Marshal(original)
