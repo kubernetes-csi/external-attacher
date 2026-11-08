@@ -43,6 +43,7 @@ type PodInterface interface {
 	// Add a +genclient:noStatus comment above the type to avoid generating UpdateStatus().
 	UpdateStatus(ctx context.Context, pod *corev1.Pod, opts metav1.UpdateOptions) (*corev1.Pod, error)
 	Delete(ctx context.Context, name string, opts metav1.DeleteOptions) error
+	DeleteWithResult(ctx context.Context, name string, opts metav1.DeleteOptions) (metav1.APIResult, error)
 	DeleteCollection(ctx context.Context, opts metav1.DeleteOptions, listOpts metav1.ListOptions) error
 	Get(ctx context.Context, name string, opts metav1.GetOptions) (*corev1.Pod, error)
 	List(ctx context.Context, opts metav1.ListOptions) (*corev1.PodList, error)
@@ -53,6 +54,7 @@ type PodInterface interface {
 	ApplyStatus(ctx context.Context, pod *applyconfigurationscorev1.PodApplyConfiguration, opts metav1.ApplyOptions) (result *corev1.Pod, err error)
 	UpdateEphemeralContainers(ctx context.Context, podName string, pod *corev1.Pod, opts metav1.UpdateOptions) (*corev1.Pod, error)
 	UpdateResize(ctx context.Context, podName string, pod *corev1.Pod, opts metav1.UpdateOptions) (*corev1.Pod, error)
+	UpdateDynamic(ctx context.Context, podName string, pod *corev1.Pod, opts metav1.UpdateOptions) (*corev1.Pod, error)
 
 	PodExpansion
 }
@@ -102,6 +104,22 @@ func (c *pods) UpdateResize(ctx context.Context, podName string, pod *corev1.Pod
 		Resource("pods").
 		Name(podName).
 		SubResource("resize").
+		VersionedParams(&opts, scheme.ParameterCodec).
+		Body(pod).
+		Do(ctx).
+		Into(result)
+	return
+}
+
+// UpdateDynamic takes the top resource name and the representation of a pod and updates it. Returns the server's representation of the pod, and an error, if there is any.
+func (c *pods) UpdateDynamic(ctx context.Context, podName string, pod *corev1.Pod, opts metav1.UpdateOptions) (result *corev1.Pod, err error) {
+	result = &corev1.Pod{}
+	err = c.GetClient().Put().
+		UseProtobufAsDefault().
+		Namespace(c.GetNamespace()).
+		Resource("pods").
+		Name(podName).
+		SubResource("dynamic").
 		VersionedParams(&opts, scheme.ParameterCodec).
 		Body(pod).
 		Do(ctx).

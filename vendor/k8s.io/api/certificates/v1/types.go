@@ -44,12 +44,16 @@ import (
 // +k8s:supportsSubresource="/approval"
 type CertificateSigningRequest struct {
 	metav1.TypeMeta `json:""`
+	// metadata is the standard object's metadata.
 	// +optional
 	metav1.ObjectMeta `json:"metadata,omitempty" protobuf:"bytes,1,opt,name=metadata"`
 
 	// spec contains the certificate request, and is immutable after creation.
 	// Only the request, signerName, expirationSeconds, and usages fields can be set on creation.
 	// Other fields are derived by Kubernetes and cannot be modified by users.
+	// +required
+	// +k8s:alpha(since: "1.38")=+k8s:required
+	// +k8s:alpha(since: "1.38")=+k8s:immutable
 	Spec CertificateSigningRequestSpec `json:"spec" protobuf:"bytes,2,opt,name=spec"`
 
 	// status contains information about whether the request is approved or denied,
@@ -62,6 +66,7 @@ type CertificateSigningRequest struct {
 type CertificateSigningRequestSpec struct {
 	// request contains an x509 certificate signing request encoded in a "CERTIFICATE REQUEST" PEM block.
 	// When serialized as JSON or YAML, the data is additionally base64-encoded.
+	// +required
 	Request []byte `json:"request" protobuf:"bytes,1,opt,name=request"`
 
 	// signerName indicates the requested signer, and is a qualified name.
@@ -85,6 +90,7 @@ type CertificateSigningRequestSpec struct {
 	//  4. Required, permitted, or forbidden key usages / extended key usages.
 	//  5. Expiration/certificate lifetime: whether it is fixed by the signer, configurable by the admin.
 	//  6. Whether or not requests for CA certificates are allowed.
+	// +required
 	SignerName string `json:"signerName" protobuf:"bytes,7,opt,name=signerName"`
 
 	// expirationSeconds is the requested duration of validity of the issued
@@ -111,9 +117,9 @@ type CertificateSigningRequestSpec struct {
 
 	// usages specifies a set of key usages requested in the issued certificate.
 	//
-	// Requests for TLS client certificates typically request: "digital signature", "key encipherment", "client auth".
+	// Requests for TLS client certificates typically request: "digital signature", "client auth".
 	//
-	// Requests for TLS serving certificates typically request: "key encipherment", "digital signature", "server auth".
+	// Requests for TLS serving certificates typically request: "digital signature", "server auth".
 	//
 	// Valid values are:
 	//  "signing", "digital signature", "content commitment",
@@ -123,7 +129,15 @@ type CertificateSigningRequestSpec struct {
 	//  "code signing", "email protection", "s/mime",
 	//  "ipsec end system", "ipsec tunnel", "ipsec user",
 	//  "timestamping", "ocsp signing", "microsoft sgc", "netscape sgc"
+	//
+	// When request contains a x509 certificate signing request signed with an ML-DSA key, usages
+	// must contain at least one of "digital signature", "content commitment", "cert sign", or "crl sign"
+	// and must not contain "key encipherment", "key agreement", "data encipherment", "encipher only", or "decipher only".
+	//
 	// +listType=atomic
+	// +k8s:alpha(since: "1.38")=+k8s:listType=atomic
+	// +required
+	// +k8s:alpha(since: "1.38")=+k8s:required
 	Usages []KeyUsage `json:"usages,omitempty" protobuf:"bytes,5,opt,name=usages"`
 
 	// username contains the name of the user that created the CertificateSigningRequest.
@@ -180,12 +194,12 @@ type CertificateSigningRequestStatus struct {
 	// +listType=map
 	// +listMapKey=type
 	// +optional
-	// +k8s:beta(since: "1.37")=+k8s:listType=map
-	// +k8s:beta(since: "1.37")=+k8s:listMapKey=type
-	// +k8s:beta(since: "1.37")=+k8s:customUnique
-	// +k8s:beta(since: "1.37")=+k8s:optional
-	// +k8s:beta(since: "1.37")=+k8s:item(type: "Approved")=+k8s:zeroOrOneOfMember
-	// +k8s:beta(since: "1.37")=+k8s:item(type: "Denied")=+k8s:zeroOrOneOfMember
+	// +k8s:listType=map
+	// +k8s:listMapKey=type
+	// +k8s:customUnique
+	// +k8s:optional
+	// +k8s:item(type: "Approved")=+k8s:zeroOrOneOfMember
+	// +k8s:item(type: "Denied")=+k8s:zeroOrOneOfMember
 	Conditions []CertificateSigningRequestCondition `json:"conditions,omitempty" protobuf:"bytes,1,rep,name=conditions"`
 
 	// certificate is populated with an issued certificate by the signer after an Approved condition is present.
@@ -249,9 +263,11 @@ type CertificateSigningRequestCondition struct {
 	// Approved, Denied, and Failed conditions cannot be removed once added.
 	//
 	// Only one condition of a given type is allowed.
+	// +required
 	Type RequestConditionType `json:"type" protobuf:"bytes,1,opt,name=type,casttype=RequestConditionType"`
 	// status of the condition, one of True, False, Unknown.
 	// Approved, Denied, and Failed conditions may not be "False" or "Unknown".
+	// +required
 	Status v1.ConditionStatus `json:"status" protobuf:"bytes,6,opt,name=status,casttype=k8s.io/api/core/v1.ConditionStatus"`
 	// reason indicates a brief reason for the request state
 	// +optional
@@ -289,6 +305,7 @@ type CertificateSigningRequestList struct {
 //	https://tools.ietf.org/html/rfc5280#section-4.2.1.12
 //
 // +enum
+// +k8s:alpha(since: "1.38")=+k8s:enum
 type KeyUsage string
 
 // Valid key usages
@@ -346,6 +363,7 @@ type ClusterTrustBundle struct {
 	metav1.ObjectMeta `json:"metadata,omitempty" protobuf:"bytes,1,opt,name=metadata"`
 
 	// spec contains the signer (if any) and trust anchors.
+	// +required
 	Spec ClusterTrustBundleSpec `json:"spec" protobuf:"bytes,2,opt,name=spec"`
 }
 
@@ -371,8 +389,8 @@ type ClusterTrustBundleSpec struct {
 	// using a `spec.signerName=NAME` field selector.
 	//
 	// +optional
-	// +k8s:alpha(since:"1.37")=+k8s:optional
-	// +k8s:alpha(since:"1.37")=+k8s:immutable
+	// +k8s:beta(since:"1.38")=+k8s:optional
+	// +k8s:beta(since:"1.38")=+k8s:immutable
 	SignerName string `json:"signerName,omitempty" protobuf:"bytes,1,opt,name=signerName"`
 
 	// trustBundle contains the individual X.509 trust anchors for this
@@ -386,6 +404,7 @@ type ClusterTrustBundleSpec struct {
 	// Users of ClusterTrustBundles, including Kubelet, are free to reorder and
 	// deduplicate certificate blocks in this file according to their own logic,
 	// as well as to drop PEM block headers and inter-block data.
+	// +required
 	TrustBundle string `json:"trustBundle" protobuf:"bytes,2,opt,name=trustBundle"`
 }
 
@@ -490,7 +509,7 @@ type PodCertificateRequestSpec struct {
 	// +default=86400
 	MaxExpirationSeconds *int32 `json:"maxExpirationSeconds,omitempty" protobuf:"varint,8,opt,name=maxExpirationSeconds"`
 
-	// A PKCS#10 certificate signing request (DER-serialized) generated by
+	// stubPKCS10Request is a PKCS#10 certificate signing request (DER-serialized) generated by
 	// Kubelet using the subject private key.
 	//
 	// Most signer implementations will ignore the contents of the CSR except to
@@ -499,7 +518,7 @@ type PodCertificateRequestSpec struct {
 	// verification.  CSRs generated by kubelet are completely empty.
 	//
 	// The subject public key must be one of RSA3072, RSA4096, ECDSAP256,
-	// ECDSAP384, ECDSAP521, or ED25519. Note that this list may be expanded in
+	// ECDSAP384, ECDSAP521, ED25519, MLDSA44, MLDSA65, or MLDSA87. Note that this list may be expanded in
 	// the future.
 	//
 	// Signer implementations do not need to support all key types supported by
@@ -544,9 +563,9 @@ type PodCertificateRequestStatus struct {
 	// +listType=map
 	// +listMapKey=type
 	// +optional
-	// +k8s:alpha(since: "1.37")=+k8s:listType=map
-	// +k8s:alpha(since: "1.37")=+k8s:listMapKey=type
-	// +k8s:alpha(since: "1.37")=+k8s:optional
+	// +k8s:beta(since: "1.38")=+k8s:listType=map
+	// +k8s:beta(since: "1.38")=+k8s:listMapKey=type
+	// +k8s:beta(since: "1.38")=+k8s:optional
 	Conditions []metav1.Condition `json:"conditions,omitempty" patchStrategy:"merge" patchMergeKey:"type" protobuf:"bytes,1,rep,name=conditions"`
 
 	// certificateChain is populated with an issued certificate by the signer.
