@@ -335,7 +335,7 @@ func main() {
 			var wg sync.WaitGroup
 			factory.Start(shutdownHandler)
 			wg.Go(func() {
-				ctrl.Run(controllerCtx, int(*workerThreads), &wg)
+				ctrl.Run(controllerCtx, int(*workerThreads))
 			})
 			if nodeCtrl != nil {
 				wg.Go(func() {
@@ -347,7 +347,7 @@ func main() {
 		} else {
 			stopCh := ctx.Done()
 			factory.Start(stopCh)
-			go ctrl.Run(ctx, int(*workerThreads), nil)
+			go ctrl.Run(ctx, int(*workerThreads))
 			if nodeCtrl != nil {
 				go nodeCtrl.Run(ctx, int(*nodeWorkerThreads))
 			}

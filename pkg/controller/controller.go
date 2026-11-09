@@ -21,14 +21,12 @@ import (
 	"sync"
 	"time"
 
-	"github.com/kubernetes-csi/external-attacher/v4/pkg/features"
 	v1 "k8s.io/api/core/v1"
 	storage "k8s.io/api/storage/v1"
 	"k8s.io/apimachinery/pkg/api/equality"
 	apierrs "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/apimachinery/pkg/util/wait"
-	utilfeature "k8s.io/apiserver/pkg/util/feature"
 	coreinformers "k8s.io/client-go/informers/core/v1"
 	storageinformers "k8s.io/client-go/informers/storage/v1"
 	"k8s.io/client-go/kubernetes"
@@ -123,8 +121,11 @@ func NewCSIAttachController(
 	return ctrl
 }
 
-// Run starts CSI attacher and listens on channel events
-func (ctrl *CSIAttachController) Run(ctx context.Context, workers int, wg *sync.WaitGroup) {
+// Run starts CSI attacher and listens on channel events.
+// It returns only after all workers stopped.
+func (ctrl *CSIAttachController) Run(ctx context.Context, workers int) {
+	var wg sync.WaitGroup
+	defer wg.Wait()
 	defer ctrl.vaQueue.ShutDown()
 	defer ctrl.pvQueue.ShutDown()
 
@@ -136,46 +137,24 @@ func (ctrl *CSIAttachController) Run(ctx context.Context, workers int, wg *sync.
 		logger.Error(nil, "Cannot sync caches")
 		return
 	}
-	if utilfeature.DefaultFeatureGate.Enabled(features.ReleaseLeaderElectionOnExit) {
-		for i := 0; i < workers; i++ {
-			wg.Add(1)
-			go func() {
-				defer wg.Done()
-				wait.UntilWithContext(ctx, ctrl.syncVA, 0)
-			}()
-			wg.Add(1)
-			go func() {
-				defer wg.Done()
-				wait.UntilWithContext(ctx, ctrl.syncPV, 0)
-			}()
-		}
+	for range workers {
+		wg.Go(func() {
+			wait.UntilWithContext(ctx, ctrl.syncVA, 0)
+		})
+		wg.Go(func() {
+			wait.UntilWithContext(ctx, ctrl.syncPV, 0)
+		})
+	}
 
-		if ctrl.shouldReconcileVolumeAttachment {
-			wg.Add(1)
-			go func() {
-				defer wg.Done()
-				wait.UntilWithContext(ctx, func(ctx context.Context) {
-					err := ctrl.handler.ReconcileVA(ctx)
-					if err != nil {
-						logger.Error(err, "Failed to reconcile VolumeAttachment")
-					}
-				}, ctrl.reconcileSync)
-			}()
-		}
-	} else {
-		for range workers {
-			go wait.UntilWithContext(ctx, ctrl.syncVA, 0)
-			go wait.UntilWithContext(ctx, ctrl.syncPV, 0)
-		}
-
-		if ctrl.shouldReconcileVolumeAttachment {
-			go wait.UntilWithContext(ctx, func(ctx context.Context) {
+	if ctrl.shouldReconcileVolumeAttachment {
+		wg.Go(func() {
+			wait.UntilWithContext(ctx, func(ctx context.Context) {
 				err := ctrl.handler.ReconcileVA(ctx)
 				if err != nil {
 					logger.Error(err, "Failed to reconcile VolumeAttachment")
 				}
 			}, ctrl.reconcileSync)
-		}
+		})
 	}
 
 	<-ctx.Done()
