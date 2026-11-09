@@ -18,6 +18,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"flag"
 	"fmt"
 	"net/http"
@@ -69,6 +70,7 @@ var (
 	retryIntervalStart = flag.Duration("retry-interval-start", time.Second, "Initial retry interval of failed provisioning or deletion. It doubles with each failure, up to retry-interval-max.")
 	retryIntervalMax   = flag.Duration("retry-interval-max", 5*time.Minute, "Maximum retry interval of failed provisioning or deletion.")
 	workerThreads      = flag.Uint("worker-threads", 10, "Number of attacher worker threads")
+	nodeWorkerThreads  = flag.Uint("node-worker-threads", 10, "Number of node worker threads")
 	maxEntries         = flag.Int("max-entries", 0, "Max entries per each page in volume lister call, 0 means no limit.")
 
 	defaultFSType = flag.String("default-fstype", "", "The default filesystem type of the volume to publish. Defaults to empty string")
@@ -132,6 +134,10 @@ func main() {
 
 	if *workerThreads == 0 {
 		logger.Error(nil, "Option -worker-threads must be greater than zero")
+		klog.FlushAndExit(klog.ExitFlushTimeout, 1)
+	}
+	if *nodeWorkerThreads == 0 {
+		logger.Error(nil, "Option -node-worker-threads must be greater than zero")
 		klog.FlushAndExit(klog.ExitFlushTimeout, 1)
 	}
 
@@ -219,24 +225,24 @@ func main() {
 	}
 
 	var (
-		supportsAttach                    bool
-		supportsReadOnly                  bool
 		supportsListVolumesPublishedNodes bool
-		supportsSingleNodeMultiWriter     bool
+		nodeHandler                       controller.NodeInfoHandler
 	)
 	if !supportsService {
 		handler = controller.NewTrivialHandler(clientset)
+		nodeHandler = controller.NodeFailingHandler{Err: errors.New("CSI driver does not support Plugin Controller Service")}
 		logger.V(2).Info("CSI driver does not support Plugin Controller Service, using trivial handler")
 	} else {
-		supportsAttach, supportsReadOnly, supportsListVolumesPublishedNodes, supportsSingleNodeMultiWriter, err = supportsControllerCapabilities(cancelationCtx, csiConn)
+		caps, err := rpc.GetControllerCapabilities(cancelationCtx, csiConn)
 		if err != nil {
 			logger.Error(err, "Failed to controller capability check")
 			klog.FlushAndExit(klog.ExitFlushTimeout, 1)
 		}
+		supportsListVolumesPublishedNodes = caps[csi.ControllerServiceCapability_RPC_LIST_VOLUMES] && caps[csi.ControllerServiceCapability_RPC_LIST_VOLUMES_PUBLISHED_NODES]
 
-		if supportsAttach {
-			pvLister := factory.Core().V1().PersistentVolumes().Lister()
-			vaLister := factory.Storage().V1().VolumeAttachments().Lister()
+		if caps[csi.ControllerServiceCapability_RPC_PUBLISH_UNPUBLISH_VOLUME] {
+			vaInformer := factory.Storage().V1().VolumeAttachments()
+			pvInformer := factory.Core().V1().PersistentVolumes()
 			csiNodeLister := factory.Storage().V1().CSINodes().Lister()
 			volAttacher := attacher.NewAttacher(csiConn)
 			CSIVolumeLister := attacher.NewVolumeLister(csiConn, *maxEntries)
@@ -245,18 +251,32 @@ func main() {
 				csiAttacher,
 				volAttacher,
 				CSIVolumeLister,
-				pvLister,
+				pvInformer.Lister(),
 				csiNodeLister,
-				vaLister,
+				vaInformer.Lister(),
 				timeout,
-				supportsReadOnly,
-				supportsSingleNodeMultiWriter,
-				csitrans.New(),
+				caps[csi.ControllerServiceCapability_RPC_PUBLISH_READONLY],
+				caps[csi.ControllerServiceCapability_RPC_SINGLE_NODE_MULTI_WRITER],
+				translator,
 				*defaultFSType,
 			)
 			logger.V(2).Info("CSI driver supports ControllerPublishUnpublish, using real CSI handler")
+
+			if caps[csi.ControllerServiceCapability_RPC_GET_NODE_INFO] {
+				nodeHandler = controller.NewNodeCSIHandler(
+					csiAttacher,
+					clientset,
+					vaInformer.TypedInformer(),
+					pvInformer,
+					translator,
+				)
+				logger.V(2).Info("CSI driver supports ControllerGetNodeInfo, using real CSI handler")
+			} else {
+				nodeHandler = controller.NodeFailingHandler{Err: errors.New("CSI driver does not support ControllerGetNodeInfo")}
+			}
 		} else {
 			handler = controller.NewTrivialHandler(clientset)
+			nodeHandler = controller.NodeFailingHandler{Err: errors.New("CSI driver does not support ControllerPublishUnpublish")}
 			logger.V(2).Info("CSI driver does not support ControllerPublishUnpublish, using trivial handler")
 		}
 	}
@@ -277,6 +297,17 @@ func main() {
 		supportsListVolumesPublishedNodes,
 		*reconcileSync,
 	)
+	var nodeCtrl *controller.NodeController
+	if utilfeature.DefaultFeatureGate.Enabled(features.CSIControllerGetNodeInfo) {
+		nodeCtrl = controller.NewNodeController(
+			logger,
+			csiAttacher,
+			nodeHandler,
+			factory.Storage().V1().CSINodes(),
+			factory.Storage().V1().CSIDrivers(),
+			workqueue.NewTypedItemExponentialFailureRateLimiter[string](*retryIntervalStart, *retryIntervalMax),
+		)
+	}
 	// handle SIGTERM and SIGINT by cancelling the context.
 	var (
 		terminate       func()          // called when all controllers are finished
@@ -303,13 +334,24 @@ func main() {
 		if utilfeature.DefaultFeatureGate.Enabled(features.ReleaseLeaderElectionOnExit) {
 			var wg sync.WaitGroup
 			factory.Start(shutdownHandler)
-			ctrl.Run(controllerCtx, int(*workerThreads), &wg)
+			wg.Go(func() {
+				ctrl.Run(controllerCtx, int(*workerThreads), &wg)
+			})
+			if nodeCtrl != nil {
+				wg.Go(func() {
+					nodeCtrl.Run(controllerCtx, int(*nodeWorkerThreads))
+				})
+			}
 			wg.Wait()
 			terminate()
 		} else {
 			stopCh := ctx.Done()
 			factory.Start(stopCh)
-			ctrl.Run(ctx, int(*workerThreads), nil)
+			go ctrl.Run(ctx, int(*workerThreads), nil)
+			if nodeCtrl != nil {
+				go nodeCtrl.Run(ctx, int(*nodeWorkerThreads))
+			}
+			<-stopCh
 		}
 	}
 
@@ -322,19 +364,6 @@ func main() {
 		mux,
 		utilfeature.DefaultFeatureGate.Enabled(features.ReleaseLeaderElectionOnExit),
 	)
-}
-
-func supportsControllerCapabilities(ctx context.Context, csiConn *grpc.ClientConn) (bool, bool, bool, bool, error) {
-	caps, err := rpc.GetControllerCapabilities(ctx, csiConn)
-	if err != nil {
-		return false, false, false, false, err
-	}
-
-	supportsControllerPublish := caps[csi.ControllerServiceCapability_RPC_PUBLISH_UNPUBLISH_VOLUME]
-	supportsPublishReadOnly := caps[csi.ControllerServiceCapability_RPC_PUBLISH_READONLY]
-	supportsListVolumesPublishedNodes := caps[csi.ControllerServiceCapability_RPC_LIST_VOLUMES] && caps[csi.ControllerServiceCapability_RPC_LIST_VOLUMES_PUBLISHED_NODES]
-	supportsSingleNodeMultiWriter := caps[csi.ControllerServiceCapability_RPC_SINGLE_NODE_MULTI_WRITER]
-	return supportsControllerPublish, supportsPublishReadOnly, supportsListVolumesPublishedNodes, supportsSingleNodeMultiWriter, nil
 }
 
 func supportsPluginControllerService(ctx context.Context, csiConn *grpc.ClientConn) (bool, error) {
