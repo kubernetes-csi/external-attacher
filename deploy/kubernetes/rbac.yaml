@@ -34,6 +34,19 @@ rules:
   - apiGroups: ["storage.k8s.io"]
     resources: ["volumeattachments/status"]
     verbs: ["patch"]
+#The following permissions are required if you use CSIControllerGetNodeInfo feature:
+#- csinodes patch: external-attacher publishes the driver entry,
+#- csidrivers get/list/watch: NodeAllocatableUpdatePeriodSeconds of the driver,
+#- nodes get/patch: the topology labels.
+#  - apiGroups: ["storage.k8s.io"]
+#    resources: ["csinodes"]
+#    verbs: ["patch"]
+#  - apiGroups: ["storage.k8s.io"]
+#    resources: ["csidrivers"]
+#    verbs: ["get", "list", "watch"]
+#  - apiGroups: [""]
+#    resources: ["nodes"]
+#    verbs: ["get", "patch"]
 #Secret permission is optional.
 #Enable it if you need value from secret.
 #For example, you have key `csi.storage.k8s.io/controller-publish-secret-name` in StorageClass.parameters

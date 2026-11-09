@@ -38,6 +38,13 @@ const (
 	//
 	// Releases leader election lease on sigterm / sigint.
 	ReleaseLeaderElectionOnExit featuregate.Feature = "ReleaseLeaderElectionOnExit"
+
+	// owner: @huww98, @torredil
+	// kep: https://kep.k8s.io/6011
+	//
+	// Enables CSI drivers to report a node's topology and volume attachment limit from
+	// the controller, through ControllerGetNodeInfo, instead of from the node.
+	CSIControllerGetNodeInfo featuregate.Feature = "CSIControllerGetNodeInfo"
 )
 
 func init() {
@@ -49,4 +56,5 @@ func init() {
 var defaultKubernetesFeatureGates = map[featuregate.Feature]featuregate.FeatureSpec{
 	ReleaseLeaderElectionOnExit:    {Default: false, PreRelease: featuregate.Alpha},
 	MutableCSINodeAllocatableCount: {Default: true, PreRelease: featuregate.GA},
+	CSIControllerGetNodeInfo:       {Default: false, PreRelease: featuregate.Alpha},
 }
