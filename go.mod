@@ -18,6 +18,7 @@ require (
 	k8s.io/component-base v0.38.0-beta.0
 	k8s.io/csi-translation-lib v0.38.0-beta.0
 	k8s.io/klog/v2 v2.140.0
+	k8s.io/utils v0.0.0-20260707023825-cf1189d6abe3
 )
 
 require (
@@ -68,7 +69,6 @@ require (
 	gopkg.in/evanphx/json-patch.v4 v4.13.0 // indirect
 	gopkg.in/inf.v0 v0.9.1 // indirect
 	k8s.io/kube-openapi v0.0.0-20261014044854-ca3452a79603 // indirect
-	k8s.io/utils v0.0.0-20260707023825-cf1189d6abe3 // indirect
 	sigs.k8s.io/json v0.0.0-20250730193827-2d320260d730 // indirect
 	sigs.k8s.io/randfill v1.0.0 // indirect
 	sigs.k8s.io/structured-merge-diff/v7 v7.0.1 // indirect
