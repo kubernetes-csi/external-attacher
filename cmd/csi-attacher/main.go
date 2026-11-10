@@ -27,11 +27,15 @@ import (
 	"sync"
 	"time"
 
+	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apiserver/pkg/server/signals"
 	utilfeature "k8s.io/apiserver/pkg/util/feature"
 	"k8s.io/client-go/informers"
 	"k8s.io/client-go/kubernetes"
+	kubescheme "k8s.io/client-go/kubernetes/scheme"
+	tyscorev1 "k8s.io/client-go/kubernetes/typed/core/v1"
+	"k8s.io/client-go/tools/record"
 	"k8s.io/client-go/util/workqueue"
 	utilflag "k8s.io/component-base/cli/flag"
 	"k8s.io/component-base/featuregate"
@@ -154,6 +158,11 @@ func main() {
 	// Connect to CSI.
 	connection.SetMaxGRPCLogLength(*maxGRPCLogLength)
 	ctx := context.Background()
+
+	eventBroadcaster := record.NewBroadcaster(record.WithContext(ctx))
+	eventBroadcaster.StartRecordingToSink(&tyscorev1.EventSinkImpl{Interface: clientset.CoreV1().Events("")})
+	recorder := eventBroadcaster.NewRecorder(kubescheme.Scheme, corev1.EventSource{Component: "external-attacher"})
+
 	csiConn, err := connection.Connect(ctx, standardflags.Configuration.CSIAddress, metricsManager, connection.OnConnectionLoss(connection.ExitOnConnectionLoss()))
 	if err != nil {
 		logger.Error(err, "Failed to connect to the CSI driver", "csiAddress", standardflags.Configuration.CSIAddress)
@@ -266,6 +275,8 @@ func main() {
 				nodeHandler = controller.NewNodeCSIHandler(
 					csiAttacher,
 					clientset,
+					attacher.NewNodeInfoProvider(csiConn),
+					recorder,
 					vaInformer.TypedInformer(),
 					pvInformer,
 					translator,
@@ -303,6 +314,7 @@ func main() {
 			logger,
 			csiAttacher,
 			nodeHandler,
+			recorder,
 			factory.Storage().V1().CSINodes(),
 			factory.Storage().V1().CSIDrivers(),
 			workqueue.NewTypedItemExponentialFailureRateLimiter[string](*retryIntervalStart, *retryIntervalMax),
