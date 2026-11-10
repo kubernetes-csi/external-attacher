@@ -25,7 +25,9 @@ import (
 
 	"github.com/container-storage-interface/spec/lib/go/csi"
 	"github.com/kubernetes-csi/external-attacher/v4/pkg/attacher"
+	corev1 "k8s.io/api/core/v1"
 	storagev1 "k8s.io/api/storage/v1"
+	apiequality "k8s.io/apimachinery/pkg/api/equality"
 	apierrs "k8s.io/apimachinery/pkg/api/errors"
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/sets"
@@ -35,7 +37,9 @@ import (
 	storageinformers "k8s.io/client-go/informers/storage/v1"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/tools/cache"
+	"k8s.io/client-go/tools/record"
 	"k8s.io/klog/v2"
+	"k8s.io/utils/ptr"
 )
 
 type lockedSet struct {
@@ -47,6 +51,7 @@ type nodeCSIHandler struct {
 	driverName string
 	client     kubernetes.Interface
 	provider   attacher.NodeInfoProvider
+	recorder   record.EventRecorder
 
 	resolver  volumeSourceResolver
 	vaIndexer cache.TypedIndexer[*storagev1.VolumeAttachment]
@@ -59,6 +64,7 @@ func NewNodeCSIHandler(
 	driverName string,
 	client kubernetes.Interface,
 	provider attacher.NodeInfoProvider,
+	recorder record.EventRecorder,
 	vaInformer storageinformers.VolumeAttachmentIndexInformer,
 	pvInformer coreinformers.PersistentVolumeInformer,
 	translator AttacherCSITranslator,
@@ -75,6 +81,7 @@ func NewNodeCSIHandler(
 		driverName: driverName,
 		client:     client,
 		provider:   provider,
+		recorder:   recorder,
 		vaIndexer:  vaInformer.GetTypedIndexer(),
 		synced:     []cache.InformerSynced{vaInformer.HasSynced, pvInformer.Informer().HasSynced},
 		resolver: volumeSourceResolver{
@@ -163,9 +170,25 @@ func (h *nodeCSIHandler) SyncNode(ctx context.Context, csiNode *storagev1.CSINod
 		}
 	}
 
+	spec := storageapply.CSINodeSpec().WithDrivers(driver)
+	if idriver >= 0 {
+		// Renewing an existing entry: skip the write if we already own exactly this spec.
+		owned, err := storageapply.ExtractCSINode(csiNode, fieldManager)
+		if err != nil {
+			return fmt.Errorf("extract applied configuration: %w", err)
+		}
+		if apiequality.Semantic.DeepEqual(owned.Spec, spec) {
+			logger.V(4).Info("CSINode driver entry is up to date")
+			return nil
+		}
+	}
+
+	// Only the fields in spec are managed and taken with Force, everything else in the entry
+	// keeps belonging to its manager. In particular, SSA leaves Allocatable alone if another
+	// manager took it over, so we cannot delete it when the driver stops reporting a limit.
 	_, err = h.client.StorageV1().CSINodes().Apply(ctx,
 		storageapply.CSINode(nodeName).WithUID(csiNode.UID).WithResourceVersion(csiNode.ResourceVersion).
-			WithSpec(storageapply.CSINodeSpec().WithDrivers(driver)),
+			WithSpec(spec),
 		v1.ApplyOptions{Force: true, FieldManager: fieldManager})
 	if err != nil {
 		if apierrs.IsConflict(err) {
@@ -175,7 +198,23 @@ func (h *nodeCSIHandler) SyncNode(ctx context.Context, csiNode *storagev1.CSINod
 		return fmt.Errorf("apply CSINode: %w", err)
 	}
 	logger.V(3).Info("CSI driver applied", "driver", driver)
+	reason := "CSINodeInfoUpdated"
+	verb := "Updated"
+	if idriver < 0 {
+		reason = "CSINodeRegistered"
+		verb = "Registered"
+	}
+	h.recorder.Eventf(csiNode, corev1.EventTypeNormal, reason,
+		"%s CSINode driver %q: %s", verb, h.driverName, describeDriver(driver))
 	return nil
+}
+
+func describeDriver(driver *storageapply.CSINodeDriverApplyConfiguration) string {
+	count := "unlimited"
+	if driver.Allocatable != nil && driver.Allocatable.Count != nil {
+		count = fmt.Sprintf("%d", *driver.Allocatable.Count)
+	}
+	return fmt.Sprintf("nodeID=%q, topologyKeys=%v, allocatableCount=%s", ptr.Deref(driver.NodeID, ""), driver.TopologyKeys, count)
 }
 
 func (h *nodeCSIHandler) queryNodeInfo(ctx context.Context, logger klog.Logger, nodeName string, driver *storageapply.CSINodeDriverApplyConfiguration) (
@@ -211,6 +250,8 @@ func (h *nodeCSIHandler) queryNodeInfo(ctx context.Context, logger klog.Logger, 
 				}
 			}
 		}
+		// Publish the remaining capacity. 0 means "no volume can be attached", not unlimited:
+		// the scheduler distinguishes an unset Count (unbounded) from a Count of 0.
 		driver.Allocatable = storageapply.VolumeNodeResources().WithCount(int32(max(maxVolumes, 0)))
 	}
 	return nodeInfo, nil

@@ -24,6 +24,7 @@ import (
 	"sync"
 	"time"
 
+	corev1 "k8s.io/api/core/v1"
 	storagev1 "k8s.io/api/storage/v1"
 	apierrs "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/labels"
@@ -31,6 +32,7 @@ import (
 	storageinformers "k8s.io/client-go/informers/storage/v1"
 	storagelisters "k8s.io/client-go/listers/storage/v1"
 	"k8s.io/client-go/tools/cache"
+	"k8s.io/client-go/tools/record"
 	"k8s.io/client-go/util/workqueue"
 	"k8s.io/klog/v2"
 	"k8s.io/utils/ptr"
@@ -60,6 +62,7 @@ type NodeController struct {
 	nodeQueue workqueue.TypedRateLimitingInterface[string]
 
 	handler           NodeInfoHandler
+	recorder          record.EventRecorder
 	csiNodeLister     storagelisters.CSINodeLister
 	csiNodeSynced     cache.InformerSynced
 	csiDriverInformer storageinformers.CSIDriverIndexInformer
@@ -74,6 +77,7 @@ func NewNodeController(
 	logger klog.Logger,
 	driverName string,
 	handler NodeInfoHandler,
+	recorder record.EventRecorder,
 	csiNodeInformer storageinformers.TypedCSINodeInformer,
 	csiDriverInformer storageinformers.TypedCSIDriverInformer,
 	nodeRateLimiter workqueue.TypedRateLimiter[string],
@@ -81,6 +85,7 @@ func NewNodeController(
 	ctrl := &NodeController{
 		driverName:        driverName,
 		handler:           handler,
+		recorder:          recorder,
 		csiNodeLister:     csiNodeInformer.Lister(),
 		csiNodeSynced:     csiNodeInformer.TypedInformer().HasSynced,
 		csiDriverInformer: csiDriverInformer.TypedInformer(),
@@ -232,7 +237,12 @@ func (ctrl *NodeController) processNode(ctx context.Context, nodeName string, re
 		return false, nil
 	}
 	ctx = klog.NewContext(ctx, klog.LoggerWithValues(logger, "nodeID", nodeID))
-	return true, ctrl.handler.SyncNode(ctx, csiNode, nodeID, refresh)
+	err = ctrl.handler.SyncNode(ctx, csiNode, nodeID, refresh)
+	if err != nil {
+		ctrl.recorder.Eventf(csiNode, corev1.EventTypeWarning, "CSINodeInfoUpdateFailed",
+			"Failed to update CSINode for driver %q: %v", ctrl.driverName, err)
+	}
+	return true, err
 }
 
 func (ctrl *NodeController) isRegistered(csiNode *storagev1.CSINode) bool {
