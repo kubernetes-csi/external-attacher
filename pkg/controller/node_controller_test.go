@@ -26,6 +26,8 @@ import (
 	"k8s.io/client-go/informers"
 	"k8s.io/client-go/kubernetes/fake"
 	"k8s.io/client-go/tools/record"
+	"k8s.io/client-go/util/workqueue"
+	"k8s.io/klog/v2/ktesting"
 )
 
 type fakeNodeInfoHandler struct {
@@ -48,12 +50,17 @@ func newTestNodeController(t *testing.T, handler NodeInfoHandler, csiNode *stora
 		t.Fatalf("add CSINode to store: %v", err)
 	}
 	recorder := record.NewFakeRecorder(10)
-	return &NodeController{
-		driverName:    testAttacherName,
-		handler:       handler,
-		recorder:      recorder,
-		csiNodeLister: csiNodeInformer.Lister(),
-	}, recorder
+	logger, _ := ktesting.NewTestContext(t)
+	ctrl := NewNodeController(
+		logger,
+		testAttacherName,
+		handler,
+		recorder,
+		csiNodeInformer,
+		factory.Storage().V1().CSIDrivers(),
+		workqueue.DefaultTypedControllerRateLimiter[string](),
+	)
+	return ctrl, recorder
 }
 
 func TestProcessNodeEvents(t *testing.T) {

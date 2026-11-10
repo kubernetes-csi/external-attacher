@@ -28,6 +28,7 @@ import (
 	"github.com/kubernetes-csi/csi-lib-utils/connection"
 	"github.com/kubernetes-csi/external-attacher/v4/pkg/attacher"
 	"github.com/kubernetes-csi/external-attacher/v4/pkg/features"
+	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	v1 "k8s.io/api/core/v1"
 	storage "k8s.io/api/storage/v1"
@@ -58,6 +59,19 @@ type VolumeLister interface {
 
 var _ VolumeLister = &attacher.CSIVolumeLister{}
 
+// VolumeProcessingRecorder is notified about volumes that are being attached or
+// detached. A volume reported this way is classified as CSI-managed by a
+// concurrent ControllerGetNodeInfo, which closes the race between the driver's
+// view of the attachments and the VolumeAttachments seen by the CO.
+type VolumeProcessingRecorder interface {
+	RecordProcessing(nodeID, volumeID string)
+}
+
+// NodeInfoRefresher triggers an immediate ControllerGetNodeInfo call.
+type NodeInfoRefresher interface {
+	RequestUpdate(ctx context.Context, nodeName string) error
+}
+
 // csiHandler is a handler that calls CSI to attach/detach volume.
 // It adds finalizer to VolumeAttachment instance to make sure they're detached
 // before deletion.
@@ -76,6 +90,8 @@ type csiHandler struct {
 	supportsSingleNodeMultiWriter bool
 	resolver                      volumeSourceResolver
 	defaultFSType                 string
+	nodeInfoRecorder              VolumeProcessingRecorder
+	nodeInfoRefresher             NodeInfoRefresher
 }
 
 var _ Handler = &csiHandler{}
@@ -93,7 +109,9 @@ func NewCSIHandler(
 	supportsPublishReadOnly bool,
 	supportsSingleNodeMultiWriter bool,
 	translator AttacherCSITranslator,
-	defaultFSType string) Handler {
+	defaultFSType string,
+	nodeInfoRecorder VolumeProcessingRecorder,
+	nodeInfoRefresher NodeInfoRefresher) Handler {
 
 	return &csiHandler{
 		client:                        client,
@@ -108,6 +126,8 @@ func NewCSIHandler(
 		forceSync:                     map[string]bool{},
 		forceSyncMux:                  sync.Mutex{},
 		defaultFSType:                 defaultFSType,
+		nodeInfoRecorder:              nodeInfoRecorder,
+		nodeInfoRefresher:             nodeInfoRefresher,
 		resolver: volumeSourceResolver{
 			translator: translator,
 			pvLister:   pvLister,
@@ -168,6 +188,16 @@ func (r volumeSourceResolver) repairVolumeHandle(csi *v1.CSIPersistentVolumeSour
 	return r.translator.RepairVolumeHandle(csi.Driver, csi.VolumeHandle, nodeID)
 }
 
+// attachedVolumeID returns the volume ID the driver reports for src in ListVolumes
+// and ControllerGetNodeInfo. Migrated in-tree volumes need the handle repaired first.
+func (r volumeSourceResolver) attachedVolumeID(src volumeSource, nodeID string) (string, error) {
+	csiSource := src.spec.CSI
+	if src.migrated {
+		return r.repairVolumeHandle(csiSource, nodeID)
+	}
+	return csiSource.VolumeHandle, nil
+}
+
 func (r volumeSourceResolver) isPVMigratable(pv *v1.PersistentVolume) bool {
 	return r.translator.IsPVMigratable(pv)
 }
@@ -213,15 +243,10 @@ func (h *csiHandler) ReconcileVA(ctx context.Context) error {
 
 		attachedStatus := va.Status.Attached
 
-		// If volume driver has corresponding in-tree plugin, generate a correct volumehandle
-		csiSource := src.spec.CSI
-		volumeHandle := csiSource.VolumeHandle
-		if src.migrated {
-			volumeHandle, err = h.resolver.repairVolumeHandle(csiSource, nodeID)
-			if err != nil {
-				logger.Error(err, "Failed to repair volume handle for driver", "volumeHandle", csiSource.VolumeHandle, "sourceDriver", csiSource.Driver)
-				continue
-			}
+		volumeHandle, err := h.resolver.attachedVolumeID(src, nodeID)
+		if err != nil {
+			logger.Error(err, "Failed to repair volume handle for driver", "volumeHandle", src.spec.CSI.VolumeHandle, "sourceDriver", src.spec.CSI.Driver)
+			continue
 		}
 
 		// Check whether the volume is published to this node
@@ -303,6 +328,9 @@ func (h *csiHandler) syncAttach(ctx context.Context, va *storage.VolumeAttachmen
 	logger.V(2).Info("Attaching")
 	va, metadata, err := h.csiAttach(ctx, va)
 	if err != nil {
+		if status.Code(err) == codes.ResourceExhausted {
+			h.refreshNodeInfo(ctx, logger, va.Spec.NodeName)
+		}
 		_, saveErr := h.saveAttachError(ctx, va, err)
 		if saveErr != nil {
 			// Just log it, propagate the attach error.
@@ -462,6 +490,8 @@ func (h *csiHandler) csiAttach(ctx context.Context, va *storage.VolumeAttachment
 		}
 	}
 
+	h.recordProcessing(logger, src, nodeID)
+
 	ctx, cancel := context.WithTimeout(ctx, h.timeout)
 	ctx = markAsMigrated(ctx, src.migrated)
 	defer cancel()
@@ -495,6 +525,8 @@ func (h *csiHandler) csiDetach(ctx context.Context, va *storage.VolumeAttachment
 		return va, err
 	}
 
+	h.recordProcessing(logger, src, nodeID)
+
 	ctx, cancel := context.WithTimeout(ctx, h.timeout)
 	ctx = markAsMigrated(ctx, src.migrated)
 	defer cancel()
@@ -511,6 +543,38 @@ func (h *csiHandler) csiDetach(ctx context.Context, va *storage.VolumeAttachment
 	}
 
 	return va, nil
+}
+
+// recordProcessing lets a concurrent ControllerGetNodeInfo see the volume as
+// CSI-managed while it is being attached or detached.
+func (h *csiHandler) recordProcessing(logger klog.Logger, src volumeSource, nodeID string) {
+	if h.nodeInfoRecorder == nil {
+		return
+	}
+	volumeID, err := h.resolver.attachedVolumeID(src, nodeID)
+	if err != nil {
+		logger.Error(err, "Failed to repair volume handle for driver", "volumeHandle", src.spec.CSI.VolumeHandle, "sourceDriver", src.spec.CSI.Driver)
+		return
+	}
+	h.nodeInfoRecorder.RecordProcessing(nodeID, volumeID)
+}
+
+// refreshNodeInfo refreshes the node allocatable count before the attach error is
+// reported, so it is saved against the corrected count. Best effort only: the
+// attach error must be reported even if the refresh fails.
+func (h *csiHandler) refreshNodeInfo(ctx context.Context, logger klog.Logger, nodeName string) {
+	if h.nodeInfoRefresher == nil {
+		return
+	}
+	// Bounded by the CSI call timeout rather than the node timeout: waiting for the
+	// whole node info update here would block a VolumeAttachment worker for as long as
+	// --node-timeout allows. If this gives up first, the attach error is reported as
+	// usual and the corrected count is published when the update finishes.
+	ctx, cancel := context.WithTimeout(ctx, h.timeout)
+	defer cancel()
+	if err := h.nodeInfoRefresher.RequestUpdate(ctx, nodeName); err != nil {
+		logger.V(2).Info("Failed to refresh node allocatable count", "nodeName", nodeName, "err", err)
+	}
 }
 
 func (h *csiHandler) saveAttachError(ctx context.Context, va *storage.VolumeAttachment, err error) (*storage.VolumeAttachment, error) {
