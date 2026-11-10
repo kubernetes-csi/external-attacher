@@ -23,6 +23,7 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/container-storage-interface/spec/lib/go/csi"
 	"github.com/kubernetes-csi/external-attacher/v4/pkg/attacher"
@@ -46,6 +47,17 @@ func (p *fakeNodeInfoProvider) GetNodeInfo(ctx context.Context, nodeID string) (
 	return p.resp, p.err
 }
 
+// blockingNodeInfoProvider blocks until its context expires.
+type blockingNodeInfoProvider struct {
+	err error
+}
+
+func (p *blockingNodeInfoProvider) GetNodeInfo(ctx context.Context, nodeID string) (*csi.ControllerGetNodeInfoResponse, error) {
+	<-ctx.Done()
+	p.err = ctx.Err()
+	return nil, p.err
+}
+
 func newNodeTestHandler(t *testing.T, client *fake.Clientset, provider attacher.NodeInfoProvider) (*nodeCSIHandler, *record.FakeRecorder) {
 	t.Helper()
 	factory := informers.NewSharedInformerFactory(client, 0)
@@ -54,6 +66,7 @@ func newNodeTestHandler(t *testing.T, client *fake.Clientset, provider attacher.
 		testAttacherName,
 		client,
 		provider,
+		time.Minute,
 		recorder,
 		factory.Storage().V1().VolumeAttachments().TypedInformer(),
 		factory.Core().V1().PersistentVolumes(),
@@ -339,5 +352,21 @@ func TestSyncNodeGetNodeInfoFailed(t *testing.T) {
 	// Failures are reported by NodeController, see TestProcessNodeEvents.
 	if events := drainEvents(recorder); len(events) != 0 {
 		t.Errorf("unexpected events: %v", events)
+	}
+}
+
+func TestSyncNodeTimeout(t *testing.T) {
+	node := testNode("node-uid")
+	csiNode := testCSINode("node-uid")
+	provider := &blockingNodeInfoProvider{}
+	h, _ := newNodeTestHandler(t, fake.NewClientset(node, csiNode), provider)
+	h.timeout = 10 * time.Millisecond
+
+	err := h.SyncNode(t.Context(), csiNode, testNodeID, false)
+	if !errors.Is(err, context.DeadlineExceeded) {
+		t.Errorf("SyncNode error: want %v, got %v", context.DeadlineExceeded, err)
+	}
+	if !errors.Is(provider.err, context.DeadlineExceeded) {
+		t.Errorf("provider context error: want %v, got %v", context.DeadlineExceeded, provider.err)
 	}
 }

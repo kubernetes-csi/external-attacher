@@ -22,6 +22,7 @@ import (
 	"maps"
 	"slices"
 	"sync"
+	"time"
 
 	"github.com/container-storage-interface/spec/lib/go/csi"
 	"github.com/kubernetes-csi/external-attacher/v4/pkg/attacher"
@@ -52,6 +53,7 @@ type nodeCSIHandler struct {
 	client     kubernetes.Interface
 	provider   attacher.NodeInfoProvider
 	recorder   record.EventRecorder
+	timeout    time.Duration // zero if unbounded
 
 	resolver  volumeSourceResolver
 	vaIndexer cache.TypedIndexer[*storagev1.VolumeAttachment]
@@ -60,15 +62,21 @@ type nodeCSIHandler struct {
 	processingVolumes sync.Map // map[string]*lockedSet
 }
 
+type NodeCSIHandler interface {
+	NodeInfoHandler
+	VolumeProcessingRecorder
+}
+
 func NewNodeCSIHandler(
 	driverName string,
 	client kubernetes.Interface,
 	provider attacher.NodeInfoProvider,
+	timeout time.Duration,
 	recorder record.EventRecorder,
 	vaInformer storageinformers.VolumeAttachmentIndexInformer,
 	pvInformer coreinformers.PersistentVolumeInformer,
 	translator AttacherCSITranslator,
-) NodeInfoHandler {
+) NodeCSIHandler {
 	err := vaInformer.AddTypedIndexers(cache.TypedIndexers[*storagev1.VolumeAttachment]{
 		VA_NODE_NAME_INDEX: func(va *storagev1.VolumeAttachment) ([]string, error) {
 			return []string{va.Spec.Attacher + "/" + va.Spec.NodeName}, nil
@@ -82,6 +90,7 @@ func NewNodeCSIHandler(
 		client:     client,
 		provider:   provider,
 		recorder:   recorder,
+		timeout:    timeout,
 		vaIndexer:  vaInformer.GetTypedIndexer(),
 		synced:     []cache.InformerSynced{vaInformer.HasSynced, pvInformer.Informer().HasSynced},
 		resolver: volumeSourceResolver{
@@ -225,7 +234,7 @@ func (h *nodeCSIHandler) queryNodeInfo(ctx context.Context, logger klog.Logger, 
 	h.processingVolumes.Store(nodeID, processing)
 	defer h.processingVolumes.Delete(nodeID)
 
-	nodeInfo, err := h.provider.GetNodeInfo(ctx, nodeID)
+	nodeInfo, err := h.getNodeInfo(ctx, nodeID)
 	if err != nil {
 		return nil, fmt.Errorf("call ControllerGetNodeInfo: %w", err)
 	}
@@ -257,6 +266,16 @@ func (h *nodeCSIHandler) queryNodeInfo(ctx context.Context, logger klog.Logger, 
 	return nodeInfo, nil
 }
 
+// getNodeInfo calls ControllerGetNodeInfo, bounded by the configured node timeout.
+func (h *nodeCSIHandler) getNodeInfo(ctx context.Context, nodeID string) (*csi.ControllerGetNodeInfoResponse, error) {
+	if h.timeout > 0 {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, h.timeout)
+		defer cancel()
+	}
+	return h.provider.GetNodeInfo(ctx, nodeID)
+}
+
 // Gather all the external-attacher managed volumes.
 func (h *nodeCSIHandler) getManagedVolumes(logger klog.Logger, nodeName, nodeID string) (sets.Set[string], error) {
 	vas, err := h.vaIndexer.ByTypedIndex(VA_NODE_NAME_INDEX, h.vaNodeNameIndexKey(nodeName))
@@ -269,15 +288,10 @@ func (h *nodeCSIHandler) getManagedVolumes(logger klog.Logger, nodeName, nodeID 
 		if err != nil {
 			return nil, fmt.Errorf("resolve source for VA %q: %w", va.Name, err)
 		}
-		csiSource := src.spec.CSI
-		handle := csiSource.VolumeHandle
-		if src.migrated {
-			repaired, err := h.resolver.repairVolumeHandle(csiSource, nodeID)
-			if err != nil {
-				logger.Error(err, "Failed to repair volume handle", "volumeHandle", csiSource.VolumeHandle)
-			} else {
-				handle = repaired
-			}
+		handle, err := h.resolver.attachedVolumeID(src, nodeID)
+		if err != nil {
+			logger.Error(err, "Failed to repair volume handle", "volumeHandle", src.spec.CSI.VolumeHandle)
+			handle = src.spec.CSI.VolumeHandle
 		}
 		csiVolumes.Insert(handle)
 	}
