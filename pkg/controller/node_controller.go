@@ -70,6 +70,9 @@ type NodeController struct {
 	stateMu      sync.Mutex    // protects updatePeriod and state
 	updatePeriod time.Duration // zero if update is disabled
 	state        map[string]nodeState
+
+	// randN returns a random duration in [0, n). Overridden in tests.
+	randN func(n time.Duration) time.Duration
 }
 
 // NewNodeController returns a new *CSINodeController
@@ -90,6 +93,7 @@ func NewNodeController(
 		csiNodeSynced:     csiNodeInformer.TypedInformer().HasSynced,
 		csiDriverInformer: csiDriverInformer.TypedInformer(),
 		state:             map[string]nodeState{},
+		randN:             rand.N[time.Duration],
 		nodeQueue: workqueue.NewTypedRateLimitingQueueWithConfig(nodeRateLimiter,
 			workqueue.TypedRateLimitingQueueConfig[string]{Name: "csi-attacher-node"}),
 	}
@@ -167,15 +171,24 @@ func (ctrl *NodeController) syncNode(ctx context.Context) {
 	ctx = klog.NewContext(ctx, logger)
 	logger.V(4).Info("Started Node processing")
 
+	now := time.Now()
 	ctrl.stateMu.Lock()
 	state := ctrl.state[nodeName]
 	requests := state.requests
 	state.requests = nil
 	ctrl.state[nodeName] = state
+	// Refreshes are driven by the periodic schedule, or by an explicit request.
+	// A zero scheduledAt means no refresh was scheduled for this node yet: either it
+	// is pending registration, which SyncNode installs anyway, or it comes back to
+	// this flow after its state was dropped, e.g. the feature was re-enabled with a
+	// Spec.Drivers entry published by kubelet. That entry is not stale: with periodic
+	// updates enabled, kubelet refreshes it while the driver is in the node-side flow,
+	// and the first controller-side update is scheduled with a random offset (see
+	// [syncNode]), which keeps the expected interval between two updates at
+	// updatePeriod across the handover. Without periodic updates nothing is refreshed.
+	due := !state.scheduledAt.IsZero() && !state.scheduledAt.After(now)
+	refresh := ctrl.updatePeriod > 0 && (due || requests != nil)
 	ctrl.stateMu.Unlock()
-
-	now := time.Now()
-	refresh := now.After(state.scheduledAt) || requests != nil
 
 	managed, err := ctrl.processNode(ctx, nodeName, refresh)
 	for _, r := range requests {
@@ -199,13 +212,13 @@ func (ctrl *NodeController) syncNode(ctx context.Context) {
 		delete(ctrl.state, nodeName)
 	} else {
 		if state.scheduledAt.IsZero() {
-			// For the first update, use a random period in [0, updatePeriod) to distribute them uniformly.
-			// Expectation is updatePeriod/2, shorter but consisitent with [syncUpdatePeriod].
-			// bring cluster load to steady state immediately
-			state.scheduledAt = now.Add(rand.N(ctrl.updatePeriod))
+			// A node installed now (not at startup, those are spread by
+			// [syncUpdatePeriod]) gets a random offset within the period.
+			state.scheduledAt = now.Add(ctrl.randN(ctrl.updatePeriod))
 		} else {
-			// Add a small jitter to keep update spreaded.
-			state.scheduledAt = now.Add(ctrl.updatePeriod + rand.N(ctrl.updatePeriod/25))
+			// A small jitter keeps the nodes from staying in lockstep with the
+			// slots they were given at startup.
+			state.scheduledAt = now.Add(ctrl.updatePeriod + ctrl.randN(ctrl.updatePeriod/25))
 		}
 		ctrl.state[nodeName] = state
 		duration := time.Until(state.scheduledAt)
