@@ -39,10 +39,10 @@ import (
 )
 
 type NodeInfoHandler interface {
-	// HasSynced reports whether the informer caches the handler reads are populated.
-	// SyncNode must not run before that, otherwise it works on a partial view
-	// and can compute a wrong node allocatable count.
-	HasSynced() bool
+	// HasSyncedCheckers returns the activities that must be done before
+	// SyncNode may be called, typically the informers whose data it reads.
+	HasSyncedCheckers() []cache.DoneChecker
+
 	// SyncNode installs or refreshes the driver's CSINode.Spec.Drivers entry and node labels.
 	// nodeID is the value from csiNode.Spec.DriverRegistrations for this driver;
 	// the caller guarantees the registration exists.
@@ -64,12 +64,15 @@ type NodeController struct {
 	handler           NodeInfoHandler
 	recorder          record.EventRecorder
 	csiNodeLister     storagelisters.CSINodeLister
-	csiNodeSynced     cache.InformerSynced
+	csiNodeSynced     cache.DoneChecker
 	csiDriverInformer storageinformers.CSIDriverIndexInformer
 
 	stateMu      sync.Mutex    // protects updatePeriod and state
 	updatePeriod time.Duration // zero if update is disabled
 	state        map[string]nodeState
+
+	// randN returns a random duration in [0, n). Overridden in tests.
+	randN func(n time.Duration) time.Duration
 }
 
 // NewNodeController returns a new *CSINodeController
@@ -87,9 +90,10 @@ func NewNodeController(
 		handler:           handler,
 		recorder:          recorder,
 		csiNodeLister:     csiNodeInformer.Lister(),
-		csiNodeSynced:     csiNodeInformer.TypedInformer().HasSynced,
+		csiNodeSynced:     csiNodeInformer.TypedInformer().HasSyncedChecker(),
 		csiDriverInformer: csiDriverInformer.TypedInformer(),
 		state:             map[string]nodeState{},
+		randN:             rand.N[time.Duration],
 		nodeQueue: workqueue.NewTypedRateLimitingQueueWithConfig(nodeRateLimiter,
 			workqueue.TypedRateLimitingQueueConfig[string]{Name: "csi-attacher-node"}),
 	}
@@ -115,7 +119,7 @@ func (ctrl *NodeController) Run(ctx context.Context, workers int) {
 	logger.Info("Starting CSI attacher node controller")
 	defer logger.Info("Shutting CSI attacher node controller")
 
-	if !cache.WaitForCacheSync(ctx.Done(), ctrl.csiNodeSynced) {
+	if !cache.WaitFor(ctx, "node-controller csi-node cache", ctrl.csiNodeSynced) {
 		logger.Error(nil, "Cannot sync caches")
 		return
 	}
@@ -143,7 +147,8 @@ func (ctrl *NodeController) Run(ctx context.Context, workers int) {
 	}
 
 	// Wait for the initial update scheduled, and the caches read by the handler.
-	if !cache.WaitForCacheSync(ctx.Done(), csiDriverHandler.HasSynced, ctrl.handler.HasSynced) {
+	checkers := append([]cache.DoneChecker{csiDriverHandler.HasSyncedChecker()}, ctrl.handler.HasSyncedCheckers()...)
+	if !cache.WaitFor(ctx, "node-controller cache and events", checkers...) {
 		logger.Error(nil, "Cannot sync caches")
 		return
 	}
@@ -184,7 +189,7 @@ func (ctrl *NodeController) syncNode(ctx context.Context) {
 	}
 
 	if err != nil {
-		logger.V(1).Error(err, "Error sync Node")
+		logger.V(2).Info("Error syncing node", "err", err)
 		ctrl.nodeQueue.AddRateLimited(nodeName)
 		return
 	}
@@ -202,10 +207,10 @@ func (ctrl *NodeController) syncNode(ctx context.Context) {
 		if state.scheduledAt.IsZero() {
 			// A new node arrived: either a newly joined node, or a node migrated from node-side flow.
 			// Start from random [0, updatePeriod) for the same reason as [syncUpdatePeriod]
-			state.scheduledAt = now.Add(rand.N(ctrl.updatePeriod))
+			state.scheduledAt = now.Add(ctrl.randN(ctrl.updatePeriod))
 		} else {
 			// A small jitter keeps the nodes from staying in lockstep.
-			state.scheduledAt = now.Add(ctrl.updatePeriod + rand.N(ctrl.updatePeriod/25))
+			state.scheduledAt = now.Add(ctrl.updatePeriod + ctrl.randN(ctrl.updatePeriod/25))
 		}
 		ctrl.state[nodeName] = state
 		duration := time.Until(state.scheduledAt)

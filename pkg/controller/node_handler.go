@@ -57,7 +57,7 @@ type nodeCSIHandler struct {
 
 	resolver  volumeSourceResolver
 	vaIndexer cache.TypedIndexer[*storagev1.VolumeAttachment]
-	synced    []cache.InformerSynced
+	synced    []cache.DoneChecker
 
 	processingVolumes sync.Map // map[string]*lockedSet
 }
@@ -92,7 +92,7 @@ func NewNodeCSIHandler(
 		recorder:   recorder,
 		timeout:    timeout,
 		vaIndexer:  vaInformer.GetTypedIndexer(),
-		synced:     []cache.InformerSynced{vaInformer.HasSynced, pvInformer.Informer().HasSynced},
+		synced:     []cache.DoneChecker{vaInformer.HasSyncedChecker(), pvInformer.Informer().HasSyncedChecker()},
 		resolver: volumeSourceResolver{
 			pvLister:   pvInformer.Lister(),
 			translator: translator,
@@ -106,13 +106,8 @@ func (h *nodeCSIHandler) vaNodeNameIndexKey(nodeName string) string {
 	return h.driverName + "/" + nodeName
 }
 
-func (h *nodeCSIHandler) HasSynced() bool {
-	for _, synced := range h.synced {
-		if !synced() {
-			return false
-		}
-	}
-	return true
+func (h *nodeCSIHandler) HasSyncedCheckers() []cache.DoneChecker {
+	return h.synced
 }
 
 func (h *nodeCSIHandler) SyncNode(ctx context.Context, csiNode *storagev1.CSINode, nodeID string, refresh bool) error {
@@ -310,7 +305,7 @@ func (h *nodeCSIHandler) RecordProcessing(nodeID, volumeID string) {
 
 type NodeFailingHandler struct{ Err error }
 
-func (h NodeFailingHandler) HasSynced() bool { return true }
+func (h NodeFailingHandler) HasSyncedCheckers() []cache.DoneChecker { return nil }
 
 func (h NodeFailingHandler) SyncNode(ctx context.Context, csiNode *storagev1.CSINode, nodeID string, refresh bool) error {
 	return h.Err
