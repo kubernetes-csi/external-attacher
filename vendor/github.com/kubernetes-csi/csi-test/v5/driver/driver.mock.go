@@ -152,6 +152,21 @@ func (mr *MockControllerServerMockRecorder) ControllerGetCapabilities(arg0, arg1
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ControllerGetCapabilities", reflect.TypeOf((*MockControllerServer)(nil).ControllerGetCapabilities), arg0, arg1)
 }
 
+// ControllerGetNodeInfo mocks base method.
+func (m *MockControllerServer) ControllerGetNodeInfo(arg0 context.Context, arg1 *csi.ControllerGetNodeInfoRequest) (*csi.ControllerGetNodeInfoResponse, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "ControllerGetNodeInfo", arg0, arg1)
+	ret0, _ := ret[0].(*csi.ControllerGetNodeInfoResponse)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// ControllerGetNodeInfo indicates an expected call of ControllerGetNodeInfo.
+func (mr *MockControllerServerMockRecorder) ControllerGetNodeInfo(arg0, arg1 any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ControllerGetNodeInfo", reflect.TypeOf((*MockControllerServer)(nil).ControllerGetNodeInfo), arg0, arg1)
+}
+
 // ControllerGetVolume mocks base method.
 func (m *MockControllerServer) ControllerGetVolume(arg0 context.Context, arg1 *csi.ControllerGetVolumeRequest) (*csi.ControllerGetVolumeResponse, error) {
 	m.ctrl.T.Helper()
