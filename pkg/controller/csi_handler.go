@@ -28,6 +28,7 @@ import (
 	"github.com/kubernetes-csi/csi-lib-utils/connection"
 	"github.com/kubernetes-csi/external-attacher/v4/pkg/attacher"
 	"github.com/kubernetes-csi/external-attacher/v4/pkg/features"
+	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	v1 "k8s.io/api/core/v1"
 	storage "k8s.io/api/storage/v1"
@@ -58,6 +59,19 @@ type VolumeLister interface {
 
 var _ VolumeLister = &attacher.CSIVolumeLister{}
 
+// VolumeProcessingRecorder is notified about volumes that are being attached or
+// detached. A volume reported this way is classified as CSI-managed by a
+// concurrent ControllerGetNodeInfo, which closes the race between the driver's
+// view of the attachments and the VolumeAttachments seen by the CO.
+type VolumeProcessingRecorder interface {
+	RecordProcessing(nodeID, volumeID string)
+}
+
+// NodeInfoRefresher triggers an immediate ControllerGetNodeInfo call.
+type NodeInfoRefresher interface {
+	RequestUpdate(ctx context.Context, nodeName string) error
+}
+
 // csiHandler is a handler that calls CSI to attach/detach volume.
 // It adds finalizer to VolumeAttachment instance to make sure they're detached
 // before deletion.
@@ -66,7 +80,6 @@ type csiHandler struct {
 	attacherName                  string
 	attacher                      attacher.Attacher
 	CSIVolumeLister               VolumeLister
-	pvLister                      corelisters.PersistentVolumeLister
 	csiNodeLister                 storagelisters.CSINodeLister
 	vaLister                      storagelisters.VolumeAttachmentLister
 	vaQueue, pvQueue              workqueue.TypedRateLimitingInterface[string]
@@ -75,8 +88,10 @@ type csiHandler struct {
 	timeout                       time.Duration
 	supportsPublishReadOnly       bool
 	supportsSingleNodeMultiWriter bool
-	translator                    AttacherCSITranslator
+	resolver                      volumeSourceResolver
 	defaultFSType                 string
+	nodeInfoRecorder              VolumeProcessingRecorder
+	nodeInfoRefresher             NodeInfoRefresher
 }
 
 var _ Handler = &csiHandler{}
@@ -94,29 +109,97 @@ func NewCSIHandler(
 	supportsPublishReadOnly bool,
 	supportsSingleNodeMultiWriter bool,
 	translator AttacherCSITranslator,
-	defaultFSType string) Handler {
+	defaultFSType string,
+	nodeInfoRecorder VolumeProcessingRecorder,
+	nodeInfoRefresher NodeInfoRefresher) Handler {
 
 	return &csiHandler{
 		client:                        client,
 		attacherName:                  attacherName,
 		attacher:                      attacher,
 		CSIVolumeLister:               CSIVolumeLister,
-		pvLister:                      pvLister,
 		csiNodeLister:                 csiNodeLister,
 		vaLister:                      vaLister,
 		timeout:                       *timeout,
 		supportsPublishReadOnly:       supportsPublishReadOnly,
 		supportsSingleNodeMultiWriter: supportsSingleNodeMultiWriter,
-		translator:                    translator,
 		forceSync:                     map[string]bool{},
 		forceSyncMux:                  sync.Mutex{},
 		defaultFSType:                 defaultFSType,
+		nodeInfoRecorder:              nodeInfoRecorder,
+		nodeInfoRefresher:             nodeInfoRefresher,
+		resolver: volumeSourceResolver{
+			translator: translator,
+			pvLister:   pvLister,
+		},
 	}
 }
 
 func (h *csiHandler) Init(vaQueue workqueue.TypedRateLimitingInterface[string], pvQueue workqueue.TypedRateLimitingInterface[string]) {
 	h.vaQueue = vaQueue
 	h.pvQueue = pvQueue
+}
+
+type volumeSourceResolver struct {
+	pvLister   corelisters.PersistentVolumeLister
+	translator AttacherCSITranslator
+}
+
+type volumeSource struct {
+	pv       *v1.PersistentVolume
+	spec     *v1.PersistentVolumeSpec
+	migrated bool
+}
+
+func (r volumeSourceResolver) resolve(logger klog.Logger, va *storage.VolumeAttachment) (volumeSource, error) {
+	switch {
+	case va.Spec.Source.PersistentVolumeName != nil:
+		if va.Spec.Source.InlineVolumeSpec != nil {
+			return volumeSource{}, errors.New("both InlineCSIVolumeSource and PersistentVolumeName specified in VA source")
+		}
+		pv, err := r.pvLister.Get(*va.Spec.Source.PersistentVolumeName)
+		if err != nil {
+			return volumeSource{}, err
+		}
+		src := volumeSource{pv: pv, spec: &pv.Spec}
+		if r.translator.IsPVMigratable(pv) {
+			translated, err := r.translator.TranslateInTreePVToCSI(logger, pv)
+			if err != nil {
+				return volumeSource{}, fmt.Errorf("failed to TranslateInTreePVToCSI(%v): %v", pv, err)
+			}
+			src.spec = &translated.Spec
+			src.migrated = true
+		}
+		if src.spec.CSI == nil {
+			return volumeSource{}, errors.New("pv spec contained non-csi source that was not migrated")
+		}
+		return src, nil
+	case va.Spec.Source.InlineVolumeSpec != nil:
+		if va.Spec.Source.InlineVolumeSpec.CSI == nil {
+			return volumeSource{}, errors.New("inline volume spec contains nil CSI source")
+		}
+		return volumeSource{spec: va.Spec.Source.InlineVolumeSpec, migrated: true}, nil
+	default:
+		return volumeSource{}, errors.New("neither InlineCSIVolumeSource nor PersistentVolumeName specified in VA source")
+	}
+}
+
+func (r volumeSourceResolver) repairVolumeHandle(csi *v1.CSIPersistentVolumeSource, nodeID string) (string, error) {
+	return r.translator.RepairVolumeHandle(csi.Driver, csi.VolumeHandle, nodeID)
+}
+
+// attachedVolumeID returns the volume ID the driver reports for src in ListVolumes
+// and ControllerGetNodeInfo. Migrated in-tree volumes need the handle repaired first.
+func (r volumeSourceResolver) attachedVolumeID(src volumeSource, nodeID string) (string, error) {
+	csiSource := src.spec.CSI
+	if src.migrated {
+		return r.repairVolumeHandle(csiSource, nodeID)
+	}
+	return csiSource.VolumeHandle, nil
+}
+
+func (r volumeSourceResolver) isPVMigratable(pv *v1.PersistentVolume) bool {
+	return r.translator.IsPVMigratable(pv)
 }
 
 // ReconcileVA lists volumes from the CSI Driver and reconciles the attachment
@@ -152,37 +235,18 @@ func (h *csiHandler) ReconcileVA(ctx context.Context) error {
 			logger.Error(err, "Failed to find node ID err")
 			continue
 		}
-		pvSpec, err := h.getProcessedPVSpec(ctx, va)
+		src, err := h.resolver.resolve(logger, va)
 		if err != nil {
-			logger.Error(err, "Failed to get PV Spec")
+			logger.Error(err, "Failed to resolve volume source")
 			continue
 		}
 
-		source, err := getCSISource(pvSpec)
-		if err != nil {
-			logger.Error(err, "Failed to get CSI Source")
-			continue
-		}
-
-		volumeHandle, _, err := GetVolumeHandle(source)
-		if err != nil {
-			logger.Error(err, "Failed to get volume handle")
-			continue
-		}
 		attachedStatus := va.Status.Attached
 
-		// If volume driver has corresponding in-tree plugin, generate a correct volumehandle
-		isMig, err := h.isMigratable(va)
+		volumeHandle, err := h.resolver.attachedVolumeID(src, nodeID)
 		if err != nil {
-			logger.Error(err, "Failed to check if migratable for volume handle", "volumeHandle", volumeHandle, "sourceDriver", source.Driver)
+			logger.Error(err, "Failed to repair volume handle for driver", "volumeHandle", src.spec.CSI.VolumeHandle, "sourceDriver", src.spec.CSI.Driver)
 			continue
-		}
-		if isMig {
-			volumeHandle, err = h.translator.RepairVolumeHandle(source.Driver, volumeHandle, nodeID)
-			if err != nil {
-				logger.Error(err, "Failed to repair volume handle for driver", "volumeHandle", volumeHandle, "sourceDriver", source.Driver)
-				continue
-			}
 		}
 
 		// Check whether the volume is published to this node
@@ -264,6 +328,9 @@ func (h *csiHandler) syncAttach(ctx context.Context, va *storage.VolumeAttachmen
 	logger.V(2).Info("Attaching")
 	va, metadata, err := h.csiAttach(ctx, va)
 	if err != nil {
+		if status.Code(err) == codes.ResourceExhausted {
+			h.refreshNodeInfo(ctx, logger, va.Spec.NodeName)
+		}
 		_, saveErr := h.saveAttachError(ctx, va, err)
 		if saveErr != nil {
 			// Just log it, propagate the attach error.
@@ -367,82 +434,19 @@ func (h *csiHandler) hasVAFinalizer(va *storage.VolumeAttachment) bool {
 	return slices.Contains(va.Finalizers, finalizerName)
 }
 
-// Checks if the PV (or) the inline-volume corresponding to the VA could have migrated from
-// in-tree to CSI.
-func (h *csiHandler) isMigratable(va *storage.VolumeAttachment) (bool, error) {
-	if va.Spec.Source.PersistentVolumeName != nil {
-		pv, err := h.pvLister.Get(*va.Spec.Source.PersistentVolumeName)
-		if err != nil {
-			return false, err
-		}
-		return h.translator.IsPVMigratable(pv), nil
-	} else if va.Spec.Source.InlineVolumeSpec != nil {
-		if va.Spec.Source.InlineVolumeSpec.CSI == nil {
-			return false, errors.New("inline volume spec contains nil CSI source")
-		}
-		return true, nil
-	} else {
-		return false, nil
-	}
-}
-
-func getCSISource(pvSpec *v1.PersistentVolumeSpec) (*v1.CSIPersistentVolumeSource, error) {
-	if pvSpec == nil {
-		return nil, errors.New("could not get CSI source, pv spec was nil")
-	}
-	if pvSpec.CSI != nil {
-		return pvSpec.CSI, nil
-	}
-	return nil, errors.New("pv spec contained non-csi source that was not migrated")
-}
-
-func (h *csiHandler) getProcessedPVSpec(ctx context.Context, va *storage.VolumeAttachment) (*v1.PersistentVolumeSpec, error) {
-	logger := klog.FromContext(ctx)
-	logger.V(4).Info("Starting processing PVSpec operation")
-
-	if va.Spec.Source.PersistentVolumeName != nil {
-		if va.Spec.Source.InlineVolumeSpec != nil {
-			return nil, errors.New("both InlineCSIVolumeSource and PersistentVolumeName specified in VA source")
-		}
-		pv, err := h.pvLister.Get(*va.Spec.Source.PersistentVolumeName)
-		if err != nil {
-			return nil, err
-		}
-		if h.translator.IsPVMigratable(pv) {
-			pv, err = h.translator.TranslateInTreePVToCSI(logger, pv)
-			if err != nil {
-				return nil, fmt.Errorf("failed to TranslateInTreePVToCSI(%v): %v", pv, err)
-			}
-		}
-		return &pv.Spec, nil
-	} else if va.Spec.Source.InlineVolumeSpec != nil {
-		if va.Spec.Source.InlineVolumeSpec.CSI == nil {
-			return nil, errors.New("inline volume spec contains nil CSI source")
-		}
-
-		return va.Spec.Source.InlineVolumeSpec, nil
-	} else {
-		return nil, errors.New("neither InlineCSIVolumeSource nor PersistentVolumeName specified in VA source")
-	}
-}
-
 func (h *csiHandler) csiAttach(ctx context.Context, va *storage.VolumeAttachment) (*storage.VolumeAttachment, map[string]string, error) {
 	logger := klog.FromContext(ctx)
 	logger.V(4).Info("Starting attach operation")
 	// Check as much as possible before adding VA finalizer - it would block
 	// deletion of VA on error.
 
-	var csiSource *v1.CSIPersistentVolumeSource
-	var pvSpec *v1.PersistentVolumeSpec
-	var migratable bool
-	if va.Spec.Source.PersistentVolumeName != nil {
-		if va.Spec.Source.InlineVolumeSpec != nil {
-			return va, nil, errors.New("both InlineCSIVolumeSource and PersistentVolumeName specified in VA source")
-		}
-		pv, err := h.pvLister.Get(*va.Spec.Source.PersistentVolumeName)
-		if err != nil {
-			return va, nil, err
-		}
+	src, err := h.resolver.resolve(logger, va)
+	if err != nil {
+		return va, nil, err
+	}
+
+	if src.pv != nil {
+		pv := src.pv
 		// Refuse to attach volumes that are marked for deletion.
 		if pv.DeletionTimestamp != nil {
 			return va, nil, fmt.Errorf("PersistentVolume %q is marked for deletion", pv.Name)
@@ -451,51 +455,17 @@ func (h *csiHandler) csiAttach(ctx context.Context, va *storage.VolumeAttachment
 		if err != nil {
 			return va, nil, fmt.Errorf("could not add PersistentVolume finalizer: %s", err)
 		}
-
-		if h.translator.IsPVMigratable(pv) {
-			pv, err = h.translator.TranslateInTreePVToCSI(logger, pv)
-			if err != nil {
-				return va, nil, fmt.Errorf("failed to translate in tree pv to CSI: %v", err)
-			}
-			migratable = true
-		}
-
-		// Both csiSource and pvSpec could be translated here if the PV was
-		// migrated
-		csiSource, err = getCSISource(&pv.Spec)
-		if err != nil {
-			return va, nil, err
-		}
-
-		pvSpec = &pv.Spec
-	} else if va.Spec.Source.InlineVolumeSpec != nil {
-		if va.Spec.Source.InlineVolumeSpec.CSI != nil {
-			csiSource = va.Spec.Source.InlineVolumeSpec.CSI
-		} else {
-			return va, nil, errors.New("inline volume spec contains nil CSI source")
-		}
-
-		pvSpec = va.Spec.Source.InlineVolumeSpec
-	} else {
-		return va, nil, errors.New("neither InlineCSIVolumeSource nor PersistentVolumeName specified in VA source")
 	}
 
-	attributes, err := GetVolumeAttributes(csiSource)
-	if err != nil {
-		return va, nil, err
-	}
-
-	volumeHandle, readOnly, err := GetVolumeHandle(csiSource)
-	if err != nil {
-		return va, nil, err
-	}
+	csiSource := src.spec.CSI
+	readOnly := csiSource.ReadOnly
 	if !h.supportsPublishReadOnly {
 		// "CO MUST set this field to false if SP does not have the
 		// PUBLISH_READONLY controller capability"
 		readOnly = false
 	}
 
-	volumeCapabilities, err := GetVolumeCapabilities(logger, pvSpec, h.supportsSingleNodeMultiWriter, h.defaultFSType)
+	volumeCapabilities, err := GetVolumeCapabilities(logger, src.spec, h.supportsSingleNodeMultiWriter, h.defaultFSType)
 	if err != nil {
 		return va, nil, err
 	}
@@ -520,12 +490,14 @@ func (h *csiHandler) csiAttach(ctx context.Context, va *storage.VolumeAttachment
 		}
 	}
 
+	h.recordProcessing(logger, src, nodeID)
+
 	ctx, cancel := context.WithTimeout(ctx, h.timeout)
-	ctx = markAsMigrated(ctx, migratable)
+	ctx = markAsMigrated(ctx, src.migrated)
 	defer cancel()
 	// We're not interested in `detached` return value, the controller will
 	// issue Detach to be sure the volume is really detached.
-	publishInfo, _, err := h.attacher.Attach(ctx, volumeHandle, readOnly, nodeID, volumeCapabilities, attributes, secrets)
+	publishInfo, _, err := h.attacher.Attach(ctx, csiSource.VolumeHandle, readOnly, nodeID, volumeCapabilities, csiSource.VolumeAttributes, secrets)
 	if err != nil {
 		return va, nil, err
 	}
@@ -537,41 +509,12 @@ func (h *csiHandler) csiDetach(ctx context.Context, va *storage.VolumeAttachment
 	logger := klog.FromContext(ctx)
 	logger.V(4).Info("Starting detach operation")
 
-	var csiSource *v1.CSIPersistentVolumeSource
-	var migratable bool
-	if va.Spec.Source.PersistentVolumeName != nil {
-		if va.Spec.Source.InlineVolumeSpec != nil {
-			return va, errors.New("both InlineCSIVolumeSource and PersistentVolumeName specified in VA source")
-		}
-		pv, err := h.pvLister.Get(*va.Spec.Source.PersistentVolumeName)
-		if err != nil {
-			return va, err
-		}
-		if h.translator.IsPVMigratable(pv) {
-			pv, err = h.translator.TranslateInTreePVToCSI(logger, pv)
-			if err != nil {
-				return va, fmt.Errorf("failed to translate in tree pv to CSI: %v", err)
-			}
-			migratable = true
-		}
-		csiSource, err = getCSISource(&pv.Spec)
-		if err != nil {
-			return va, err
-		}
-	} else if va.Spec.Source.InlineVolumeSpec != nil {
-		if va.Spec.Source.InlineVolumeSpec.CSI != nil {
-			csiSource = va.Spec.Source.InlineVolumeSpec.CSI
-		} else {
-			return va, errors.New("inline volume spec contains nil CSI source")
-		}
-	} else {
-		return va, errors.New("neither InlineCSIVolumeSource nor PersistentVolumeName specified in VA source")
-	}
-
-	volumeHandle, _, err := GetVolumeHandle(csiSource)
+	src, err := h.resolver.resolve(logger, va)
 	if err != nil {
 		return va, err
 	}
+	csiSource := src.spec.CSI
+
 	secrets, err := h.getCredentialsFromPV(ctx, csiSource)
 	if err != nil {
 		return va, err
@@ -582,10 +525,12 @@ func (h *csiHandler) csiDetach(ctx context.Context, va *storage.VolumeAttachment
 		return va, err
 	}
 
+	h.recordProcessing(logger, src, nodeID)
+
 	ctx, cancel := context.WithTimeout(ctx, h.timeout)
-	ctx = markAsMigrated(ctx, migratable)
+	ctx = markAsMigrated(ctx, src.migrated)
 	defer cancel()
-	err = h.attacher.Detach(ctx, volumeHandle, nodeID, secrets)
+	err = h.attacher.Detach(ctx, csiSource.VolumeHandle, nodeID, secrets)
 	if err != nil {
 		// The volume may not be fully detached. Save the error and try again
 		// after backoff.
@@ -598,6 +543,38 @@ func (h *csiHandler) csiDetach(ctx context.Context, va *storage.VolumeAttachment
 	}
 
 	return va, nil
+}
+
+// recordProcessing lets a concurrent ControllerGetNodeInfo see the volume as
+// CSI-managed while it is being attached or detached.
+func (h *csiHandler) recordProcessing(logger klog.Logger, src volumeSource, nodeID string) {
+	if h.nodeInfoRecorder == nil {
+		return
+	}
+	volumeID, err := h.resolver.attachedVolumeID(src, nodeID)
+	if err != nil {
+		logger.Error(err, "Failed to repair volume handle for driver", "volumeHandle", src.spec.CSI.VolumeHandle, "sourceDriver", src.spec.CSI.Driver)
+		return
+	}
+	h.nodeInfoRecorder.RecordProcessing(nodeID, volumeID)
+}
+
+// refreshNodeInfo refreshes the node allocatable count before the attach error is
+// reported, so it is saved against the corrected count. Best effort only: the
+// attach error must be reported even if the refresh fails.
+func (h *csiHandler) refreshNodeInfo(ctx context.Context, logger klog.Logger, nodeName string) {
+	if h.nodeInfoRefresher == nil {
+		return
+	}
+	// Bounded by the CSI call timeout rather than the node timeout: waiting for the
+	// whole node info update here would block a VolumeAttachment worker for as long as
+	// --node-timeout allows. If this gives up first, the attach error is reported as
+	// usual and the corrected count is published when the update finishes.
+	ctx, cancel := context.WithTimeout(ctx, h.timeout)
+	defer cancel()
+	if err := h.nodeInfoRefresher.RequestUpdate(ctx, nodeName); err != nil {
+		logger.V(2).Info("Failed to refresh node allocatable count", "nodeName", nodeName, "err", err)
+	}
 }
 
 func (h *csiHandler) saveAttachError(ctx context.Context, va *storage.VolumeAttachment, err error) (*storage.VolumeAttachment, error) {
@@ -653,7 +630,7 @@ func (h *csiHandler) SyncNewOrUpdatedPersistentVolume(ctx context.Context, pv *v
 
 		// if the PV is migrated this means CSIMigration is disabled so we need to remove the finalizer
 		// to give back the control of the PV to Kube-Controller-Manager
-		if h.translator.IsPVMigratable(pv) {
+		if h.resolver.isPVMigratable(pv) {
 			ignore = false
 			if ann := pv.Annotations; ann != nil {
 				if migratedToDriver := ann[annMigratedTo]; migratedToDriver == h.attacherName {

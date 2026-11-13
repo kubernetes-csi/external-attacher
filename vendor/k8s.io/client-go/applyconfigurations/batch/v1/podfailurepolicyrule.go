@@ -28,7 +28,7 @@ import (
 // PodFailurePolicyRule describes how a pod failure is handled when the requirements are met.
 // One of onExitCodes and onPodConditions, but not both, can be used in each rule.
 type PodFailurePolicyRuleApplyConfiguration struct {
-	// Specifies the action taken on a pod failure when the requirements are satisfied.
+	// action specifies the action taken on a pod failure when the requirements are satisfied.
 	// Possible values are:
 	//
 	// - FailJob: indicates that the pod's job is marked as Failed and all
@@ -42,12 +42,22 @@ type PodFailurePolicyRuleApplyConfiguration struct {
 	// Additional values are considered to be added in the future. Clients should
 	// react to an unknown action by skipping the rule.
 	Action *batchv1.PodFailurePolicyAction `json:"action,omitempty"`
-	// Represents the requirement on the container exit codes.
+	// onExitCodes represents the requirement on the container exit codes.
 	OnExitCodes *PodFailurePolicyOnExitCodesRequirementApplyConfiguration `json:"onExitCodes,omitempty"`
-	// Represents the requirement on the pod conditions. The requirement is represented
+	// onPodConditions represents the requirement on the pod conditions. The requirement is represented
 	// as a list of pod condition patterns. The requirement is satisfied if at
 	// least one pattern matches an actual pod condition. At most 20 elements are allowed.
 	OnPodConditions []PodFailurePolicyOnPodConditionsPatternApplyConfiguration `json:"onPodConditions,omitempty"`
+	// name of the pod failure policy rule. When a rule with the FailJob action
+	// fails the Job, its name is included in the Job failure condition message.
+	// The condition reason remains PodFailurePolicy. Unnamed rules are identified
+	// by their zero-based index in the message.
+	// The name must be a non-empty DNS label of at most 63 characters, containing
+	// only lowercase alphanumeric characters or hyphens, starting and ending with
+	// an alphanumeric character, and must be unique within the Job.
+	// This field is alpha-level and is only honored by servers that enable the
+	// PodFailurePolicyName feature gate.
+	Name *string `json:"name,omitempty"`
 }
 
 // PodFailurePolicyRuleApplyConfiguration constructs a declarative configuration of the PodFailurePolicyRule type for use with
@@ -82,5 +92,13 @@ func (b *PodFailurePolicyRuleApplyConfiguration) WithOnPodConditions(values ...*
 		}
 		b.OnPodConditions = append(b.OnPodConditions, *values[i])
 	}
+	return b
+}
+
+// WithName sets the Name field in the declarative configuration to the given value
+// and returns the receiver, so that objects can be built by chaining "With" function invocations.
+// If called multiple times, the Name field is set to the value of the last call.
+func (b *PodFailurePolicyRuleApplyConfiguration) WithName(value string) *PodFailurePolicyRuleApplyConfiguration {
+	b.Name = &value
 	return b
 }

@@ -20,6 +20,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
+	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -39,10 +42,15 @@ import (
 	utilfeature "k8s.io/apiserver/pkg/util/feature"
 	"k8s.io/client-go/informers"
 	"k8s.io/client-go/kubernetes"
+	"k8s.io/client-go/kubernetes/fake"
+	corelisters "k8s.io/client-go/listers/core/v1"
 	core "k8s.io/client-go/testing"
+	"k8s.io/client-go/tools/cache"
+	"k8s.io/client-go/util/workqueue"
 	featuregatetesting "k8s.io/component-base/featuregate/testing"
 	csitranslator "k8s.io/csi-translation-lib"
 	"k8s.io/klog/v2"
+	"k8s.io/klog/v2/ktesting"
 	_ "k8s.io/klog/v2/ktesting/init"
 )
 
@@ -75,6 +83,8 @@ func csiHandlerFactory(client kubernetes.Interface, informerFactory informers.Sh
 		false, /* does not support SINGLE_NODE_MULTI_WRITER access mode */
 		csitranslator.New(),
 		defaultFSType,
+		nil, /* no ControllerGetNodeInfo integration */
+		nil,
 	)
 }
 
@@ -92,6 +102,8 @@ func csiHandlerFactoryNoReadOnly(client kubernetes.Interface, informerFactory in
 		false, /* does not support SINGLE_NODE_MULTI_WRITER access mode */
 		csitranslator.New(),
 		defaultFSType,
+		nil, /* no ControllerGetNodeInfo integration */
+		nil,
 	)
 }
 
@@ -225,6 +237,12 @@ func csiNode() *storage.CSINode {
 			},
 		},
 	}
+}
+
+func csiNodeWithNodeID(nodeID string) *storage.CSINode {
+	node := csiNode()
+	node.Spec.Drivers[0].NodeID = nodeID
+	return node
 }
 
 func csiNodeEmpty() *storage.CSINode {
@@ -1469,6 +1487,239 @@ func TestVolumeAttachmentWithErrorCode(t *testing.T) {
 	runTests(t, csiHandlerFactory, []testCase{test})
 }
 
+func TestCSIHandlerRecordsProcessing(t *testing.T) {
+	nodeInfo := &fakeNodeInfo{}
+	// The handler factory resets nodeInfo, so each case starts from an empty record.
+	expectProcessing := func(want ...string) func(*testing.T, testCase) {
+		return func(t *testing.T, _ testCase) {
+			if !slices.Equal(nodeInfo.recorded, want) {
+				t.Errorf("recorded volume operations: want %v, got %v", want, nodeInfo.recorded)
+			}
+		}
+	}
+
+	vaGroupResourceVersion := schema.GroupVersionResource{
+		Group:    storage.GroupName,
+		Version:  "v1",
+		Resource: "volumeattachments",
+	}
+
+	var noMetadata map[string]string
+	var noAttrs map[string]string
+	var noSecrets map[string]string
+	var success error
+	var notDetached = false
+	var readWrite = false
+	const gceNodeID = "projects/test-project/zones/testZone/instances/test-node"
+	gceAnn := map[string]string{vaNodeIDAnnotation: gceNodeID}
+
+	tests := []testCase{
+		{
+			name:           "attach of a CSI volume",
+			initialObjects: []runtime.Object{pvWithFinalizer(), csiNode()},
+			addedVA:        va(false, "", nil),
+			expectedActions: []core.Action{
+				core.NewPatchAction(vaGroupResourceVersion, metav1.NamespaceNone, testPVName+"-"+testNodeName,
+					types.MergePatchType, patch(va(false, "", nil), va(false, fin, ann))),
+				core.NewPatchSubresourceAction(vaGroupResourceVersion, metav1.NamespaceNone, testPVName+"-"+testNodeName,
+					types.MergePatchType, patch(va(false, fin, ann), va(true, fin, ann)), "status"),
+			},
+			expectedCSICalls: []csiCall{
+				{"attach", testVolumeHandle, testNodeID, noAttrs, noSecrets, readWrite, success, notDetached, noMetadata, 0},
+			},
+			additionalCheck: expectProcessing(testNodeID + "/" + testVolumeHandle),
+		},
+		{
+			name:           "detach of a CSI volume",
+			initialObjects: []runtime.Object{pvWithFinalizer(), csiNode()},
+			addedVA:        deleted(va(true, fin, ann)),
+			expectedActions: []core.Action{
+				core.NewPatchAction(vaGroupResourceVersion, metav1.NamespaceNone, testPVName+"-"+testNodeName,
+					types.MergePatchType, patch(deleted(va(true, fin, ann)), deleted(va(true, "", ann)))),
+				core.NewPatchSubresourceAction(vaGroupResourceVersion, metav1.NamespaceNone, testPVName+"-"+testNodeName,
+					types.MergePatchType, patch(deleted(va(true, "", ann)), deleted(va(false, "", ann))), "status"),
+			},
+			expectedCSICalls: []csiCall{
+				{"detach", testVolumeHandle, testNodeID, noAttrs, noSecrets, readWrite, success, false, noMetadata, 0},
+			},
+			additionalCheck: expectProcessing(testNodeID + "/" + testVolumeHandle),
+		},
+		{
+			// The driver knows the volume by the repaired handle, so that is what it
+			// reports in ControllerGetNodeInfo.
+			name:           "attach of a migrated in-tree volume",
+			initialObjects: []runtime.Object{pvWithFinalizers(gcePDPV(), fin), csiNodeWithNodeID(gceNodeID)},
+			addedVA:        va(false, "", nil),
+			expectedActions: []core.Action{
+				core.NewPatchAction(vaGroupResourceVersion, metav1.NamespaceNone, testPVName+"-"+testNodeName,
+					types.MergePatchType, patch(va(false, "", nil), va(false, fin, gceAnn))),
+				core.NewPatchSubresourceAction(vaGroupResourceVersion, metav1.NamespaceNone, testPVName+"-"+testNodeName,
+					types.MergePatchType, patch(va(false, fin, gceAnn), va(true, fin, gceAnn)), "status"),
+			},
+			expectedCSICalls: []csiCall{
+				{"attach", "projects/UNSPECIFIED/zones/testZone/disks/testpd", gceNodeID, map[string]string{"partition": ""}, noSecrets, readWrite, success, notDetached, noMetadata, 0},
+			},
+			additionalCheck: expectProcessing(gceNodeID + "/projects/test-project/zones/testZone/disks/testpd"),
+		},
+	}
+
+	runTests(t, csiHandlerFactoryWithNodeInfo(nodeInfo), tests)
+}
+
+func TestCSIHandlerNodeInfoRefresh(t *testing.T) {
+	vaGroupResourceVersion := schema.GroupVersionResource{
+		Group:    storage.GroupName,
+		Version:  "v1",
+		Resource: "volumeattachments",
+	}
+
+	var noMetadata map[string]string
+	var noAttrs map[string]string
+	var noSecrets map[string]string
+	var notDetached = false
+	var readWrite = false
+	var noError error
+	exhausted := status.Error(codes.ResourceExhausted, "mock rpc error")
+	internal := status.Error(codes.Internal, "mock rpc error")
+
+	tests := []struct {
+		name        string
+		err         error
+		refreshErr  error
+		wantRefresh bool
+	}{
+		{name: "attach success", err: noError},
+		{name: "other attach error", err: internal},
+		{name: "RESOURCE_EXHAUSTED", err: exhausted, wantRefresh: true},
+		{name: "RESOURCE_EXHAUSTED with failing refresh", err: exhausted, refreshErr: errors.New("mock refresh error"), wantRefresh: true},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			nodeInfo := &fakeNodeInfo{refreshErr: test.refreshErr}
+			tc := testCase{
+				name:           test.name,
+				initialObjects: []runtime.Object{pvWithFinalizer(), csiNode()},
+				addedVA:        va(false, "", nil),
+				expectedActions: []core.Action{
+					core.NewPatchAction(vaGroupResourceVersion, metav1.NamespaceNone, testPVName+"-"+testNodeName,
+						types.MergePatchType, patch(va(false, "", nil), va(false, fin, ann))),
+					core.NewPatchSubresourceAction(vaGroupResourceVersion, metav1.NamespaceNone, testPVName+"-"+testNodeName,
+						types.MergePatchType, patch(va(false, fin, ann), va(true, fin, ann)), "status"),
+				},
+				expectedCSICalls: []csiCall{
+					{"attach", testVolumeHandle, testNodeID, noAttrs, noSecrets, readWrite, noError, notDetached, noMetadata, 0},
+				},
+				additionalCheck: func(t *testing.T, _ testCase) {
+					if got := len(nodeInfo.refreshed); (got > 0) != test.wantRefresh {
+						t.Fatalf("node info refreshes: want %t, got %v", test.wantRefresh, nodeInfo.refreshed)
+					}
+					if !test.wantRefresh {
+						return
+					}
+					if !slices.Equal(nodeInfo.refreshed, []string{testNodeName}) {
+						t.Errorf("refreshed nodes: want %v, got %v", []string{testNodeName}, nodeInfo.refreshed)
+					}
+					// The corrected count must be published before the attach error is reported.
+					statusPatch := slices.IndexFunc(nodeInfo.client.Actions(), func(a core.Action) bool {
+						return a.GetVerb() == "patch" && a.GetSubresource() == "status"
+					})
+					if statusPatch < 0 || statusPatch < nodeInfo.actionsBeforeRefresh {
+						t.Errorf("attach error reported at action %d, not after the node info refresh (%d actions)", statusPatch, nodeInfo.actionsBeforeRefresh)
+					}
+				},
+			}
+
+			if test.err != noError {
+				withAttachError := func(va *storage.VolumeAttachment) *storage.VolumeAttachment {
+					return vaWithAttachErrorAndCode(va, test.err.Error(), status.Code(test.err))
+				}
+				// The failed attach is retried and succeeds, so the test terminates.
+				// Handler refreshes only the first attempt.
+				tc.expectedActions = []core.Action{
+					core.NewPatchAction(vaGroupResourceVersion, metav1.NamespaceNone, testPVName+"-"+testNodeName,
+						types.MergePatchType, patch(va(false, "", nil), va(false, fin, ann))),
+					core.NewPatchSubresourceAction(vaGroupResourceVersion, metav1.NamespaceNone, testPVName+"-"+testNodeName,
+						types.MergePatchType, patch(va(false, fin, ann), withAttachError(va(false, fin, ann))), "status"),
+					core.NewPatchAction(vaGroupResourceVersion, metav1.NamespaceNone, testPVName+"-"+testNodeName,
+						types.MergePatchType, patch(withAttachError(va(false, "", nil)), withAttachError(va(false, fin, ann)))),
+					core.NewPatchSubresourceAction(vaGroupResourceVersion, metav1.NamespaceNone, testPVName+"-"+testNodeName,
+						types.MergePatchType, patch(withAttachError(va(false, fin, ann)), va(true, fin, ann)), "status"),
+				}
+				tc.expectedCSICalls = []csiCall{
+					{"attach", testVolumeHandle, testNodeID, noAttrs, noSecrets, readWrite, test.err, notDetached, noMetadata, 0},
+					{"attach", testVolumeHandle, testNodeID, noAttrs, noSecrets, readWrite, noError, notDetached, noMetadata, 0},
+				}
+			}
+
+			runTests(t, csiHandlerFactoryWithNodeInfo(nodeInfo), []testCase{tc})
+		})
+	}
+}
+
+// fakeNodeInfo records how the VolumeAttachment worker uses the ControllerGetNodeInfo flow.
+type fakeNodeInfo struct {
+	mu sync.Mutex
+
+	client     *fake.Clientset
+	recorded   []string
+	refreshed  []string
+	refreshErr error
+
+	// Number of client actions issued when the last refresh was requested.
+	actionsBeforeRefresh int
+}
+
+func (f *fakeNodeInfo) RecordProcessing(nodeID, volumeID string) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.recorded = append(f.recorded, nodeID+"/"+volumeID)
+}
+
+func (f *fakeNodeInfo) RequestUpdate(_ context.Context, nodeName string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.refreshed = append(f.refreshed, nodeName)
+	if f.client != nil {
+		f.actionsBeforeRefresh = len(f.client.Actions())
+	}
+	return f.refreshErr
+}
+
+// reset prepares the fake for a new test case, which runTests starts by
+// constructing a new handler.
+func (f *fakeNodeInfo) reset(client *fake.Clientset) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.client = client
+	f.recorded = nil
+	f.refreshed = nil
+	f.actionsBeforeRefresh = 0
+}
+
+func csiHandlerFactoryWithNodeInfo(nodeInfo *fakeNodeInfo) handlerFactory {
+	return func(client kubernetes.Interface, informerFactory informers.SharedInformerFactory, csi attacher.Attacher, lister VolumeLister) Handler {
+		fakeClient, _ := client.(*fake.Clientset)
+		nodeInfo.reset(fakeClient)
+		return NewCSIHandler(
+			client,
+			testAttacherName,
+			csi,
+			lister,
+			informerFactory.Core().V1().PersistentVolumes().Lister(),
+			informerFactory.Storage().V1().CSINodes().Lister(),
+			informerFactory.Storage().V1().VolumeAttachments().Lister(),
+			&timeout,
+			true,  /* supports PUBLISH_READONLY */
+			false, /* does not support SINGLE_NODE_MULTI_WRITER access mode */
+			csitranslator.New(),
+			defaultFSType,
+			nodeInfo,
+			nodeInfo,
+		)
+	}
+}
+
 func TestCSIHandlerReconcileVA(t *testing.T) {
 	nID := map[string]string{
 		vaNodeIDAnnotation: testNodeID,
@@ -1610,4 +1861,270 @@ func TestMarkAsMigrated(t *testing.T) {
 			t.Errorf("test: %s, expected: %v, got: %v", t.Name(), "true", migrated)
 		}
 	})
+}
+
+func TestVolumeSourceResolver(t *testing.T) {
+	pvLister := func(pvs ...*v1.PersistentVolume) corelisters.PersistentVolumeLister {
+		indexer := cache.NewIndexer(cache.MetaNamespaceKeyFunc, cache.Indexers{})
+		for _, pv := range pvs {
+			if err := indexer.Add(pv); err != nil {
+				t.Fatalf("add PV to indexer: %v", err)
+			}
+		}
+		return corelisters.NewPersistentVolumeLister(indexer)
+	}
+	resolver := func(pvs ...*v1.PersistentVolume) volumeSourceResolver {
+		return volumeSourceResolver{pvLister: pvLister(pvs...), translator: csitranslator.New()}
+	}
+	inlineSpecWithoutCSI := func() *storage.VolumeAttachment {
+		va := va(false /*attached*/, "" /*finalizer*/, nil /*annotations*/)
+		va.Spec.Source.PersistentVolumeName = nil
+		va.Spec.Source.InlineVolumeSpec = &v1.PersistentVolumeSpec{}
+		return va
+	}
+	nonCSIPV := pv()
+	nonCSIPV.Spec.PersistentVolumeSource = v1.PersistentVolumeSource{
+		HostPath: &v1.HostPathVolumeSource{Path: "/tmp"},
+	}
+
+	// Handle generated by TranslateInTreePVToCSI for gcePDPV()
+	const gceHandle = "projects/UNSPECIFIED/zones/testZone/disks/testpd"
+
+	tests := []struct {
+		name         string
+		resolver     volumeSourceResolver
+		va           *storage.VolumeAttachment
+		wantPV       bool
+		wantHandle   string
+		wantMigrated bool
+		wantErr      string
+	}{
+		{
+			name:       "CSI PV",
+			resolver:   resolver(pv()),
+			va:         va(false, "", nil),
+			wantPV:     true,
+			wantHandle: testVolumeHandle,
+		},
+		{
+			name:         "migrated in-tree PV",
+			resolver:     resolver(gcePDPV()),
+			va:           va(false, "", nil),
+			wantPV:       true,
+			wantHandle:   gceHandle,
+			wantMigrated: true,
+		},
+		{
+			name:         "inline volume spec",
+			resolver:     resolver(),
+			va:           vaWithInlineSpec(va(false, "", nil)),
+			wantHandle:   testVolumeHandle,
+			wantMigrated: true,
+		},
+		{
+			name:     "inline volume spec without CSI source",
+			resolver: resolver(),
+			va:       inlineSpecWithoutCSI(),
+			wantErr:  "inline volume spec contains nil CSI source",
+		},
+		{
+			name:     "both PV and inline volume spec",
+			resolver: resolver(pv()),
+			va:       vaAddInlineSpec(va(false, "", nil)),
+			wantErr:  "both InlineCSIVolumeSource and PersistentVolumeName",
+		},
+		{
+			name:     "neither PV nor inline volume spec",
+			resolver: resolver(),
+			va:       vaWithNoPVReferenceNorInlineVolumeSpec(va(false, "", nil)),
+			wantErr:  "neither InlineCSIVolumeSource nor PersistentVolumeName",
+		},
+		{
+			name:     "PV not found",
+			resolver: resolver(),
+			va:       va(false, "", nil),
+			wantErr:  "not found",
+		},
+		{
+			name:     "PV without CSI source and not migratable",
+			resolver: resolver(nonCSIPV),
+			va:       va(false, "", nil),
+			wantErr:  "pv spec contained non-csi source that was not migrated",
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			logger, _ := ktesting.NewTestContext(t)
+			src, err := test.resolver.resolve(logger, test.va)
+
+			if test.wantErr != "" {
+				if err == nil || !strings.Contains(err.Error(), test.wantErr) {
+					t.Fatalf("expected error containing %q, got %v", test.wantErr, err)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("resolve failed: %v", err)
+			}
+			if got := src.spec.CSI.VolumeHandle; got != test.wantHandle {
+				t.Errorf("volumeHandle: want %q, got %q", test.wantHandle, got)
+			}
+			if src.migrated != test.wantMigrated {
+				t.Errorf("migrated: want %t, got %t", test.wantMigrated, src.migrated)
+			}
+			if gotPV := src.pv != nil; gotPV != test.wantPV {
+				t.Errorf("pv: want %t, got %t", test.wantPV, gotPV)
+			}
+			if src.migrated && src.pv != nil && src.pv.Spec.GCEPersistentDisk == nil {
+				t.Errorf("expected the original in-tree PV, got a translated one")
+			}
+		})
+	}
+}
+
+type recordingTranslator struct {
+	AttacherCSITranslator
+	repaired []string
+}
+
+func (r *recordingTranslator) RepairVolumeHandle(pluginName, volumeHandle, nodeID string) (string, error) {
+	r.repaired = append(r.repaired, volumeHandle)
+	return r.AttacherCSITranslator.RepairVolumeHandle(pluginName, volumeHandle, nodeID)
+}
+
+// newReconcileTestHandler returns a csiHandler that is ready for ReconcileVA,
+// with the given objects preloaded into the informer stores.
+func newReconcileTestHandler(t *testing.T, translator AttacherCSITranslator, lister VolumeLister, objects ...runtime.Object) *csiHandler {
+	t.Helper()
+	client := fake.NewSimpleClientset()
+	factory := informers.NewSharedInformerFactory(client, time.Hour)
+	pvInformer := factory.Core().V1().PersistentVolumes()
+	vaInformer := factory.Storage().V1().VolumeAttachments()
+	csiNodeInformer := factory.Storage().V1().CSINodes()
+	for _, obj := range objects {
+		var err error
+		switch obj := obj.(type) {
+		case *v1.PersistentVolume:
+			err = pvInformer.Informer().GetStore().Add(obj)
+		case *storage.VolumeAttachment:
+			err = vaInformer.Informer().GetStore().Add(obj)
+		case *storage.CSINode:
+			err = csiNodeInformer.Informer().GetStore().Add(obj)
+		default:
+			t.Fatalf("unsupported initial object type: %T", obj)
+		}
+		if err != nil {
+			t.Fatalf("add initial object: %v", err)
+		}
+	}
+
+	h := NewCSIHandler(
+		client,
+		testAttacherName,
+		nil, /* attacher is not used by ReconcileVA */
+		lister,
+		pvInformer.Lister(),
+		csiNodeInformer.Lister(),
+		vaInformer.Lister(),
+		&timeout,
+		true,  /* supports PUBLISH_READONLY */
+		false, /* does not support SINGLE_NODE_MULTI_WRITER access mode */
+		translator,
+		defaultFSType,
+		nil, /* no ControllerGetNodeInfo integration */
+		nil,
+	).(*csiHandler)
+	h.Init(workqueue.NewTypedRateLimitingQueue[string](workqueue.DefaultTypedControllerRateLimiter[string]()), nil)
+	return h
+}
+
+func TestReconcileVAMigratedVolumeHandle(t *testing.T) {
+	const (
+		gceDriver         = "pd.csi.storage.gke.io"
+		gceRawHandle      = "projects/UNSPECIFIED/zones/testZone/disks/testpd"
+		gceRepairedHandle = "projects/test-project/zones/testZone/disks/testpd"
+		gceNodeID         = "projects/test-project/zones/testZone/instances/test-node"
+	)
+	inlineVA := func() *storage.VolumeAttachment {
+		va := va(true /*attached*/, "" /*finalizer*/, nil /*annotations*/)
+		va.Spec.Source.PersistentVolumeName = nil
+		va.Spec.Source.InlineVolumeSpec = &v1.PersistentVolumeSpec{
+			AccessModes: []v1.PersistentVolumeAccessMode{v1.ReadWriteOnce},
+			PersistentVolumeSource: v1.PersistentVolumeSource{
+				CSI: &v1.CSIPersistentVolumeSource{
+					Driver:       gceDriver,
+					VolumeHandle: gceRawHandle,
+				},
+			},
+		}
+		return va
+	}
+
+	tests := []struct {
+		name string
+		// Initial objects, preloaded into the informer stores
+		objects []runtime.Object
+		// What ListVolumes reports
+		published map[string][]string
+		// Handles passed to RepairVolumeHandle
+		wantRepaired []string
+		// Whether the VA is enqueued for a forced attach/detach
+		wantForceSynced bool
+	}{
+		{
+			name:         "migrated PV is matched by the repaired volume handle",
+			objects:      []runtime.Object{va(true, "", nil), gcePDPV(), csiNodeWithNodeID(gceNodeID)},
+			published:    map[string][]string{gceRepairedHandle: {gceNodeID}},
+			wantRepaired: []string{gceRawHandle},
+		},
+		{
+			name:            "migrated PV is not matched by the unrepaired volume handle",
+			objects:         []runtime.Object{va(true, "", nil), gcePDPV(), csiNodeWithNodeID(gceNodeID)},
+			published:       map[string][]string{gceRawHandle: {gceNodeID}},
+			wantRepaired:    []string{gceRawHandle},
+			wantForceSynced: true,
+		},
+		{
+			name:      "CSI PV is never repaired",
+			objects:   []runtime.Object{va(true, "", nil), pv(), csiNode()},
+			published: map[string][]string{testVolumeHandle: {testNodeID}},
+		},
+		{
+			name:         "migrated inline volume is matched by the repaired volume handle",
+			objects:      []runtime.Object{inlineVA(), csiNodeWithNodeID(gceNodeID)},
+			published:    map[string][]string{gceRepairedHandle: {gceNodeID}},
+			wantRepaired: []string{gceRawHandle},
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			logger, ctx := ktesting.NewTestContext(t)
+			translator := &recordingTranslator{AttacherCSITranslator: csitranslator.New()}
+			lister := &fakeLister{t: t, publishedNodes: test.published}
+			h := newReconcileTestHandler(t, translator, lister, test.objects...)
+
+			if err := h.ReconcileVA(klog.NewContext(ctx, logger)); err != nil {
+				t.Fatalf("ReconcileVA failed: %v", err)
+			}
+			if !slices.Equal(translator.repaired, test.wantRepaired) {
+				t.Errorf("RepairVolumeHandle calls: want %v, got %v", test.wantRepaired, translator.repaired)
+			}
+			forceSynced := h.consumeForceSync(testPVName + "-" + testNodeName)
+			if forceSynced != test.wantForceSynced {
+				t.Errorf("forceSync: want %t, got %t", test.wantForceSynced, forceSynced)
+			}
+			if got, want := h.vaQueue.Len(), boolToInt(test.wantForceSynced); got != want {
+				t.Errorf("VA queue length: want %d, got %d", want, got)
+			}
+		})
+	}
+}
+
+func boolToInt(b bool) int {
+	if b {
+		return 1
+	}
+	return 0
 }
