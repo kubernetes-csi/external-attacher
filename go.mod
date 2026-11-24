@@ -86,3 +86,5 @@ replace (
 	k8s.io/component-base => k8s.io/component-base v0.0.0-20261113210150-fd8dd3143f25
 	k8s.io/csi-translation-lib => k8s.io/csi-translation-lib v0.0.0-20261117211613-17cd51527fc4
 )
+
+replace github.com/kubernetes-csi/csi-test/v5 => github.com/torredil/csi-test/v5 v5.0.0-20261118145208-d11770340f7f

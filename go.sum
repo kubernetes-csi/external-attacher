@@ -53,8 +53,6 @@ github.com/klauspost/compress v1.20.1 h1:T7kKElXUMXrUJ2E9QhQhxFtcK5rPyLdsGZvdbLM
 github.com/klauspost/compress v1.20.1/go.mod h1:LUdAzn7YLVvxLpc7y3V1m40wESHTgc1422pwwBSKYuI=
 github.com/kubernetes-csi/csi-lib-utils v0.25.0 h1:uPfcPBYpJ8NyGAzQLo+JWvTHAy3OMmLgCWQuFTJmkWM=
 github.com/kubernetes-csi/csi-lib-utils v0.25.0/go.mod h1:Ks9h3Iy9opBbBZyMbS85MOBxGYXbjPKYbeI2/flMhL8=
-github.com/kubernetes-csi/csi-test/v5 v5.6.0 h1:fQgB/CRoqTEAtlHwfD0Y785LjQJ/OxNGUE7AHw68VLg=
-github.com/kubernetes-csi/csi-test/v5 v5.6.0/go.mod h1:IXPOop3n6Mlco/6/3nGrE+MTOx3uXiIQVDJh3KBt/DI=
 github.com/kylelemons/godebug v1.1.0 h1:RPNrshWIDI6G2gRW9EHilWtl7Z6Sb1BR0xunSBf0SNc=
 github.com/kylelemons/godebug v1.1.0/go.mod h1:9/0rRGxNHcop5bhtWyNeEfOS8JIWk580+fNqagV/RAw=
 github.com/munnerz/goautoneg v0.0.0-20191010083416-a7dc8b61c822 h1:C3w9PqII01/Oq1c1nUAm88MOHcQC9l5mIlSMApZMrHA=
@@ -85,6 +83,8 @@ github.com/stretchr/objx v0.5.3 h1:jmXUvGomnU1o3W/V5h2VEradbpJDwGrzugQQvL0POH4=
 github.com/stretchr/objx v0.5.3/go.mod h1:rDQraq+vQZU7Fde9LOZLr8Tax6zZvy4kuNKF+QYS+U0=
 github.com/stretchr/testify v1.12.1 h1:EuwCh5fleGS7H32xRwO3wRGT7DxrDhLAT6FF8MpWDWE=
 github.com/stretchr/testify v1.12.1/go.mod h1:MDEgiDPPsNp5cuIrHPPCyornHKgEVbtFUmoNlxoYthg=
+github.com/torredil/csi-test/v5 v5.0.0-20261118145208-d11770340f7f h1:W+X6nOX3rORjJh9Nx5FSspr6mbcJIfmoZjoDHYNI/fs=
+github.com/torredil/csi-test/v5 v5.0.0-20261118145208-d11770340f7f/go.mod h1:FKI1IwelT8z2+1K3PjP16BSq9eoBz19jn1h1DM69+yw=
 github.com/x448/float16 v0.8.4 h1:qLwI1I70+NjRFUR3zs1JPUCgaCXSh3SW62uAKT1mSBM=
 github.com/x448/float16 v0.8.4/go.mod h1:14CWIYCyZA/cWjXOioeEpHeN/83MdbZDRQHoFcYsOfg=
 go.opentelemetry.io/auto/sdk v1.2.1 h1:jXsnJ4Lmnqd11kwkBV2LgLoFMZKizbCi5fNZ/ipaZ64=
