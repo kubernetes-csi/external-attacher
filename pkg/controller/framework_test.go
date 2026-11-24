@@ -43,6 +43,12 @@ import (
 	_ "k8s.io/klog/v2/ktesting/init"
 )
 
+// testContext returns t.Context() with a logger that writes to the test log.
+func testContext(t *testing.T) context.Context {
+	t.Helper()
+	return klog.NewContext(t.Context(), ktesting.NewLogger(t, ktesting.DefaultConfig))
+}
+
 // This is an unit test framework. It is heavily inspired by serviceaccount
 // controller tests.
 

@@ -418,21 +418,32 @@ die () {
     exit 1
 }
 
+# Check whether the Go version in $1 (like "go1.21.3") is at least $2 (like "1.21").
+go_version_at_least () {
+    printf '%s\n%s\n' "$2" "${1#go}" | sort -V -C
+}
+
 # Ensure we use the desired version of the Go tools, then run command given as argument.
-# Empty parameter uses the already installed Go. In Prow, that version is kept up-to-date by
-# bumping the container image regularly.
+# Empty parameter uses the already installed Go, unless the module requires a newer one.
+# In Prow, that version is kept up-to-date by bumping the container image regularly.
 run_with_go () {
-    local version
-    version="$1"
+    local version requested selected
+    requested="$1"
     shift
 
-    if [ "$version" ]; then
-        version=go$version
-        if [ "$(GOTOOLCHAIN=$version go version | cut -d' ' -f3)" != "$version" ]; then
+    if [ "$requested" ]; then
+        # The configured version is the minimum: when the module requires a newer
+        # toolchain (go.mod "go" or "toolchain" line), Go downloads and uses that one instead.
+        # That keeps CI in sync with each repo's go.mod without having to bump the version here in lockstep.
+        version=go$requested+auto
+        # Verify the switch. Also catches Go < 1.21, which ignores GOTOOLCHAIN.
+        selected="$(GOTOOLCHAIN=$version go env GOVERSION)" ||
+            die "cannot download Go $requested, check network access"
+        if ! go_version_at_least "$selected" "$requested"; then
             die "Please install Go 1.21+"
         fi
     else
-        version=local
+        version=auto
     fi
     # Set GOMODCACHE to make sure Kubernetes does not need to download again.
     GOTOOLCHAIN=$version GOMODCACHE="$(go env GOMODCACHE)" run "$@"
