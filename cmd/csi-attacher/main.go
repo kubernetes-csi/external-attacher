@@ -310,22 +310,18 @@ func main() {
 	}
 	// handle SIGTERM and SIGINT by cancelling the context.
 	var (
-		terminate       func()          // called when all controllers are finished
-		controllerCtx   context.Context // shuts down all controllers on a signal
-		shutdownHandler <-chan struct{} // called when the signal is received
+		terminate     func()          // called when all controllers are finished
+		controllerCtx context.Context // shuts down all controllers on a signal
 	)
 
 	if utilfeature.DefaultFeatureGate.Enabled(features.ReleaseLeaderElectionOnExit) {
 		ctx, terminate = context.WithCancel(ctx) // shuts down the whole process, incl. leader election
-		var cancelControllerCtx context.CancelFunc
-		controllerCtx, cancelControllerCtx = context.WithCancel(ctx)
-		shutdownHandler = signals.SetupSignalHandler()
+		controllerCtx = signals.SetupSignalContext()
 
 		defer terminate()
 
 		go func() {
-			defer cancelControllerCtx()
-			<-shutdownHandler
+			<-controllerCtx.Done()
 			logger.Info("Received SIGTERM or SIGINT signal, shutting down controller.")
 		}()
 	}
@@ -333,7 +329,7 @@ func main() {
 	run := func(ctx context.Context) {
 		if utilfeature.DefaultFeatureGate.Enabled(features.ReleaseLeaderElectionOnExit) {
 			var wg sync.WaitGroup
-			factory.Start(shutdownHandler)
+			factory.StartWithContext(controllerCtx)
 			wg.Go(func() {
 				ctrl.Run(controllerCtx, int(*workerThreads))
 			})
@@ -345,13 +341,12 @@ func main() {
 			wg.Wait()
 			terminate()
 		} else {
-			stopCh := ctx.Done()
-			factory.Start(stopCh)
+			factory.StartWithContext(ctx)
 			go ctrl.Run(ctx, int(*workerThreads))
 			if nodeCtrl != nil {
 				go nodeCtrl.Run(ctx, int(*nodeWorkerThreads))
 			}
-			<-stopCh
+			<-ctx.Done()
 		}
 	}
 
